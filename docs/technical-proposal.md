@@ -91,6 +91,7 @@ XmaxSDK/
 │           │   ├── Room/RoomController.ts          # 房间生命周期 + 生成信令（对齐）
 │           │   ├── Room/RoomEvent.ts               # start/changeCondition/changeTargetSize/stop/tracks/heartbeat
 │           │   ├── Room/RoomHeartbeat.ts           # 10s 周期心跳（对齐）
+│           │   ├── Room/RoomMessageCodec.ts        # __trtc_chunk__ 拆包/组包（LRU 1000）
 │           │   ├── Encoding/EncodingController.ts
 │           │   └── Quality/QualityController.ts
 │           └── Render/
