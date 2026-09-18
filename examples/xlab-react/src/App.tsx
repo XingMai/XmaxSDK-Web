@@ -13,7 +13,7 @@ import {
   type RealtimeState,
   type XmaxRealtimeManaging,
 } from "@xmax/sdk";
-import { XmaxRealtimeVideo } from "@xmax/react";
+import { XmaxVideo } from "@xmax/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { clearDebugLogs, useDebugLogs } from "./debugLog";
 
@@ -206,12 +206,25 @@ export function App() {
         X-Lab<span>XmaxSDK Web · 摄像头 + 实时生成（M2 联调）</span>
       </h1>
 
-      <div className="stage">
-        <XmaxRealtimeVideo
-          localTrack={localStream?.videoTrack}
-          remoteTrack={remoteStream?.videoTrack}
-          style={{ width: "100%", height: "100%" }}
-        />
+      <div className="stageRow">
+        <div className="stageItem">
+          <div className="stage">
+            <XmaxVideo
+              track={localStream?.videoTrack}
+              style={{ width: "100%", height: "100%" }}
+            />
+          </div>
+          <span>本地预览</span>
+        </div>
+        <div className="stageItem">
+          <div className="stage">
+            <XmaxVideo
+              track={remoteStream?.videoTrack}
+              style={{ width: "100%", height: "100%" }}
+            />
+          </div>
+          <span>生成结果</span>
+        </div>
       </div>
 
       <div className="controls">
