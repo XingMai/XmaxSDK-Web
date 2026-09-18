@@ -91,7 +91,7 @@ function makeController() {
 const noopEnsureActive = () => {};
 
 describe("RoomController", () => {
-  it("joins with mapped configuration, starts heartbeat and registers event bridge", async () => {
+  it("joins with mapped configuration and starts heartbeat", async () => {
     const { controller, rtc, heartbeat } = makeController();
     await controller.join(connection, noopEnsureActive);
 
@@ -104,7 +104,6 @@ describe("RoomController", () => {
       privateMapKey: "pmk-v1",
     });
     expect(heartbeat.startedUserIDs).toEqual(["rtc-user-001"]);
-    expect(rtc.eventListener).toBeDefined();
   });
 
   it("rejects joining while already in a room", async () => {
@@ -220,14 +219,13 @@ describe("RoomController", () => {
     ).toThrowError(expect.objectContaining({ code: XmaxErrorCode.rtcError }));
   });
 
-  it("leaves the room, clears the event bridge and allows rejoining", async () => {
+  it("leaves the room, stops heartbeat and allows rejoining", async () => {
     const { controller, rtc, heartbeat } = makeController();
     await controller.join(connection, noopEnsureActive);
     await controller.leave();
 
     expect(rtc.leaveRoomCalls).toBe(1);
     expect(heartbeat.stopCalls).toBeGreaterThan(0);
-    expect(rtc.eventListener).toBeUndefined();
 
     await controller.leave();
     expect(rtc.leaveRoomCalls).toBe(1);
@@ -237,35 +235,30 @@ describe("RoomController", () => {
   });
 
   it("dispatches inbound business messages after user_id filtering", async () => {
-    const { controller, rtc } = makeController();
+    const { controller } = makeController();
     const received: Array<[string, Record<string, unknown>]> = [];
-    const videoEvents: Array<[string, boolean]> = [];
     controller.setListener({
       onRoomMessage: (sender, message) => received.push([sender, message]),
-      onRemoteVideoPublished: (userID, published) => videoEvents.push([userID, published]),
     });
     await controller.join(connection, noopEnsureActive);
 
     const emit = (sender: string, payload: unknown) =>
-      rtc.eventListener?.onCustomMessageReceived(sender, JSON.stringify(payload));
+      controller.handleIncomingMessage(sender, JSON.stringify(payload));
 
     emit("bot001", { event: "tracks", user_id: "rtc-user-001", values: [] });
     emit("bot001", { event: "tracks", user_id: "someone-else", values: [] });
     emit("bot001", { event: "tracks", values: [] });
-    rtc.eventListener?.onRemoteVideoPublished("bot001", true);
 
     expect(received).toHaveLength(2);
     expect(received[0]?.[0]).toBe("bot001");
     expect(received[0]?.[1].event).toBe("tracks");
-    expect(videoEvents).toEqual([["bot001", true]]);
   });
 
   it("reassembles chunked inbound messages before dispatching", async () => {
-    const { controller, rtc } = makeController();
+    const { controller } = makeController();
     const received: Record<string, unknown>[] = [];
     controller.setListener({
       onRoomMessage: (_sender, message) => received.push(message),
-      onRemoteVideoPublished: () => {},
     });
     await controller.join(connection, noopEnsureActive);
 
@@ -280,9 +273,9 @@ describe("RoomController", () => {
       { event: "__trtc_chunk__", eventId: "evt-9", index: 0, count: 2, data: business.slice(0, half) },
       { event: "__trtc_chunk__", eventId: "evt-9", index: 1, count: 2, data: business.slice(half) },
     ];
-    rtc.eventListener?.onCustomMessageReceived("bot001", JSON.stringify(chunks[1]));
+    controller.handleIncomingMessage("bot001", JSON.stringify(chunks[1]));
     expect(received).toHaveLength(0);
-    rtc.eventListener?.onCustomMessageReceived("bot001", JSON.stringify(chunks[0]));
+    controller.handleIncomingMessage("bot001", JSON.stringify(chunks[0]));
 
     expect(received).toHaveLength(1);
     expect(received[0]?.note).toBe("长文本".repeat(100));

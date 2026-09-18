@@ -109,7 +109,6 @@ export class RoomController implements RoomControlling {
       }
 
       this.state = { kind: "joined", userID: connection.userID };
-      this.registerRtcEventBridge();
       this.heartbeat.start(connection.userID);
     } catch (error) {
       if (
@@ -233,30 +232,17 @@ export class RoomController implements RoomControlling {
     this.listener = listener;
   }
 
-  /** 执行离开：复位状态、停止心跳、清除事件桥接并退房。 */
+  /** 执行离开：复位状态、停止心跳、清空组包缓存并退房。 */
   private async performLeave(): Promise<void> {
     this.state = { kind: "idle" };
     this.heartbeat.stop();
-    this.rtcManager.setEventListener(undefined);
     this.codec.reset();
     await this.rtcManager.leaveRoom();
     this.leaveOperation = undefined;
   }
 
-  /** 注册 RTC 事件桥接：自定义消息组包过滤后分发，远端视频状态直接转发。 */
-  private registerRtcEventBridge(): void {
-    this.rtcManager.setEventListener({
-      onCustomMessageReceived: (senderUserID, message) => {
-        this.handleCustomMessage(senderUserID, message);
-      },
-      onRemoteVideoPublished: (userID, published) => {
-        this.listener?.onRemoteVideoPublished(userID, published);
-      },
-    });
-  }
-
   /** 组包入站消息并按目标用户过滤后分发完整业务消息。 */
-  private handleCustomMessage(senderUserID: string, raw: string): void {
+  handleIncomingMessage(senderUserID: string, raw: string): void {
     const complete = this.codec.processIncoming(senderUserID, raw);
     if (complete === undefined) {
       return;

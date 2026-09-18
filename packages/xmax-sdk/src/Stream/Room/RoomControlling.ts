@@ -4,13 +4,10 @@ import type { RealtimeSessionConnection } from "../../Service/Realtime/RealtimeS
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import type { RoomEventTargetSize } from "./RoomEvent";
 
-/** 接收房间业务消息与远端视频发布状态。 */
+/** 接收房间业务消息。 */
 export interface RoomListener {
   /** 处理完整房间业务消息（已完成分片组包与目标用户过滤）。 */
   onRoomMessage(senderUserID: string, message: Record<string, unknown>): void;
-
-  /** 处理远端用户的视频发布状态变化（仅主流）。 */
-  onRemoteVideoPublished(userID: string, published: boolean): void;
 }
 
 /**
@@ -76,4 +73,10 @@ export interface RoomControlling {
 
   /** 设置房间事件监听器，传入空值时清除监听器。 */
   setListener(listener?: RoomListener): void;
+
+  /**
+   * 处理 RTC 层桥接的入站自定义消息：分片组包、目标过滤后分发给监听器。
+   * 由持有 RTC 事件监听权的传输层组件调用。
+   */
+  handleIncomingMessage(senderUserID: string, rawMessage: string): void;
 }
