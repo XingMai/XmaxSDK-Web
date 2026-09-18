@@ -392,12 +392,22 @@ export class StreamController implements StreamControlling {
       return;
     }
     if (this.state.botID && this.state.botID !== trimmedUserID) {
+      // 会话下发的机器人标识与实际发布者不一致时，若当前有生成任务在
+      // 等待确认或运行中，仍接受该发布者（房间为会话独占，除本端外
+      // 只有生成机器人会推流）。
+      if (this.state.generationTaskID === undefined) {
+        XmaxLogger.stream.warning(
+          () =>
+            `忽略非目标机器人的远端视频 (Ignored Remote Video from Non-Bot User)\n` +
+            `└─ userID: ${trimmedUserID}, botID: ${this.state.botID}`,
+        );
+        return;
+      }
       XmaxLogger.stream.warning(
         () =>
-          `忽略非目标机器人的远端视频 (Ignored Remote Video from Non-Bot User)\n` +
+          `远端视频发布者与会话下发的机器人标识不一致，按生成结果流接受 (Accepted Remote Video Despite Bot ID Mismatch)\n` +
           `└─ userID: ${trimmedUserID}, botID: ${this.state.botID}`,
       );
-      return;
     }
 
     if (published) {

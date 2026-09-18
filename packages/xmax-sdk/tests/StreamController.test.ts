@@ -221,23 +221,33 @@ describe("StreamController", () => {
     expect(bindings[0]?.videoTrack).toBe(rtc.remoteVideoTrack);
   });
 
-  it("ignores video publish events from non-bot users", async () => {
+  it("ignores video publish events from non-bot users when no generation is active", async () => {
     const { controller, rtc } = makeStream();
     await controller.connect(connection, false, noopEnsureActive);
+
+    emitRemoteVideo(rtc, "someone-else", true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(rtc.subscribeRemoteVideoCalls).toHaveLength(0);
+  });
+
+  it("accepts a mismatched publisher while generation is pending", async () => {
+    const { controller, rtc, bindings } = makeStream();
+    await controller.connect(connection, false, noopEnsureActive);
+
     const confirmation = controller.beginGeneration({
       taskID: "task-001",
       videoFormat,
       context,
     });
-    const settled = expect(confirmation).rejects.toMatchObject({
-      code: XmaxErrorCode.cancelled,
-    });
 
-    emitRemoteVideo(rtc, "someone-else", true);
-    expect(rtc.subscribeRemoteVideoCalls).toHaveLength(0);
+    // 会话下发的 botID 与实际发布者不一致时，仍按生成结果流接受。
+    emitRemoteVideo(rtc, "bot-other", true);
+    await confirmation;
 
-    await controller.stopGeneration("");
-    await settled;
+    expect(rtc.subscribeRemoteVideoCalls).toEqual([["bot-other", true]]);
+    expect(bindings).toHaveLength(1);
+    expect(bindings[0]?.stream.userID).toBe("bot-other");
   });
 
   it("times out generation confirmation", async () => {
