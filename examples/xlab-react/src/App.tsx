@@ -15,6 +15,7 @@ import {
 } from "@xmax/sdk";
 import { XmaxRealtimeVideo } from "@xmax/react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { clearDebugLogs, useDebugLogs } from "./debugLog";
 
 const API_KEY_STORAGE = "xmax.xlab.apiKey";
 const PROMPT_STORAGE = "xmax.xlab.prompt";
@@ -37,6 +38,28 @@ export function App() {
   const [busy, setBusy] = useState(false);
 
   const realtimeRef = useRef<XmaxRealtimeManaging | undefined>(undefined);
+
+  const logs = useDebugLogs();
+  const logPanelRef = useRef<HTMLPreElement>(null);
+
+  // 新日志到达时滚动到底部。
+  useEffect(() => {
+    const panel = logPanelRef.current;
+    if (panel) {
+      panel.scrollTop = panel.scrollHeight;
+    }
+  }, [logs]);
+
+  async function handleCopyLogs() {
+    const text = logs
+      .map((entry) => `${entry.time} [${entry.level}] ${entry.text}`)
+      .join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // 剪贴板不可用时忽略，面板内容仍可手动复制。
+    }
+  }
 
   const client = useMemo(
     () =>
@@ -267,6 +290,25 @@ export function App() {
       <div className="status">
         状态：{stateText}
         {errorText && <div className="error">{errorText}</div>}
+      </div>
+
+      <div className="logPanel">
+        <div className="logHeader">
+          <span>运行日志</span>
+          <button className="secondary" onClick={handleCopyLogs}>
+            复制
+          </button>
+          <button className="secondary" onClick={clearDebugLogs}>
+            清空
+          </button>
+        </div>
+        <pre ref={logPanelRef}>
+          {logs.map((entry, index) => (
+            <div key={index} className={`logLine log-${entry.level}`}>
+              {entry.time} [{entry.level}] {entry.text}
+            </div>
+          ))}
+        </pre>
       </div>
     </div>
   );

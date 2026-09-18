@@ -150,6 +150,11 @@ export class StreamController implements StreamControlling {
     await this.roomController.join(connection, ensureActive);
     ensureActive();
     this.configureRoom({ roomID: connection.roomID, botID: connection.botID });
+    XmaxLogger.stream.info(
+      () =>
+        `RTC 房间已配置 (RTC Room Configured)\n` +
+        `└─ roomID: ${connection.roomID}, botID: ${connection.botID ?? "(未设置)"}`,
+    );
     await this.publishLocalStream(includeLocalAudio);
   }
 
@@ -378,10 +383,20 @@ export class StreamController implements StreamControlling {
     if (!trimmedUserID) {
       return;
     }
+    XmaxLogger.stream.info(
+      () =>
+        `远端视频发布状态变化 (Remote Video Publication Changed)\n` +
+        `└─ userID: ${trimmedUserID}, published: ${published}`,
+    );
     if (!this.state.roomID) {
       return;
     }
     if (this.state.botID && this.state.botID !== trimmedUserID) {
+      XmaxLogger.stream.warning(
+        () =>
+          `忽略非目标机器人的远端视频 (Ignored Remote Video from Non-Bot User)\n` +
+          `└─ userID: ${trimmedUserID}, botID: ${this.state.botID}`,
+      );
       return;
     }
 
@@ -416,6 +431,11 @@ export class StreamController implements StreamControlling {
         return;
       }
       this.state.subscribedRemoteUserIDs.add(userID);
+      XmaxLogger.stream.info(
+        () =>
+          `远端视频订阅成功 (Remote Video Subscribed)\n` +
+          `└─ userID: ${userID}`,
+      );
       this.confirmOrUpdateRemoteStream(userID, track);
     } catch (error) {
       const mapped = XmaxError.from(error);
