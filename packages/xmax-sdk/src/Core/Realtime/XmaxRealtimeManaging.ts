@@ -10,9 +10,6 @@ import type { RealtimeConfiguration } from "./RealtimeConfiguration";
 
 /**
  * 定义 SDK 对接入方提供的实时媒体与生成控制能力。
- *
- * M1 范围：摄像头本地管线（创建/停止/切换、状态监听、关闭）。
- * 连接与生成方法已定义，M2 接入 TRTC 后生效。
  */
 export interface XmaxRealtimeManaging {
   /** 实时能力配置。 */
@@ -75,7 +72,14 @@ export interface XmaxRealtimeManaging {
 
   /**
    * 使用当前 Manager 创建的本地流建立实时连接。
-   * （M2 接入 TRTC 后生效。）
+   *
+   * 创建实时会话、加入 RTC 房间并发布本地流，成功后启动会话心跳。
+   * 返回的远端媒体流在生成开始后承载远端生成画面。
+   *
+   * @param localStream 由 `createLocalCameraStream` 创建的本地媒体流。
+   * @returns 远端生成结果占位的媒体流。
+   * @throws 本地流不属于当前 Manager、已有活动连接、会话创建或进房
+   * 发布失败时抛出错误；失败时自动释放连接资源并恢复本地预览。
    */
   connect(localStream: RealtimeMediaStream): Promise<RealtimeMediaStream>;
 
@@ -90,10 +94,18 @@ export interface XmaxRealtimeManaging {
 
   /**
    * 按需建立连接并开始生成。
-   * （M2 接入 TRTC 后生效。）
+   *
+   * 尚未连接时先建立实时连接；已在生成时仅更新生成条件，不重启生成。
+   * 首次生成必须提供条件上下文，之后缺省时复用最近一次缓存的上下文。
+   *
+   * @param options.localStream 由 `createLocalCameraStream` 创建的本地媒体流。
+   * @param options.context 本次生成使用的条件上下文；缺省时复用缓存。
+   * @returns 承载远端生成画面的媒体流。
+   * @throws 本地流不属于当前 Manager、缺少可用的条件上下文、信令发送
+   * 或生成确认失败时抛出错误；失败时自动停止生成任务并释放连接资源。
    */
   startGeneration(options: {
     localStream: RealtimeMediaStream;
-    context: RealtimeContext;
+    context?: RealtimeContext;
   }): Promise<RealtimeMediaStream>;
 }
