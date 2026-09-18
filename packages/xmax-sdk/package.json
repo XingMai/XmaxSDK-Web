@@ -1,0 +1,27 @@
+{
+  "name": "@xmax/sdk",
+  "version": "0.1.0",
+  "description": "XmaxSDK for Web — Realtime Interactive Video Generation",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.5",
+    "typescript": "~5.6.3",
+    "vitest": "^2.1.8"
+  }
+}

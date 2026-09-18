@@ -1,0 +1,105 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family:
+    -apple-system, "PingFang SC", "Helvetica Neue", "Segoe UI", sans-serif;
+  background: #0f1115;
+  color: #e8eaed;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.app h1 {
+  font-size: 20px;
+  margin: 0;
+}
+
+.app h1 span {
+  color: #8b93a7;
+  font-weight: 400;
+  font-size: 14px;
+  margin-left: 8px;
+}
+
+.stage {
+  width: min(420px, 92vw);
+  aspect-ratio: 832 / 1472;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #000;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  width: min(420px, 92vw);
+}
+
+.controls label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #aab1c0;
+}
+
+.controls input[type="text"] {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid #2a2f3a;
+  background: #171a21;
+  color: #e8eaed;
+  outline: none;
+}
+
+.controls select {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid #2a2f3a;
+  background: #171a21;
+  color: #e8eaed;
+}
+
+button {
+  padding: 8px 18px;
+  border-radius: 8px;
+  border: none;
+  font-size: 14px;
+  cursor: pointer;
+  background: #2f6bff;
+  color: #fff;
+}
+
+button.secondary {
+  background: #242a35;
+  color: #c6cbd6;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.status {
+  font-size: 13px;
+  color: #8b93a7;
+  min-height: 18px;
+}
+
+.status .error {
+  color: #ff6b6b;
+}

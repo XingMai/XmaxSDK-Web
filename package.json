@@ -1,0 +1,19 @@
+{
+  "name": "xmax-sdk-web",
+  "private": true,
+  "version": "0.1.0",
+  "description": "XmaxSDK for Web — Realtime Interactive Video Generation",
+  "type": "module",
+  "scripts": {
+    "build": "pnpm -r --filter './packages/*' build",
+    "test": "pnpm -r --filter './packages/*' test",
+    "typecheck": "pnpm -r --filter './packages/*' typecheck",
+    "dev": "pnpm --filter xlab-react dev"
+  },
+  "devDependencies": {
+    "typescript": "~5.6.3"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
