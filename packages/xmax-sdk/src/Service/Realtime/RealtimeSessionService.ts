@@ -26,7 +26,6 @@ interface ConnectionPayload {
   user_sig?: string;
   private_map_key_with_string_room_id?: string;
   rtc_bot_id?: string;
-  bot_name?: string;
 }
 
 export interface RealtimeSessionServiceOptions {
@@ -212,9 +211,7 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
       userID,
       userSig,
       privateMapKey,
-      botID:
-        RealtimeSessionService.nonEmpty(payload.rtc_bot_id) ??
-        RealtimeSessionService.nonEmpty(payload.bot_name),
+      botID: RealtimeSessionService.nonEmpty(payload.rtc_bot_id),
     });
   }
 
