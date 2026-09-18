@@ -42,6 +42,14 @@ export { RealtimeVideoTrack } from "./Service/Realtime/RealtimeVideoTrack";
 export { MediaService } from "./Service/Media/MediaService";
 export type { MediaServicing } from "./Service/Media/MediaServicing";
 
+// Service / Storage
+export { StorageService } from "./Service/Storage/StorageService";
+export type {
+  StorageServicing,
+  StorageUploadOptions,
+} from "./Service/Storage/StorageServicing";
+export { StoredFile } from "./Service/Storage/StoredFile";
+
 // Render
 export { XmaxVideoView } from "./Render/Video/XmaxVideoView";
 export { XmaxRealtimeVideoView } from "./Render/Video/XmaxRealtimeVideoView";

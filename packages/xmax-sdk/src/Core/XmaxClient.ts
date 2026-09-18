@@ -3,6 +3,8 @@ import type { ApiServicing } from "../Service/Network/ApiServicing";
 import { ApiService } from "../Service/Network/ApiService";
 import type { MediaServicing } from "../Service/Media/MediaServicing";
 import { MediaService } from "../Service/Media/MediaService";
+import type { StorageServicing } from "../Service/Storage/StorageServicing";
+import { StorageService } from "../Service/Storage/StorageService";
 import { RealtimeModel } from "./Realtime/RealtimeModel";
 import type { RealtimeConfiguration } from "./Realtime/RealtimeConfiguration";
 import { XmaxRealtimeManager } from "./Realtime/XmaxRealtimeManager";
@@ -55,5 +57,14 @@ export class XmaxClient {
    */
   createMediaService(model: RealtimeModel = RealtimeModel.x2_0): MediaServicing {
     return new MediaService(model);
+  }
+
+  /**
+   * 创建文件存储 Service。
+   *
+   * @returns 可上传图片到对象存储的存储 Service，返回地址可用作参考图路径。
+   */
+  createStorageService(): StorageServicing {
+    return new StorageService({ apiService: this.apiService });
   }
 }

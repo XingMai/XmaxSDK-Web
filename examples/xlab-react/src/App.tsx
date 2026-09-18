@@ -29,6 +29,9 @@ export function App() {
   const [prompt, setPrompt] = useState(
     () => localStorage.getItem(PROMPT_STORAGE) ?? "把画面变成赛博朋克风格",
   );
+  const [referencePreview, setReferencePreview] = useState<string | undefined>();
+  const [referencePath, setReferencePath] = useState<string | undefined>();
+  const [referenceUploading, setReferenceUploading] = useState(false);
   const [localStream, setLocalStream] = useState<RealtimeMediaStream | undefined>();
   const [remoteStream, setRemoteStream] = useState<RealtimeMediaStream | undefined>();
   const [stateText, setStateText] = useState<RealtimeConnectionState>(
@@ -38,6 +41,7 @@ export function App() {
   const [busy, setBusy] = useState(false);
 
   const realtimeRef = useRef<XmaxRealtimeManaging | undefined>(undefined);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const logs = useDebugLogs();
   const logPanelRef = useRef<HTMLPreElement>(null);
@@ -158,7 +162,7 @@ export function App() {
     try {
       const remote = await realtime.startGeneration({
         localStream,
-        context: new RealtimeContext({ prompt }),
+        context: new RealtimeContext({ prompt, referencePath }),
       });
       setRemoteStream(remote);
     } catch (error) {
@@ -166,6 +170,47 @@ export function App() {
     } finally {
       setBusy(false);
     }
+  }
+
+  /** 选择本地参考图并上传，成功后作为生成条件的参考路径。 */
+  async function handleReferenceChange(
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+    setReferencePreview((previous) => {
+      if (previous) {
+        URL.revokeObjectURL(previous);
+      }
+      return URL.createObjectURL(file);
+    });
+    setReferencePath(undefined);
+    setReferenceUploading(true);
+    setErrorText("");
+    try {
+      const stored = await client.createStorageService().uploadImage({
+        data: file,
+        fileName: file.name,
+        contentType: file.type || undefined,
+      });
+      setReferencePath(stored.url);
+    } catch (error) {
+      setErrorText(error instanceof Error ? error.message : String(error));
+    } finally {
+      setReferenceUploading(false);
+    }
+  }
+
+  /** 清除当前参考图。 */
+  function handleClearReference() {
+    if (referencePreview) {
+      URL.revokeObjectURL(referencePreview);
+    }
+    setReferencePreview(undefined);
+    setReferencePath(undefined);
   }
 
   async function handleDisconnect() {
@@ -264,6 +309,39 @@ export function App() {
           value={prompt}
           onChange={(event) => setPrompt(event.target.value)}
         />
+      </div>
+
+      <div className="controls">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: "none" }}
+          onChange={handleReferenceChange}
+        />
+        <button
+          className="secondary"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={referenceUploading || !apiKey}
+          title={apiKey ? "" : "上传参考图需要填写 API Key"}
+        >
+          选择参考图
+        </button>
+        {referencePreview && (
+          <span className="referenceItem">
+            <img src={referencePreview} alt="参考图" />
+            <span>
+              {referenceUploading
+                ? "上传中…"
+                : referencePath
+                  ? "已上传"
+                  : "未上传"}
+            </span>
+            <button className="secondary" onClick={handleClearReference}>
+              清除
+            </button>
+          </span>
+        )}
       </div>
 
       <div className="controls">

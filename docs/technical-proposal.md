@@ -25,7 +25,7 @@
 | --- | --- | --- |
 | `trtc-sdk-v5`（≥ 5.6.0） | RTC 引擎（进房、推拉流、自定义消息、网络质量） | VolcEngineRTC |
 | 无（fetch 封装） | 业务 API / 心跳 | ApiService（URLSession） |
-| `cos-js-sdk-v5`（后续里程碑） | 对象存储上传下载 | Tencent COS SDK |
+| `cos-js-sdk-v5` ✅ 已接入（图片直传） | 对象存储上传下载 | Tencent COS SDK |
 
 不引入事件库、状态库等通用依赖；事件用自研极简 emitter。
 
@@ -196,7 +196,7 @@ SDK 核心框架无关，公开两层：
 | M1 摄像头本地管线 ✅ | monorepo 脚手架、XmaxClient/Configuration/Logger/Error、PermissionManager、RtcEngineManager/RtcManager（TRTC 内部采集，只采不发）、CameraController、RealtimeCoordinator 状态机、XmaxRealtimeVideoView 本地预览、Vitest 基础用例 |
 | M2 RTC + 生成（核心链路 ✅） | Session 服务 + 心跳（凭据刷新）✅、进房/发布/订阅 ✅、信令通道（自定义消息 + 拆包）✅、connect/startGeneration/disconnect/close ✅、远端流渲染 + 首帧渐入 ✅；待补：网络质量回调、真机联调（R1/R2'） |
 | M3 交互 + Examples 完整化 | 轨迹交互（RealtimePoint/轨迹渲染）、xlab-react 完整复刻 XLab Realtime 场景、README/usage 文档 |
-| 后续 | 图片流、视频文件流、存储服务、插帧（WebCodecs）、性能告警 |
+| 后续 | 图片流、视频文件流、~~存储服务~~（图片上传 ✅ 已实现）、插帧（WebCodecs）、性能告警 |
 
 ## 7. 待确认问题
 

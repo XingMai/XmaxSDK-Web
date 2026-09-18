@@ -174,3 +174,19 @@ button:disabled {
 .logLine.log-error {
   color: #ff6b6b;
 }
+
+.referenceItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #aab1c0;
+}
+
+.referenceItem img {
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  object-fit: cover;
+  border: 1px solid #2a2f3a;
+}
