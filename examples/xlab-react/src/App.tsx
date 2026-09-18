@@ -207,6 +207,7 @@ export function App() {
           >
             <option value={RealtimeModel.x2_0}>x2.0</option>
             <option value={RealtimeModel.x2_0_pro}>x2.0-pro</option>
+            <option value={RealtimeModel.x2_fast_1080p}>x2-fast-1080p（临时）</option>
           </select>
         </label>
         <label>

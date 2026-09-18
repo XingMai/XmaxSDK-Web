@@ -9,6 +9,9 @@ export enum RealtimeModel {
 
   /** Xmax X2.0 Pro 实时生成模型。 */
   x2_0_pro = "x2.0-pro",
+
+  /** Xmax X2 Fast 1080P 实时生成模型（临时联调模型）。 */
+  x2_fast_1080p = "x2-fast-1080p",
 }
 
 export interface ModelSize {
@@ -22,11 +25,16 @@ const RESOLUTION_BUCKETS: Record<RealtimeModel, ModelSize[]> = {
     { width: 1024, height: 1920 },
     { width: 1920, height: 1024 },
   ],
+  [RealtimeModel.x2_fast_1080p]: [
+    { width: 1080, height: 1920 },
+    { width: 1920, height: 1080 },
+  ],
 };
 
 const MAXIMUM_INPUT_PIXELS: Record<RealtimeModel, number> = {
   [RealtimeModel.x2_0]: 1280000,
   [RealtimeModel.x2_0_pro]: 2100000,
+  [RealtimeModel.x2_fast_1080p]: 2100000,
 };
 
 /** 模型支持的输入分辨率桶；空数组表示按像素面积上下限和对齐规则计算输入尺寸。 */
@@ -61,5 +69,7 @@ export function defaultCameraVideoFormat(model: RealtimeModel): RealtimeVideoFor
       return new RealtimeVideoFormat({ width: 832, height: 1472, fps: 30 });
     case RealtimeModel.x2_0_pro:
       return new RealtimeVideoFormat({ width: 1024, height: 1920, fps: 30 });
+    case RealtimeModel.x2_fast_1080p:
+      return new RealtimeVideoFormat({ width: 1080, height: 1920, fps: 30 });
   }
 }
