@@ -72,6 +72,10 @@ importers:
         version: 5.6.3
 
   packages/xmax-sdk:
+    dependencies:
+      trtc-sdk-v5:
+        specifier: ^5.6.0
+        version: 5.20.0
     devDependencies:
       tsup:
         specifier: ^8.3.5
@@ -939,6 +943,9 @@ packages:
   scheduler@0.23.2:
     resolution: {integrity: sha512-UOShsPwz7NrMUqhR6t0hWjFduvOzbtv7toDH1/hIrfRNIDBnnBWd0CwJTGvTpngVlmwGCdP9/Zl/tVrDqcuYzQ==}
 
+  sdp@3.2.2:
+    resolution: {integrity: sha512-xZocWwfyp4hkbN4hLWxMjmv2Q8aNa9MhmOZ7L9aCZPT+dZsgRr6wZRrSYE3HTdyk/2pZKPSgqI7ns7Een1xMSA==}
+
   semver@6.3.1:
     resolution: {integrity: sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA==}
     hasBin: true
@@ -997,6 +1004,9 @@ packages:
   tree-kill@1.2.2:
     resolution: {integrity: sha512-L0Orpi8qGpRG//Nd+H90vFB+3iHnue1zSSGmNOOCh1GLJ7rUKVwV2HvijphGQS2UmhUZewS9VgvxYIdgr+fG1A==}
     hasBin: true
+
+  trtc-sdk-v5@5.20.0:
+    resolution: {integrity: sha512-kzqNpJqQKOOy8AhNpV221xggv/F2WnybaHHN0B258+mk8QxbVqiI6KTshhuj0zAboGZcs+lexGZls+ZVzUc0Vg==}
 
   ts-interface-checker@0.1.13:
     resolution: {integrity: sha512-Y/arvbn+rrz3JCKl9C4kVNfTfSm2/mEp5FSz5EsZSANGPSlQrpRI5M4PKF+mJnE52jOO90PnPSc3Ur3bTQw0gA==}
@@ -1097,6 +1107,10 @@ packages:
         optional: true
       jsdom:
         optional: true
+
+  webrtc-adapter@9.0.6:
+    resolution: {integrity: sha512-CHbl2ZQbxx164IgWRgzJno4hWtM4tFbRam1QfI3Yxhs3w/DvqluVxVWeXs3oL5/fbGkSNLKo0Ty5MgUWceNhog==}
+    engines: {node: '>=6.0.0', npm: '>=3.10.0'}
 
   why-is-node-running@2.3.0:
     resolution: {integrity: sha512-hUrmaWBdVDcxvYqnyh09zunKzROWjbZTiNy8dBEjkS7ehEDQibXJ7XvlmtbwuTclUiIyN+CyXQD4Vmko8fNm8w==}
@@ -1824,6 +1838,8 @@ snapshots:
     dependencies:
       loose-envify: 1.4.0
 
+  sdp@3.2.2: {}
+
   semver@6.3.1: {}
 
   siginfo@2.0.0: {}
@@ -1870,6 +1886,10 @@ snapshots:
   tinyspy@3.0.2: {}
 
   tree-kill@1.2.2: {}
+
+  trtc-sdk-v5@5.20.0:
+    dependencies:
+      webrtc-adapter: 9.0.6
 
   ts-interface-checker@0.1.13: {}
 
@@ -1974,6 +1994,10 @@ snapshots:
       - sugarss
       - supports-color
       - terser
+
+  webrtc-adapter@9.0.6:
+    dependencies:
+      sdp: 3.2.2
 
   why-is-node-running@2.3.0:
     dependencies:

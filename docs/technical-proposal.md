@@ -54,8 +54,7 @@ XmaxSDK/
 │           │   ├── Errors/XmaxError.ts               # code 枚举对齐
 │           │   ├── Logging/XmaxLogger.ts
 │           │   ├── Media/
-│           │   │   ├── Camera/CameraCaptureManager.ts    # getUserMedia 采集
-│           │   │   ├── Camera/CameraPosition.ts          # front/back → facingMode
+│           │   │   ├── Camera/CameraPosition.ts          # front/back → RTC 前后置选择
 │           │   │   ├── Video/VideoFrame.ts               # 包装 VideoFrame/MediaStreamTrack
 │           │   │   ├── Video/VideoRotation.ts
 │           │   │   └── Audio/AudioFrame.ts               # 预留
@@ -116,8 +115,8 @@ XmaxSDK/
 | iOS（火山） | TRTC Web v5 | 差异评估 |
 | --- | --- | --- |
 | `RtcEngineManager` 进程级独占 Engine 租约 | `TRTC.create()` 单例 + 同款租约排队 | ✅ 语义保留（Web 也有多业务抢单实例问题） |
-| `joinRoom(roomID/userID/token)` | `enterRoom({sdkAppId, roomId, userId, userSig})` | ✅ 凭证由 `/session` 下发（同 iOS）；`sdkAppId` 作为 SDK 内置常量（对齐 iOS 内置火山 appID 的做法），`token` 即 `userSig`，`roomID` 转 number |
-| `useExternalVideoSource` + `pushExternalVideoFrame`（逐帧推 NV12） | `startLocalVideo({option:{videoTrack}})` 注入自定义 `MediaStreamTrack` | ✅ 语义等价：Web 以 track 为单位而非逐帧；摄像头管线用 `getUserMedia` track 直通，后续图片/视频管线用 `canvas.captureStream` |
+| `joinRoom(roomID/userID/token)` | `enterRoom({sdkAppId, strRoomId, userId, userSig, privateMapKey})` | ✅ 凭证全部由 `/session` 的 `modelExtra` 下发（见差异 2） |
+| `useExternalVideoSource` + `pushExternalVideoFrame`（逐帧推 NV12） | `startLocalVideo({option:{videoTrack}})` 注入自定义 `MediaStreamTrack` | ✅ 语义等价：Web 以 track 为单位而非逐帧；摄像头管线直接用 TRTC 内部采集（`startLocalVideo({publish:false})` 只采不发，`getVideoTrack()` 取轨给渲染层），浏览器兼容性交给 TRTC 适配；后续图片/视频管线用 `canvas.captureStream` 注入 |
 | `configureVideoEncoding` | `startLocalVideo` profile / `updateLocalVideo` | ✅ 码率、fps、分辨率可配；**SEI 要求 H264**，需在发布时锁定 H264 |
 | `publish/unpublishLocalVideo/Audio` | `startLocalVideo/stopLocalVideo`、`startLocalAudio/stopLocalAudio`（`muteLocalAudio`） | ✅ |
 | `subscribeRemoteVideo/Audio` | `startRemoteVideo/stopRemoteVideo`、`muteRemoteAudio` | ✅ |
@@ -135,21 +134,39 @@ iOS 的 `start / changeCondition / changeTargetSize / stop / tracks / heartbeat`
 有序且尽可能可靠**，接收端监听 `TRTC.EVENT.CUSTOM_MESSAGE`。与火山房间消息语义基本等价，
 `RtcManaging.sendRoomMessage` 直接映射，`RoomController` / `RoomEvent` / `RoomHeartbeat` 全部不变。
 
-注意点：
+注意点（依据服务端《TRTC 客户端接入说明》与《TRTC 自定义消息拆包协议》）：
 
 - **版本下限**：`trtc-sdk-v5` 依赖锁 ≥ 5.6.0。
-- **单条 1KB 上限**（30 次/s、8KB/s）：heartbeat/tracks/stop 都很小，无风险；
-  `start`/`changeCondition` 携带 prompt + referencePath，极端长文本可能超 1KB，
-  发送前做字节校验，超限抛 `XmaxError`（与 iOS 参数校验风格一致）。
+- **cmdId 固定为 1**：服务端契约统一 `cmd_id=1`，不按消息类型分通道。
+- **拆包协议**：业务 JSON UTF-8 长度 ≤ 800 字节直接发送；> 800 字节按
+  `__trtc_chunk__` 分片协议拆发（eventId/index/count/data），接收端按
+  `(senderUid, eventId)` 乱序组包、LRU 缓存 1000 条、拼齐后 JSON 解析再进业务链路。
+  收发两侧都要实现，日志按协议第 8 节输出。
+- **广播语义 + 目标过滤**：TRTC 通道只有房间广播，"定向"靠业务 JSON 里的
+  `user_id` / `uid` 字段表达；收到消息后先解析、再按目标字段过滤，不是发给自己的就丢弃。
 - **角色限制**：仅 `ROLE_ANCHOR` 可发；SCENE_RTC（默认场景）天然满足。
-- **cmdId 规划**：心跳与生成信令使用不同 cmdId（如 heartbeat=1、generation=2、tracks=3），降低相互延迟影响。
 
-### 差异 2：RTC 凭证（已确认）
+### 差异 2：RTC 凭证（已确认，以服务端文档为准）
 
-TRTC 进房需要 `sdkAppId + userSig + number roomId`。已确认：**由 `/session` 接口下发，流程同 iOS**。
-`RealtimeSessionConnection` 结构保持 `{ roomID, userID, token, botName }` 不变——`token` 即 TRTC `userSig`，
-`roomID` 进房前转 number；`sdkAppId` 作为 SDK 内置常量放在 `RtcEngineManager`
-（对齐 iOS 内置火山 appID `69a177e226e9b90176a86b96` 的做法）。若后续 session 响应直接带 `sdkAppId`，再优先使用响应值。
+`POST /session` 响应的 `data.modelExtra` 携带全部 TRTC 入房参数（`provider=trtc` 时）：
+
+| `modelExtra` 字段 | TRTC `enterRoom` 参数 | 说明 |
+| --- | --- | --- |
+| `provider` | — | 先判断；`trtc` 才走本 SDK 逻辑，否则抛不支持错误 |
+| `room_id` | `strRoomId` | 字符串房间号（配套 `private_map_key_with_string_room_id`） |
+| `rtc_app_id` | `sdkAppId` | 服务端按字符串返回，进房时转 number |
+| `rtc_user_id` | `userId` | TRTC 登录身份，**不能用业务 `user_id`** |
+| `user_sig` | `userSig` | 登录签名 |
+| `private_map_key_with_string_room_id` | `privateMapKey` | 进房鉴权字段 |
+| `rtc_bot_id` / `bot_name` | — | 远端生成流的用户标识，用于 `REMOTE_VIDEO_AVAILABLE` 匹配 |
+
+`RealtimeSessionConnection` 相应扩展为 `{ roomID, userID, token, sdkAppID, privateMapKey, botName }`（全部字符串）。
+
+凭证刷新规则（服务端文档第 8 节）：
+
+- 会话存活期间周期 `PUT /session/{sessionUid}/heartbeat`，成功后用最新 `modelExtra` 覆盖本地缓存。
+- 仅 `user_sig` / `private_map_key` 变化视为凭据刷新——TRTC Web 不支持房间内热更新凭据，按本端策略重新进房。
+- `provider` / `room_id` / `rtc_app_id` / `rtc_user_id` 任一变化视为 RTC 绑定实质变化，需重建 RTC 登录态。
 
 ### 其余实现要点
 
@@ -160,7 +177,7 @@ TRTC 进房需要 `sdkAppId + userSig + number roomId`。已确认：**由 `/ses
   `RealtimeMediaStream`/状态提交语义不变。后续需要 SEI 时再开 `enableSEI` 并锁定 H264。
 - **ready 判定**：收到首个有效帧且视图已绑定 → ready（对齐 iOS）。
 - **镜像**：前置摄像头本地预览镜像（CSS transform），发布流不镜像（对齐 `configureLocalVideoMirror`）。
-- **switchCamera**：Web 上为切换 `cameraId`/facingMode；生成中切换走"停生成→切摄像头→恢复生成"（对齐）。
+- **switchCamera**：Web 上为切换 `useFrontCamera`/cameraId；生成中切换走"停生成→切摄像头→恢复生成"（对齐）。
 - **远端首帧渐入**：`XmaxRealtimeVideoView` 远端首帧提交后 0.3s 淡入（对齐）。
 - **轨迹交互**：Pointer Events → `InteractionCoordinateMapper`（fill/fit 坐标映射）→ `sendTracks` 信令。
 
@@ -175,14 +192,16 @@ SDK 核心框架无关，公开两层：
 
 | 里程碑 | 内容 |
 | --- | --- |
-| M1 摄像头本地管线 | monorepo 脚手架、XmaxClient/Configuration/Logger/Error、PermissionManager、CameraCaptureManager（getUserMedia）、CameraController、RealtimeCoordinator 状态机、XmaxRealtimeVideoView 本地预览、Vitest 基础用例 |
-| M2 RTC + 生成 | TRTC 适配层（RtcManager/RtcEngineManager）、Session 服务 + 心跳、信令通道、connect/startGeneration/disconnect/close、远端流渲染 + 首帧渐入、网络质量、switchCamera |
+| M1 摄像头本地管线 | monorepo 脚手架、XmaxClient/Configuration/Logger/Error、PermissionManager、RtcEngineManager/RtcManager（TRTC 内部采集，只采不发）、CameraController、RealtimeCoordinator 状态机、XmaxRealtimeVideoView 本地预览、Vitest 基础用例 |
+| M2 RTC + 生成 | Session 服务 + 心跳、进房/发布/订阅、信令通道、connect/startGeneration/disconnect/close、远端流渲染 + 首帧渐入、网络质量、switchCamera（M1 已含本地切换） |
 | M3 交互 + Examples 完整化 | 轨迹交互（RealtimePoint/轨迹渲染）、xlab-react 完整复刻 XLab Realtime 场景、README/usage 文档 |
 | 后续 | 图片流、视频文件流、存储服务、插帧（WebCodecs）、性能告警 |
 
 ## 7. 待确认问题
 
-- ~~Q1（凭证）~~ ✅ 已确认：`/session` 下发 TRTC 凭证，流程同 iOS；`sdkAppId` 内置 SDK 常量。
+- ~~Q1（凭证）~~ ✅ 已确认（服务端文档）：`/session` 的 `modelExtra` 下发全套 TRTC 参数
+  （`rtc_app_id`/`rtc_user_id`/`user_sig`/`private_map_key_with_string_room_id`/`room_id`），
+  心跳刷新凭证，详见差异 2。
 - ~~Q2（信令）~~ ✅ 已解决：TRTC Web v5.6.0+ 有 `sendCustomMessage`（独立数据通道、有序、尽可能可靠），
   信令与心跳继续走 RTC 通道，无需服务端改动；注意单条 1KB 上限。
 - ~~Q3（SEI）~~ ✅ 已确认：首版不发不收 SEI，远端结果流确认改用 `REMOTE_VIDEO_AVAILABLE`。
@@ -195,6 +214,7 @@ SDK 核心框架无关，公开两层：
 ## 8. 实现期风险（不阻塞，随里程碑验证）
 
 - **R1（M2 联调）**：bot 端行为——`REMOTE_VIDEO_AVAILABLE` 作为结果流确认的时机、bot userId 与 session 返回 `botName` 的对应关系，需接真实后端验证。
-- **R2（M2）**：`/session` 返回的 `roomID` 若不能转为 1~4294967294 的整数，进房改用 TRTC `strRoomId`。
-- **R3（M2）**：信令单条 1KB 上限——发送前字节校验，超限抛 `XmaxError`。
+- ~~R2~~ ✅ 已解决（服务端文档）：`room_id` 按字符串房间号走 `strRoomId`，配套 `privateMapKey` 进房。
+- ~~R3~~ ✅ 已解决（拆包协议文档）：信令超 800 字节按 `__trtc_chunk__` 分片协议收发，无超限报错。
+- **R2'（M2 联调）**：心跳刷新 `user_sig` 后的重新进房策略需联调验证（TRTC Web 不支持房间内热更新凭据）。
 - **R4（M2/M3）**：Safari 桌面验证点——远端音频自动播放（TRTC `enableAutoPlayDialog` 兜底）、音量控制（iOS Safari 不支持 `setRemoteAudioVolume`，桌面正常）。

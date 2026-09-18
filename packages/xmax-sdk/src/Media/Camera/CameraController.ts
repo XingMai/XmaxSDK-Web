@@ -1,9 +1,9 @@
 import { CameraPosition } from "../../Foundation/Media/Camera/CameraPosition";
-import type { CameraCaptureManaging } from "../../Foundation/Media/Camera/CameraCaptureManaging";
-import { CameraCaptureManager } from "../../Foundation/Media/Camera/CameraCaptureManager";
 import { XmaxError, XmaxErrorCode, type XmaxErrorListener } from "../../Foundation/Errors/XmaxError";
 import type { PermissionManaging } from "../../Foundation/Permissions/PermissionManaging";
 import { PermissionManager } from "../../Foundation/Permissions/PermissionManager";
+import type { RtcManaging } from "../../Foundation/RTC/RtcManaging";
+import { RtcManager } from "../../Foundation/RTC/RtcManager";
 import { VideoRenderRegistry } from "../../Render/Video/VideoRenderBinding";
 import type { MediaServicing } from "../../Service/Media/MediaServicing";
 import { MediaService } from "../../Service/Media/MediaService";
@@ -14,10 +14,12 @@ import { StreamID } from "../../Service/Realtime/StreamID";
 import type { CameraControlling, CameraPreviewReadyHandler } from "./CameraControlling";
 
 /**
- * 协调浏览器摄像头采集和 SDK 本地预览。
+ * 协调摄像头采集和 SDK 本地预览。
  *
- * Web 差异：预览绑定直接把采集 `MediaStream` 挂到视图；麦克风在
- * 实时连接建立时由 RTC 层启动（M2 接入），当前仅维护配置与权限。
+ * 采集由 RTC 层完成（只采不发），控制器把采集视频轨装入
+ * `MediaStream` 后挂到预览视图；切换摄像头时原位替换流内视频轨，
+ * 已挂载的视图无需重新绑定。麦克风在实时连接建立时由 RTC 层启动
+ * （M2 接入），当前仅维护配置与权限。
  */
 export class CameraController implements CameraControlling {
   // 轨道标识
@@ -25,7 +27,7 @@ export class CameraController implements CameraControlling {
 
   // 基础层组件
   private readonly permissionManager: PermissionManaging;
-  private readonly captureManager: CameraCaptureManaging;
+  private readonly rtcManager: RtcManaging;
 
   // 服务层组件
   private readonly mediaService: MediaServicing;
@@ -36,6 +38,7 @@ export class CameraController implements CameraControlling {
 
   // 本地资源
   private activeTrack?: RealtimeVideoTrack;
+  private previewStream?: MediaStream;
 
   // 预览状态
   private hasCapturedFrame = false;
@@ -48,18 +51,18 @@ export class CameraController implements CameraControlling {
    * 创建相机控制器。
    *
    * @param options.permissionManager 权限管理组件（可替换，测试用）。
-   * @param options.captureManager 摄像头采集组件（可替换，测试用）。
+   * @param options.rtcManager RTC 引擎与采集组件（可替换，测试用）。
    * @param options.mediaService 模型输入尺寸规则组件（可替换，测试用）。
    * @param options.errorListener 运行期错误回调。
    */
   constructor(options?: {
     permissionManager?: PermissionManaging;
-    captureManager?: CameraCaptureManaging;
+    rtcManager?: RtcManaging;
     mediaService?: MediaServicing;
     errorListener?: XmaxErrorListener;
   }) {
     this.permissionManager = options?.permissionManager ?? new PermissionManager();
-    this.captureManager = options?.captureManager ?? new CameraCaptureManager();
+    this.rtcManager = options?.rtcManager ?? new RtcManager();
     this.mediaService = options?.mediaService ?? new MediaService();
     this.errorListener = options?.errorListener ?? (() => {});
   }
@@ -115,6 +118,7 @@ export class CameraController implements CameraControlling {
       if (options.useMicrophone) {
         await this.permissionManager.ensureMicrophonePermission();
       }
+      await this.rtcManager.initialize();
 
       this.activeTrack = track;
       this.storedUseMicrophone = options.useMicrophone;
@@ -122,26 +126,15 @@ export class CameraController implements CameraControlling {
       this.isPreviewAttached = false;
       this.registerPreviewBinding(track);
 
-      const mediaTrack = await this.captureManager.start({
+      const mediaTrack = await this.rtcManager.startCameraCapture({
         width: resolvedFormat.width,
         height: resolvedFormat.height,
         frameRate: resolvedFormat.fps,
         position: options.position,
-        firstFrameListener: () => {
-          if (this.activeTrack !== track) {
-            return;
-          }
-          this.hasCapturedFrame = true;
-          this.notifyPreviewReady(track);
-        },
-        errorListener: (error) => {
-          if (this.activeTrack !== track) {
-            return;
-          }
-          this.errorListener(error);
-        },
       });
       track.mediaStreamTrack = mediaTrack;
+      this.previewStream = new MediaStream([mediaTrack]);
+      this.observeMediaTrack(track, mediaTrack);
       return new RealtimeMediaStream({ id: StreamID.local, videoTrack: track });
     } catch (error) {
       await this.stopLocalCameraStream();
@@ -149,16 +142,18 @@ export class CameraController implements CameraControlling {
     }
   }
 
-  /** 停止相机和麦克风采集，并释放当前轨道及本地预览资源。 */
+  /** 停止相机采集并销毁 RTC 引擎，释放当前轨道及本地预览资源。 */
   async stopLocalCameraStream(): Promise<void> {
     const track = this.activeTrack;
     this.activeTrack = undefined;
     this.previewReadyHandler = undefined;
+    this.previewStream = undefined;
     this.storedUseMicrophone = false;
     this.hasCapturedFrame = false;
     this.isPreviewAttached = false;
 
-    await this.captureManager.stop();
+    await this.rtcManager.stopCameraCapture();
+    await this.rtcManager.destroy();
     if (track) {
       VideoRenderRegistry.unregister(track);
       track.mediaStreamTrack = undefined;
@@ -167,6 +162,9 @@ export class CameraController implements CameraControlling {
 
   /**
    * 在前置和后置摄像头之间切换，保留当前视频轨道。
+   *
+   * 新视频轨原位替换预览流中的旧轨（旧轨由 RTC 层释放，此处不
+   * 主动停止），已挂载的预览视图无需重新绑定。
    *
    * @returns 包含更新后相机轨道的媒体流。
    * @throws 相机流尚未启动或设备切换失败时抛出错误。
@@ -184,9 +182,17 @@ export class CameraController implements CameraControlling {
       position === CameraPosition.front ? CameraPosition.back : CameraPosition.front;
 
     // 采集切换失败时旧设备保持不变。
-    const mediaTrack = await this.captureManager.switchCamera(nextPosition);
+    const mediaTrack = await this.rtcManager.switchCameraCapture(nextPosition);
+    const previousTrack = track.mediaStreamTrack;
     track.updatePosition(nextPosition);
     track.mediaStreamTrack = mediaTrack;
+    if (this.previewStream) {
+      if (previousTrack) {
+        this.previewStream.removeTrack(previousTrack);
+      }
+      this.previewStream.addTrack(mediaTrack);
+    }
+    this.observeMediaTrack(track, mediaTrack);
     return new RealtimeMediaStream({ id: StreamID.local, videoTrack: track });
   }
 
@@ -194,7 +200,7 @@ export class CameraController implements CameraControlling {
   private registerPreviewBinding(track: RealtimeVideoTrack): void {
     VideoRenderRegistry.register(track, {
       attachHandler: (view) => {
-        const stream = this.captureManager.mediaStream;
+        const stream = this.previewStream;
         if (!stream) {
           throw new XmaxError(
             XmaxErrorCode.mediaError,
@@ -210,6 +216,42 @@ export class CameraController implements CameraControlling {
         view.setMediaStream(null);
         this.isPreviewAttached = false;
       },
+    });
+  }
+
+  /** 监听媒体轨首帧与意外结束：首帧推进预览就绪，意外结束上报错误。 */
+  private observeMediaTrack(
+    track: RealtimeVideoTrack,
+    mediaTrack: MediaStreamTrack,
+  ): void {
+    const isCurrent = () =>
+      this.activeTrack === track && track.mediaStreamTrack === mediaTrack;
+    if (mediaTrack.muted) {
+      mediaTrack.addEventListener(
+        "unmute",
+        () => {
+          if (!isCurrent()) {
+            return;
+          }
+          this.hasCapturedFrame = true;
+          this.notifyPreviewReady(track);
+        },
+        { once: true },
+      );
+    } else {
+      this.hasCapturedFrame = true;
+      this.notifyPreviewReady(track);
+    }
+    mediaTrack.addEventListener("ended", () => {
+      if (!isCurrent()) {
+        return;
+      }
+      this.errorListener(
+        new XmaxError(
+          XmaxErrorCode.mediaError,
+          "Camera video track ended unexpectedly",
+        ),
+      );
     });
   }
 
