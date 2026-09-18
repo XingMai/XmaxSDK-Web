@@ -1,4 +1,6 @@
 import type { CameraPosition } from "../Media/Camera/CameraPosition";
+import type { RtcEventListener } from "./RtcEventListener";
+import type { RoomJoinConfiguration } from "./RoomJoinConfiguration";
 
 /** 摄像头采集参数。 */
 export interface RtcCameraCaptureOptions {
@@ -16,7 +18,7 @@ export interface RtcCameraCaptureOptions {
 }
 
 /**
- * 定义 RTC 引擎生命周期与媒体传输能力。
+ * 定义 RTC 引擎生命周期、房间、媒体传输和消息能力。
  *
  * 采集由 TRTC 内部完成（`startLocalVideo`）：SDK 不直接调用
  * getUserMedia，浏览器兼容性差异由 TRTC 适配。采集阶段不发布
@@ -50,4 +52,70 @@ export interface RtcManaging {
 
   /** 停止摄像头采集。 */
   stopCameraCapture(): Promise<void>;
+
+  /**
+   * 加入 RTC 房间。
+   *
+   * @throws 引擎未初始化、进房参数无效或进房失败时抛出错误。
+   */
+  joinRoom(configuration: RoomJoinConfiguration): Promise<void>;
+
+  /** 离开当前 RTC 房间；未在房间中时不产生效果。 */
+  leaveRoom(): Promise<void>;
+
+  /**
+   * 发布本地视频流。
+   *
+   * @throws 摄像头采集未启动或发布失败时抛出错误。
+   */
+  publishLocalVideo(): Promise<void>;
+
+  /** 停止发布本地视频流；采集保持运行，本地预览不受影响。 */
+  unpublishLocalVideo(): Promise<void>;
+
+  /**
+   * 发布本地音频流；首次调用时启动麦克风采集。
+   *
+   * @throws 麦克风权限被拒绝或发布失败时抛出错误。
+   */
+  publishLocalAudio(): Promise<void>;
+
+  /** 停止发布本地音频流；麦克风采集保持运行。 */
+  unpublishLocalAudio(): Promise<void>;
+
+  /**
+   * 更新远端视频主流订阅状态。
+   *
+   * @returns 订阅成功时返回远端视频轨，供渲染层绑定；取消订阅时返回空。
+   * @throws 订阅或停止订阅失败时抛出错误。
+   */
+  subscribeRemoteVideo(
+    userID: string,
+    subscribe: boolean,
+  ): Promise<MediaStreamTrack | undefined>;
+
+  /**
+   * 更新远端音频订阅状态。
+   *
+   * @throws 操作失败时抛出错误。
+   */
+  subscribeRemoteAudio(userID: string, subscribe: boolean): Promise<void>;
+
+  /**
+   * 设置指定远端用户的音频播放音量。
+   *
+   * @param volume 音量，取值范围为 `0...100`。
+   */
+  setRemoteAudioVolume(volume: number, userID: string): void;
+
+  /**
+   * 向当前 RTC 房间发送自定义消息（`cmdId = 1`）。
+   *
+   * @param message UTF-8 文本消息；编码后不得超过 1000 字节。
+   * @throws 未在房间中或消息超长时抛出错误。
+   */
+  sendRoomMessage(message: string): void;
+
+  /** 设置 RTC 事件监听器，传入空值时清除监听器。 */
+  setEventListener(listener?: RtcEventListener): void;
 }

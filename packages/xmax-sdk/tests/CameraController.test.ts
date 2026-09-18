@@ -108,6 +108,21 @@ class RtcManagingStub implements RtcManaging {
     this.stopCaptureCalls += 1;
   }
 
+  // 房间与发布能力：相机管线测试不涉及，空实现满足接口。
+  async joinRoom(): Promise<void> {}
+  async leaveRoom(): Promise<void> {}
+  async publishLocalVideo(): Promise<void> {}
+  async unpublishLocalVideo(): Promise<void> {}
+  async publishLocalAudio(): Promise<void> {}
+  async unpublishLocalAudio(): Promise<void> {}
+  async subscribeRemoteVideo(): Promise<MediaStreamTrack | undefined> {
+    return undefined;
+  }
+  async subscribeRemoteAudio(): Promise<void> {}
+  setRemoteAudioVolume(): void {}
+  sendRoomMessage(): void {}
+  setEventListener(): void {}
+
   /** 让最近一次采集产出的视频轨收到首帧。 */
   emitFirstFrame(): void {
     this.tracks[this.tracks.length - 1]?.emit("unmute");
