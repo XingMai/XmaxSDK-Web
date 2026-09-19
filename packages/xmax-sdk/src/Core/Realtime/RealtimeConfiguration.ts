@@ -1,4 +1,4 @@
-import type { RealtimeModel } from "./RealtimeModel";
+import type { RealtimeModel } from "../../Service/Realtime/RealtimeModel";
 
 export interface RealtimeConfigurationInit {
   /** 实时生成业务使用的模型。 */

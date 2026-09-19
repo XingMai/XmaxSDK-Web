@@ -1,4 +1,4 @@
-import type { ModelSize } from "../../Core/Realtime/RealtimeModel";
+import type { ModelSize } from "../Realtime/RealtimeModel";
 
 /**
  * 定义媒体输入规则与平台媒体能力查询能力。

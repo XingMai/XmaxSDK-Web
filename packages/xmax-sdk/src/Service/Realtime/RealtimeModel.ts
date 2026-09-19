@@ -1,4 +1,4 @@
-import { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
+import { RealtimeVideoFormat } from "./RealtimeVideoFormat";
 
 /**
  * SDK 当前支持的实时生成模型。

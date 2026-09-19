@@ -7,9 +7,9 @@ import type {
   RtcManaging,
 } from "../src/Foundation/RTC/RtcManaging";
 import { CameraController } from "../src/Media/Camera/CameraController";
-import { VideoRenderRegistry } from "../src/Render/Video/VideoRenderBinding";
+import { VideoRenderRegistry } from "../src/Service/Realtime/VideoRenderBinding";
 import type { XmaxVideoView } from "../src/Render/Video/XmaxVideoView";
-import { RealtimeModel } from "../src/Core/Realtime/RealtimeModel";
+import { RealtimeModel } from "../src/Service/Realtime/RealtimeModel";
 import { MediaService } from "../src/Service/Media/MediaService";
 import { RealtimeVideoFormat } from "../src/Service/Realtime/RealtimeVideoFormat";
 

@@ -5,7 +5,7 @@ import {
   RealtimeModel,
   resolutionBuckets,
   type ModelSize,
-} from "../../Core/Realtime/RealtimeModel";
+} from "../Realtime/RealtimeModel";
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import type { MediaServicing } from "./MediaServicing";
 

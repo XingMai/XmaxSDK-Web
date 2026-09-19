@@ -5,7 +5,7 @@ import { RtcManager } from "../../Foundation/RTC/RtcManager";
 import type { RtcManaging } from "../../Foundation/RTC/RtcManaging";
 import { CameraController } from "../../Media/Camera/CameraController";
 import type { CameraControlling } from "../../Media/Camera/CameraControlling";
-import { VideoRenderRegistry } from "../../Render/Video/VideoRenderBinding";
+import { VideoRenderRegistry } from "../../Service/Realtime/VideoRenderBinding";
 import { MediaService } from "../../Service/Media/MediaService";
 import type { ApiServicing } from "../../Service/Network/ApiServicing";
 import type { RealtimeContext } from "../../Service/Realtime/RealtimeContext";

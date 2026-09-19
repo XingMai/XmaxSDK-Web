@@ -1,7 +1,7 @@
 import { VideoContentMode } from "../../Foundation/Media/Video/VideoContentMode";
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
 import type { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
-import { VideoRenderRegistry } from "./VideoRenderBinding";
+import { VideoRenderRegistry } from "../../Service/Realtime/VideoRenderBinding";
 
 const OBJECT_FIT: Record<VideoContentMode, "contain" | "cover"> = {
   [VideoContentMode.fit]: "contain",

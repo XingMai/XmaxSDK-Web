@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RealtimeModel } from "../src/Core/Realtime/RealtimeModel";
+import { RealtimeModel } from "../src/Service/Realtime/RealtimeModel";
 import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import { ApiMethod, type ApiServicing } from "../src/Service/Network/ApiServicing";
 import type { RealtimeSession } from "../src/Service/Realtime/RealtimeSession";

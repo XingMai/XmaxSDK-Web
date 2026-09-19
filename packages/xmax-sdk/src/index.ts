@@ -2,16 +2,10 @@
 export { XmaxClient } from "./Core/XmaxClient";
 export { XmaxConfiguration } from "./Core/XmaxConfiguration";
 export type { XmaxConfigurationInit } from "./Core/XmaxConfiguration";
-export { XmaxEnvironment, apiBaseURL } from "./Core/XmaxEnvironment";
 
 // Core / Realtime
 export { RealtimeConfiguration } from "./Core/Realtime/RealtimeConfiguration";
 export type { RealtimeConfigurationInit } from "./Core/Realtime/RealtimeConfiguration";
-export {
-  RealtimeModel,
-  defaultCameraVideoFormat,
-  defaultFrameRate,
-} from "./Core/Realtime/RealtimeModel";
 export type { XmaxRealtimeManaging } from "./Core/Realtime/XmaxRealtimeManaging";
 
 // Foundation
@@ -20,11 +14,17 @@ export type { XmaxErrorListener } from "./Foundation/Errors/XmaxError";
 export { XmaxLogger, XmaxLoggerOption } from "./Foundation/Logging/XmaxLogger";
 export { CameraPosition } from "./Foundation/Media/Camera/CameraPosition";
 export { VideoContentMode } from "./Foundation/Media/Video/VideoContentMode";
+export { XmaxEnvironment, apiBaseURL } from "./Foundation/Runtime/XmaxEnvironment";
 
 // Service / Realtime
 export { RealtimeContext } from "./Service/Realtime/RealtimeContext";
 export type { RealtimeContextInit } from "./Service/Realtime/RealtimeContext";
 export { RealtimeMediaStream } from "./Service/Realtime/RealtimeMediaStream";
+export {
+  RealtimeModel,
+  defaultCameraVideoFormat,
+  defaultFrameRate,
+} from "./Service/Realtime/RealtimeModel";
 export {
   RealtimeConnectionState,
   RealtimeReason,

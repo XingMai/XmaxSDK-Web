@@ -1,5 +1,5 @@
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
-import type { RealtimeModel } from "../../Core/Realtime/RealtimeModel";
+import type { RealtimeModel } from "./RealtimeModel";
 import type { ApiServicing } from "../Network/ApiServicing";
 import { RealtimeSession } from "./RealtimeSession";
 import { RealtimeSessionConnection } from "./RealtimeSessionConnection";

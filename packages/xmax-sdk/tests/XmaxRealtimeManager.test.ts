@@ -3,7 +3,7 @@ import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import { CameraPosition } from "../src/Foundation/Media/Camera/CameraPosition";
 import type { CameraControlling, CameraPreviewReadyHandler } from "../src/Media/Camera/CameraControlling";
 import { RealtimeConfiguration } from "../src/Core/Realtime/RealtimeConfiguration";
-import { RealtimeModel } from "../src/Core/Realtime/RealtimeModel";
+import { RealtimeModel } from "../src/Service/Realtime/RealtimeModel";
 import { XmaxRealtimeManager } from "../src/Core/Realtime/XmaxRealtimeManager";
 import { RealtimeContext } from "../src/Service/Realtime/RealtimeContext";
 import { RealtimeMediaStream } from "../src/Service/Realtime/RealtimeMediaStream";

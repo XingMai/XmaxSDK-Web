@@ -1,4 +1,4 @@
-import { XmaxEnvironment } from "../../Core/XmaxEnvironment";
+import { XmaxEnvironment } from "../Runtime/XmaxEnvironment";
 
 /**
  * 控制 XmaxSDK 输出的日志类型（位掩码，可组合）。

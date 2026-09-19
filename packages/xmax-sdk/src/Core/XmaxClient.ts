@@ -5,12 +5,12 @@ import type { MediaServicing } from "../Service/Media/MediaServicing";
 import { MediaService } from "../Service/Media/MediaService";
 import type { StorageServicing } from "../Service/Storage/StorageServicing";
 import { StorageService } from "../Service/Storage/StorageService";
-import { RealtimeModel } from "./Realtime/RealtimeModel";
+import { RealtimeModel } from "../Service/Realtime/RealtimeModel";
 import type { RealtimeConfiguration } from "./Realtime/RealtimeConfiguration";
 import { XmaxRealtimeManager } from "./Realtime/XmaxRealtimeManager";
 import type { XmaxRealtimeManaging } from "./Realtime/XmaxRealtimeManaging";
 import { XmaxConfiguration } from "./XmaxConfiguration";
-import { apiBaseURL } from "./XmaxEnvironment";
+import { apiBaseURL } from "../Foundation/Runtime/XmaxEnvironment";
 
 /**
  * SDK 的统一入口，负责创建实时和媒体服务组件。

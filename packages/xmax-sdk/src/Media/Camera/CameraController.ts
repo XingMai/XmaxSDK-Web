@@ -4,7 +4,7 @@ import type { PermissionManaging } from "../../Foundation/Permissions/Permission
 import { PermissionManager } from "../../Foundation/Permissions/PermissionManager";
 import type { RtcManaging } from "../../Foundation/RTC/RtcManaging";
 import { RtcManager } from "../../Foundation/RTC/RtcManager";
-import { VideoRenderRegistry } from "../../Render/Video/VideoRenderBinding";
+import { VideoRenderRegistry } from "../../Service/Realtime/VideoRenderBinding";
 import type { MediaServicing } from "../../Service/Media/MediaServicing";
 import { MediaService } from "../../Service/Media/MediaService";
 import { RealtimeMediaStream } from "../../Service/Realtime/RealtimeMediaStream";

@@ -1,6 +1,6 @@
 import { XmaxError, XmaxErrorCode } from "../Foundation/Errors/XmaxError";
 import { XmaxLoggerOption } from "../Foundation/Logging/XmaxLogger";
-import { XmaxEnvironment } from "./XmaxEnvironment";
+import { XmaxEnvironment } from "../Foundation/Runtime/XmaxEnvironment";
 
 export interface XmaxConfigurationInit {
   /** 调用 Xmax 服务使用的 API Key。 */

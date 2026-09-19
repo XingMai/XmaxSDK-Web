@@ -1,4 +1,4 @@
-import type { RealtimeModel } from "../../Core/Realtime/RealtimeModel";
+import type { RealtimeModel } from "./RealtimeModel";
 import type {
   RealtimeSessionHeartbeatFailureHandler,
   RealtimeSessionHeartbeatRefreshHandler,

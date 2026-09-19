@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RealtimeModel } from "../src/Core/Realtime/RealtimeModel";
+import { RealtimeModel } from "../src/Service/Realtime/RealtimeModel";
 import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import { MediaService } from "../src/Service/Media/MediaService";
 

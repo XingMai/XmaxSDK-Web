@@ -1,16 +1,29 @@
-import type { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
 import type { VideoContentMode } from "../../Foundation/Media/Video/VideoContentMode";
-import type { XmaxVideoView } from "./XmaxVideoView";
+import type { RealtimeVideoTrack } from "./RealtimeVideoTrack";
+
+/**
+ * 轨道渲染目标。
+ *
+ * 由渲染层视图实现；绑定管线只通过该接口向视图送流和调整镜像，
+ * 不感知具体视图类型。
+ */
+export interface VideoRenderTarget {
+  /** 画面是否镜像显示（仅影响显示，不影响发布流）。 */
+  isMirrored: boolean;
+
+  /** 设置渲染用的媒体流；传 null 清空画面。 */
+  setMediaStream: (stream: MediaStream | null) => void;
+}
 
 /**
  * 轨道与渲染视图之间的绑定行为。
  */
 export interface VideoRenderBinding {
   /** 视图绑定轨道时调用；负责把画面接入视图。 */
-  attachHandler: (view: XmaxVideoView, contentMode: VideoContentMode) => void;
+  attachHandler: (target: VideoRenderTarget, contentMode: VideoContentMode) => void;
 
   /** 视图解绑轨道时调用；负责释放画面资源。 */
-  detachHandler: (view: XmaxVideoView) => void;
+  detachHandler: (target: VideoRenderTarget) => void;
 }
 
 /**
