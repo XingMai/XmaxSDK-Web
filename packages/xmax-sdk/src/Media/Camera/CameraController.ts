@@ -4,6 +4,7 @@ import type { PermissionManaging } from "../../Foundation/Permissions/Permission
 import { PermissionManager } from "../../Foundation/Permissions/PermissionManager";
 import type { RtcManaging } from "../../Foundation/RTC/RtcManaging";
 import { RtcManager } from "../../Foundation/RTC/RtcManager";
+import type { XmaxVideoView } from "../../Render/Video/XmaxVideoView";
 import { VideoRenderRegistry } from "../../Render/Video/VideoRenderBinding";
 import type { MediaServicing } from "../../Service/Media/MediaServicing";
 import { MediaService } from "../../Service/Media/MediaService";
@@ -39,6 +40,7 @@ export class CameraController implements CameraControlling {
   // 本地资源
   private activeTrack?: RealtimeVideoTrack;
   private previewStream?: MediaStream;
+  private previewView?: XmaxVideoView;
 
   // 预览状态
   private hasCapturedFrame = false;
@@ -148,6 +150,7 @@ export class CameraController implements CameraControlling {
     this.activeTrack = undefined;
     this.previewReadyHandler = undefined;
     this.previewStream = undefined;
+    this.previewView = undefined;
     this.storedUseMicrophone = false;
     this.hasCapturedFrame = false;
     this.isPreviewAttached = false;
@@ -192,6 +195,9 @@ export class CameraController implements CameraControlling {
       }
       this.previewStream.addTrack(mediaTrack);
     }
+    if (this.previewView) {
+      this.previewView.isMirrored = nextPosition === CameraPosition.front;
+    }
     this.observeMediaTrack(track, mediaTrack);
     return new RealtimeMediaStream({ id: StreamID.local, videoTrack: track });
   }
@@ -209,11 +215,15 @@ export class CameraController implements CameraControlling {
         }
         view.isMirrored = track.position === CameraPosition.front;
         view.setMediaStream(stream);
+        this.previewView = view;
         this.isPreviewAttached = true;
         this.notifyPreviewReady(track);
       },
       detachHandler: (view) => {
         view.setMediaStream(null);
+        if (this.previewView === view) {
+          this.previewView = undefined;
+        }
         this.isPreviewAttached = false;
       },
     });

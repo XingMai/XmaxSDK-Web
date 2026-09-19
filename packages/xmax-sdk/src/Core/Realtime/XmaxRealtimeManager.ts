@@ -1,5 +1,6 @@
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
+import { CameraPosition } from "../../Foundation/Media/Camera/CameraPosition";
 import { RtcManager } from "../../Foundation/RTC/RtcManager";
 import type { RtcManaging } from "../../Foundation/RTC/RtcManaging";
 import { CameraController } from "../../Media/Camera/CameraController";
@@ -235,6 +236,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       async (token) => {
         const stream = await this.cameraController.switchCamera();
         token.ensureCurrent();
+        this.updateRemoteMirror();
         return stream;
       },
     );
@@ -569,6 +571,8 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     VideoRenderRegistry.register(track, {
       attachHandler: (view) => {
         this.remoteView = view;
+        view.isMirrored =
+          this.cameraController.currentTrack?.position === CameraPosition.front;
         const mediaTrack = track.mediaStreamTrack;
         view.setMediaStream(mediaTrack ? new MediaStream([mediaTrack]) : null);
       },
@@ -579,6 +583,14 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         view.setMediaStream(null);
       },
     });
+  }
+
+  /** 同步远端结果画面的镜像状态：与当前本地摄像头位置保持一致。 */
+  private updateRemoteMirror(): void {
+    if (this.remoteView) {
+      this.remoteView.isMirrored =
+        this.cameraController.currentTrack?.position === CameraPosition.front;
+    }
   }
 
   /** 构造当前远端生成结果媒体流。 */
