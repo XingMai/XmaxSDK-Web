@@ -6,7 +6,6 @@ import type { RtcManaging } from "../../Foundation/RTC/RtcManaging";
 import { CameraController } from "../../Media/Camera/CameraController";
 import type { CameraControlling } from "../../Media/Camera/CameraControlling";
 import { VideoRenderRegistry } from "../../Render/Video/VideoRenderBinding";
-import type { XmaxVideoView } from "../../Render/Video/XmaxVideoView";
 import { MediaService } from "../../Service/Media/MediaService";
 import type { ApiServicing } from "../../Service/Network/ApiServicing";
 import type { RealtimeContext } from "../../Service/Realtime/RealtimeContext";
@@ -69,7 +68,10 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   // 连接资源
   private activeSession?: RealtimeSession;
   private activeRemoteTrack?: RealtimeVideoTrack;
-  private remoteView?: XmaxVideoView;
+  private remoteBinding?: {
+    setMediaStream: (stream: MediaStream | null) => void;
+    setMirrored: (mirrored: boolean) => void;
+  };
 
   // 生成资源
   private currentContext?: RealtimeContext;
@@ -553,7 +555,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       if (track) {
         track.mediaStreamTrack = undefined;
       }
-      this.remoteView?.setMediaStream(null);
+      this.remoteBinding?.setMediaStream(null);
       return;
     }
     if (!track) {
@@ -563,23 +565,28 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       );
     }
     track.mediaStreamTrack = binding.videoTrack;
-    this.remoteView?.setMediaStream(new MediaStream([binding.videoTrack]));
+    this.remoteBinding?.setMediaStream(new MediaStream([binding.videoTrack]));
   }
 
   /** 为远端轨道注册渲染绑定：attach 时挂流占位，媒体轨到达后送入画面。 */
   private registerRemoteBinding(track: RealtimeVideoTrack): void {
     VideoRenderRegistry.register(track, {
       attachHandler: (view) => {
-        this.remoteView = view;
         view.isMirrored =
           this.cameraController.currentTrack?.position === CameraPosition.front;
+        this.remoteBinding = {
+          setMediaStream: (stream) => {
+            view.setMediaStream(stream);
+          },
+          setMirrored: (mirrored) => {
+            view.isMirrored = mirrored;
+          },
+        };
         const mediaTrack = track.mediaStreamTrack;
         view.setMediaStream(mediaTrack ? new MediaStream([mediaTrack]) : null);
       },
       detachHandler: (view) => {
-        if (this.remoteView === view) {
-          this.remoteView = undefined;
-        }
+        this.remoteBinding = undefined;
         view.setMediaStream(null);
       },
     });
@@ -587,10 +594,9 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
 
   /** 同步远端结果画面的镜像状态：与当前本地摄像头位置保持一致。 */
   private updateRemoteMirror(): void {
-    if (this.remoteView) {
-      this.remoteView.isMirrored =
-        this.cameraController.currentTrack?.position === CameraPosition.front;
-    }
+    this.remoteBinding?.setMirrored(
+      this.cameraController.currentTrack?.position === CameraPosition.front,
+    );
   }
 
   /** 构造当前远端生成结果媒体流。 */
@@ -694,7 +700,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     }
     this.activeSession = undefined;
     this.activeRemoteTrack = undefined;
-    this.remoteView = undefined;
+    this.remoteBinding = undefined;
     this.currentContext = undefined;
     this.currentTargetSize = undefined;
 
