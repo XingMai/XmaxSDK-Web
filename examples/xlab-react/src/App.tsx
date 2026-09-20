@@ -4,11 +4,11 @@ import {
   RealtimeConnectionState,
   RealtimeContext,
   RealtimeModel,
+  RealtimeVideoFormat,
   XmaxClient,
   XmaxConfiguration,
   XmaxEnvironment,
   XmaxLoggerOption,
-  defaultCameraVideoFormat,
   type RealtimeMediaStream,
   type RealtimeState,
   type XmaxRealtimeManaging,
@@ -19,6 +19,13 @@ import { clearDebugLogs, useDebugLogs } from "./debugLog";
 
 const API_KEY_STORAGE = "xmax.xlab.apiKey";
 const PROMPT_STORAGE = "xmax.xlab.prompt";
+
+/** 相机采集格式：横屏 1920×1024（x2.0 受像素上限约束会自动等比缩小）。 */
+const CAMERA_VIDEO_FORMAT = new RealtimeVideoFormat({
+  width: 1920,
+  height: 1024,
+  fps: 30,
+});
 
 export function App() {
   const [apiKey, setApiKey] = useState(
@@ -113,21 +120,39 @@ export function App() {
     });
   }
 
+  /**
+   * 一键完成开启摄像头到开始生成的完整流程。
+   *
+   * 未填写 API Key 时只开启本地预览；已存在本地流时复用为
+   * 开始/更新生成条件。
+   */
   async function handleStart() {
     setBusy(true);
     setErrorText("");
     try {
-      const realtime = client.createRealtimeManager(
-        new RealtimeConfiguration({ model }),
-      );
-      realtimeRef.current = realtime;
-      await attachStateListener(realtime);
-      const stream = await realtime.createLocalCameraStream({
-        videoFormat: defaultCameraVideoFormat(model),
-        position: CameraPosition.front,
-        useMicrophone,
+      let realtime = realtimeRef.current;
+      let stream = localStream;
+      if (!realtime || !stream) {
+        realtime = client.createRealtimeManager(
+          new RealtimeConfiguration({ model }),
+        );
+        realtimeRef.current = realtime;
+        await attachStateListener(realtime);
+        stream = await realtime.createLocalCameraStream({
+          videoFormat: CAMERA_VIDEO_FORMAT,
+          position: CameraPosition.front,
+          useMicrophone,
+        });
+        setLocalStream(stream);
+      }
+      if (!apiKey) {
+        return;
+      }
+      const remote = await realtime.startGeneration({
+        localStream: stream,
+        context: new RealtimeContext({ prompt, referencePath }),
       });
-      setLocalStream(stream);
+      setRemoteStream(remote);
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : String(error));
     } finally {
@@ -145,26 +170,6 @@ export function App() {
     try {
       const stream = await realtime.switchCamera();
       setLocalStream(stream);
-    } catch (error) {
-      setErrorText(error instanceof Error ? error.message : String(error));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleGenerate() {
-    const realtime = realtimeRef.current;
-    if (!realtime || !localStream) {
-      return;
-    }
-    setBusy(true);
-    setErrorText("");
-    try {
-      const remote = await realtime.startGeneration({
-        localStream,
-        context: new RealtimeContext({ prompt, referencePath }),
-      });
-      setRemoteStream(remote);
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : String(error));
     } finally {
@@ -345,15 +350,18 @@ export function App() {
       </div>
 
       <div className="controls">
-        <button onClick={handleStart} disabled={busy || !!localStream}>
-          开启摄像头
-        </button>
         <button
-          onClick={handleGenerate}
-          disabled={busy || !localStream || !apiKey}
-          title={apiKey ? "" : "生成需要填写 API Key"}
+          onClick={handleStart}
+          disabled={busy || (!!localStream && !apiKey)}
+          title={
+            apiKey
+              ? ""
+              : localStream
+                ? "生成需要填写 API Key"
+                : "未填写 API Key 时只开启本地预览"
+          }
         >
-          {isGenerating ? "更新条件" : "开始生成"}
+          {!localStream ? "开启摄像头" : isGenerating ? "更新条件" : "开始生成"}
         </button>
         <button
           className="secondary"
