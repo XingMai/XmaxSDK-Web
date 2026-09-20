@@ -26,8 +26,8 @@ const RESOLUTION_BUCKETS: Record<RealtimeModel, ModelSize[]> = {
     { width: 1920, height: 1024 },
   ],
   [RealtimeModel.x2_fast_1080p]: [
-    { width: 1080, height: 1920 },
-    { width: 1920, height: 1080 },
+    { width: 1024, height: 1920 },
+    { width: 1920, height: 1024 },
   ],
 };
 
@@ -70,6 +70,6 @@ export function defaultCameraVideoFormat(model: RealtimeModel): RealtimeVideoFor
     case RealtimeModel.x2_0_pro:
       return new RealtimeVideoFormat({ width: 1024, height: 1920, fps: 30 });
     case RealtimeModel.x2_fast_1080p:
-      return new RealtimeVideoFormat({ width: 1080, height: 1920, fps: 30 });
+      return new RealtimeVideoFormat({ width: 1024, height: 1920, fps: 30 });
   }
 }

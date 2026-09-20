@@ -54,7 +54,7 @@ body {
 
 .stage {
   width: 100%;
-  aspect-ratio: 832 / 1472;
+  aspect-ratio: 1920 / 1024;
   border-radius: 16px;
   overflow: hidden;
   background: #000;
