@@ -12,6 +12,7 @@ import type { XmaxVideoView } from "../src/Render/Video/XmaxVideoView";
 import { RealtimeModel } from "../src/Service/Realtime/RealtimeModel";
 import { MediaService } from "../src/Service/Media/MediaService";
 import { RealtimeVideoFormat } from "../src/Service/Realtime/RealtimeVideoFormat";
+import type { VideoEncodingConfiguration } from "../src/Foundation/RTC/VideoEncodingConfiguration";
 
 /** Node 环境没有 MediaStream，提供最小实现供预览流逻辑使用。 */
 class MediaStreamStub {
@@ -107,6 +108,10 @@ class RtcManagingStub implements RtcManaging {
   async stopCameraCapture(): Promise<void> {
     this.stopCaptureCalls += 1;
   }
+
+  async configureVideoEncoding(): Promise<void> {}
+
+  encodingConfigurations: VideoEncodingConfiguration[] = [];
 
   // 房间与发布能力：相机管线测试不涉及，空实现满足接口。
   async joinRoom(): Promise<void> {}

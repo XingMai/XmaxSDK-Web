@@ -9,7 +9,9 @@ describe("RealtimeVideoFormat", () => {
   it("accepts positive even dimensions and positive fps", () => {
     const format = new RealtimeVideoFormat({ width: 832, height: 1472, fps: 30 });
     expect(() => format.validate()).not.toThrow();
-    expect(format.encoderPreference).toBe(RealtimeVideoEncoderPreference.auto);
+    expect(format.encoderPreference).toBe(
+      RealtimeVideoEncoderPreference.maintainFramerate,
+    );
   });
 
   it("rejects odd dimensions", () => {

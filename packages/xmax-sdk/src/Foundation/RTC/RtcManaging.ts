@@ -1,6 +1,7 @@
 import type { CameraPosition } from "../Media/Camera/CameraPosition";
 import type { RtcEventListener } from "./RtcEventListener";
 import type { RoomJoinConfiguration } from "./RoomJoinConfiguration";
+import type { VideoEncodingConfiguration } from "./VideoEncodingConfiguration";
 
 /** 摄像头采集参数。 */
 export interface RtcCameraCaptureOptions {
@@ -52,6 +53,17 @@ export interface RtcManaging {
 
   /** 停止摄像头采集。 */
   stopCameraCapture(): Promise<void>;
+
+  /**
+   * 配置本地视频编码参数。
+   *
+   * 采集阶段不发布，编码参数只影响发送端，在发布前配置即可生效。
+   *
+   * @throws 采集未启动或编码参数配置失败时抛出错误。
+   */
+  configureVideoEncoding(
+    configuration: VideoEncodingConfiguration,
+  ): Promise<void>;
 
   /**
    * 加入 RTC 房间。

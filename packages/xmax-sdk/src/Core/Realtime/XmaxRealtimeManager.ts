@@ -400,6 +400,17 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       );
     }
 
+    // 发布本地流之前配置编码参数：采集阶段不发布，此处配置即可生效到发送端。
+    const videoFormat = localTrack.videoFormat;
+    if (!videoFormat) {
+      throw new XmaxError(
+        XmaxErrorCode.internalError,
+        "Local video stream has no video format",
+      );
+    }
+    await streamController.setVideoEncoderConfig(videoFormat);
+    token.ensureCurrent();
+
     await streamController.connect(connection, this.cameraController.useMicrophone, () => {
       token.ensureCurrent();
     });

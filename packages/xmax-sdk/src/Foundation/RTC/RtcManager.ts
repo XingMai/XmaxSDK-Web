@@ -9,6 +9,10 @@ import {
 import type { RtcEventListener } from "./RtcEventListener";
 import type { RoomJoinConfiguration } from "./RoomJoinConfiguration";
 import type { RtcCameraCaptureOptions, RtcManaging } from "./RtcManaging";
+import {
+  RtcVideoEncoderPreference,
+  type VideoEncodingConfiguration,
+} from "./VideoEncodingConfiguration";
 
 /** TRTC 事件名（字符串字面量，避免在非浏览器环境引用 TRTC 运行时常量）。 */
 const RTC_EVENT = {
@@ -25,6 +29,20 @@ const CUSTOM_MESSAGE_CMD_ID = 1;
 
 /** 房间自定义消息编码后的字节上限。 */
 const ROOM_MESSAGE_MAX_BYTES = 1000;
+
+/**
+ * 采集启动时的占位码率（kbps）。
+ *
+ * 采集阶段不发布，该值不会生效到发送端；发布前由编码控制器按
+ * 参考表计算的码率覆盖。
+ */
+const CAPTURE_PLACEHOLDER_BITRATE = 1000;
+
+/** 编码策略偏好到 TRTC 弱网偏好的映射。 */
+const QOS_PREFERENCE_MAP: Record<RtcVideoEncoderPreference, "smooth" | "clear"> = {
+  [RtcVideoEncoderPreference.maintainFramerate]: "smooth",
+  [RtcVideoEncoderPreference.maintainQuality]: "clear",
+};
 
 /** 引擎事件订阅需要的最小接口，用于隔离 TRTC 事件枚举类型。 */
 interface RtcEventSource {
@@ -141,7 +159,7 @@ export class RtcManager implements RtcManaging {
             width: options.width,
             height: options.height,
             frameRate: options.frameRate,
-            bitrate: RtcManager.resolveBitrate(options),
+            bitrate: CAPTURE_PLACEHOLDER_BITRATE,
           },
         },
       });
@@ -253,6 +271,41 @@ export class RtcManager implements RtcManaging {
           `退出 RTC 房间失败 (Failed to Leave RTC Room)\n` +
           `└─ ${XmaxLogger.localized("原因：", "Reason: ")}${XmaxError.from(error).message}`,
       );
+    }
+  }
+
+  /**
+   * 配置本地视频编码参数。
+   *
+   * TRTC 只接受单一目标码率，以 `maximumBitrate` 作为目标码率；
+   * 编码策略偏好映射为 TRTC 弱网偏好。
+   *
+   * @throws 摄像头采集未启动或编码参数配置失败时抛出错误。
+   */
+  async configureVideoEncoding(
+    configuration: VideoEncodingConfiguration,
+  ): Promise<void> {
+    const engine = this.requireEngine();
+    if (!this.isCapturing) {
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        "Camera capture is not running",
+      );
+    }
+    try {
+      await engine.updateLocalVideo({
+        option: {
+          profile: {
+            width: configuration.width,
+            height: configuration.height,
+            frameRate: configuration.frameRate,
+            bitrate: configuration.maximumBitrate,
+          },
+          qosPreference: QOS_PREFERENCE_MAP[configuration.encoderPreference],
+        },
+      });
+    } catch (error) {
+      throw this.mapError(error);
     }
   }
 
@@ -481,13 +534,5 @@ export class RtcManager implements RtcManaging {
       return new XmaxError(XmaxErrorCode.mediaError, message);
     }
     return new XmaxError(XmaxErrorCode.rtcError, message);
-  }
-
-  /** 按分辨率与帧率估算采集码率（kbps）。 */
-  private static resolveBitrate(options: RtcCameraCaptureOptions): number {
-    const estimated = Math.round(
-      (options.width * options.height * options.frameRate * 0.12) / 1000,
-    );
-    return Math.min(Math.max(estimated, 200), 4000);
   }
 }

@@ -51,6 +51,15 @@ export interface StreamControlling {
   setRemoteAudioVolume(volume: number): void;
 
   /**
+   * 按视频格式配置本地视频编码参数（码率区间与编码策略）。
+   *
+   * 采集阶段不发布，编码参数只影响发送端，需在发布本地流之前配置。
+   *
+   * @throws 格式无效、码率区间无效或 RTC 配置失败时抛出错误。
+   */
+  setVideoEncoderConfig(videoFormat: RealtimeVideoFormat): Promise<void>;
+
+  /**
    * 加入 RTC 房间并发布本地媒体流。
    *
    * @param connection RTC 房间、用户、凭据和目标机器人信息。

@@ -4,9 +4,12 @@ import { RemoteStream } from "../Foundation/RTC/RemoteStream";
 import type { RtcManaging } from "../Foundation/RTC/RtcManaging";
 import type { RealtimePoint } from "../Service/Realtime/RealtimePoint";
 import type { RealtimeSessionConnection } from "../Service/Realtime/RealtimeSessionConnection";
+import type { RealtimeVideoFormat } from "../Service/Realtime/RealtimeVideoFormat";
 import type { RoomListener, RoomControlling } from "./Room/RoomControlling";
 import { RoomController } from "./Room/RoomController";
 import type { RoomEventTargetSize } from "./Room/RoomEvent";
+import type { EncodingControlling } from "./Encoding/EncodingControlling";
+import { EncodingController } from "./Encoding/EncodingController";
 import type {
   RemoteStreamListener,
   StreamControlling,
@@ -53,6 +56,9 @@ export interface StreamControllerOptions {
   /** 房间生命周期与信令组件（可替换，测试用）。 */
   roomController?: RoomControlling;
 
+  /** 视频编码参数配置组件（可替换，测试用）。 */
+  encodingController?: EncodingControlling;
+
   /** 运行期错误回调。 */
   errorListener?: XmaxErrorListener;
 
@@ -75,6 +81,7 @@ export class StreamController implements StreamControlling {
 
   // 传输层组件
   private readonly roomController: RoomControlling;
+  private readonly encodingController: EncodingControlling;
 
   // 事件监听
   private readonly errorListener: XmaxErrorListener;
@@ -94,6 +101,7 @@ export class StreamController implements StreamControlling {
    *
    * @param options.rtcManager RTC 引擎与媒体传输组件。
    * @param options.roomController 房间生命周期与信令组件（可替换，测试用）。
+   * @param options.encodingController 视频编码参数配置组件（可替换，测试用）。
    * @param options.errorListener 运行期错误回调。
    * @param options.remoteStreamListener 远端生成流就绪与清理回调。
    * @param options.generationTimeoutMs 生成开始确认超时时间（毫秒）；默认 30 秒。
@@ -103,6 +111,9 @@ export class StreamController implements StreamControlling {
     this.roomController =
       options.roomController ??
       new RoomController({ rtcManager: options.rtcManager });
+    this.encodingController =
+      options.encodingController ??
+      new EncodingController({ rtcManager: options.rtcManager });
     this.errorListener = options.errorListener ?? (() => {});
     this.remoteStreamListener = options.remoteStreamListener ?? (() => {});
     this.generationTimeoutMs = options.generationTimeoutMs ?? 30_000;
@@ -135,6 +146,15 @@ export class StreamController implements StreamControlling {
       this.rtcManager.setRemoteAudioVolume(rtcVolume, userID);
     }
     this.remoteAudioVolumePercentage = rtcVolume;
+  }
+
+  /**
+   * 按视频格式配置本地视频编码参数（码率区间与编码策略）。
+   *
+   * @throws 格式无效、码率区间无效或 RTC 配置失败时抛出错误。
+   */
+  async setVideoEncoderConfig(videoFormat: RealtimeVideoFormat): Promise<void> {
+    await this.encodingController.configure(videoFormat);
   }
 
   /**

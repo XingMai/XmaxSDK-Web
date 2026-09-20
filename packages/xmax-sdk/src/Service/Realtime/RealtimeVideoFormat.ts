@@ -4,13 +4,10 @@ import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
  * 实时视频的编码策略偏好。
  */
 export enum RealtimeVideoEncoderPreference {
-  /** 平衡帧率和分辨率。 */
-  auto = "auto",
-
-  /** 优先保障帧率。 */
+  /** 优先保障帧率（弱网降分辨率）。 */
   maintainFramerate = "maintainFramerate",
 
-  /** 优先保障分辨率。 */
+  /** 优先保障分辨率（弱网降帧率）。 */
   maintainQuality = "maintainQuality",
 }
 
@@ -30,7 +27,7 @@ export interface RealtimeVideoFormatInit {
   /** 最高上传码率，单位为 kbps；缺省使用 SDK 默认值，指定时必须大于 0。 */
   maximumBitrate?: number;
 
-  /** 上传编码策略偏好，默认平衡帧率和分辨率。 */
+  /** 上传编码策略偏好，默认优先保障帧率。 */
   encoderPreference?: RealtimeVideoEncoderPreference;
 }
 
@@ -53,7 +50,7 @@ export class RealtimeVideoFormat {
    * @param init.fps 视频帧率，必须大于 0。
    * @param init.minimumBitrate 最低上传码率，单位为 kbps；缺省按最终上传尺寸和帧率计算。
    * @param init.maximumBitrate 最高上传码率，单位为 kbps；缺省按最终上传尺寸和帧率计算。
-   * @param init.encoderPreference 上传编码策略偏好，默认值为 auto。
+   * @param init.encoderPreference 上传编码策略偏好，默认值为 maintainFramerate。
    */
   constructor(init: RealtimeVideoFormatInit) {
     this.width = init.width;
@@ -62,7 +59,7 @@ export class RealtimeVideoFormat {
     this.minimumBitrate = init.minimumBitrate;
     this.maximumBitrate = init.maximumBitrate;
     this.encoderPreference =
-      init.encoderPreference ?? RealtimeVideoEncoderPreference.auto;
+      init.encoderPreference ?? RealtimeVideoEncoderPreference.maintainFramerate;
   }
 
   /**

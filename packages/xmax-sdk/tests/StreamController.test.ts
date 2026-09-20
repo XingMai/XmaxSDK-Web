@@ -10,6 +10,7 @@ import { RoomController } from "../src/Stream/Room/RoomController";
 import { RoomHeartbeat } from "../src/Stream/Room/RoomHeartbeat";
 import { StreamController } from "../src/Stream/StreamController";
 import type { RemoteStreamBinding } from "../src/Stream/StreamControlling";
+import type { VideoEncodingConfiguration } from "../src/Foundation/RTC/VideoEncodingConfiguration";
 
 class RtcManagingStub implements RtcManaging {
   isInitialized = true;
@@ -48,6 +49,14 @@ class RtcManagingStub implements RtcManaging {
     throw new XmaxError(XmaxErrorCode.rtcError, "not supported in stub");
   }
   async stopCameraCapture(): Promise<void> {}
+
+  encodingConfigurations: VideoEncodingConfiguration[] = [];
+
+  async configureVideoEncoding(
+    configuration: VideoEncodingConfiguration,
+  ): Promise<void> {
+    this.encodingConfigurations.push(configuration);
+  }
   async joinRoom(configuration: RoomJoinConfiguration): Promise<void> {
     if (this.failNextJoin) {
       const error = this.failNextJoin;

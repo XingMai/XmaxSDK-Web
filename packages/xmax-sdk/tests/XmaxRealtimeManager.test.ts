@@ -129,7 +129,16 @@ class StreamControllingStub implements StreamControlling {
 
   failConnect?: XmaxError;
   failBegin?: XmaxError;
+  failEncoderConfig?: XmaxError;
   confirmationDeferreds: Deferred<void>[] = [];
+  encoderConfigFormats: RealtimeVideoFormat[] = [];
+
+  async setVideoEncoderConfig(videoFormat: RealtimeVideoFormat): Promise<void> {
+    if (this.failEncoderConfig) {
+      throw this.failEncoderConfig;
+    }
+    this.encoderConfigFormats.push(videoFormat);
+  }
 
   async connect(
     connection: RealtimeSessionConnection,
