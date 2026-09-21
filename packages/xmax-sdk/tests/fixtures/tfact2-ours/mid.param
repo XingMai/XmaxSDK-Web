@@ -1,0 +1,29 @@
+7767517
+27 27
+Input in_hbuf 0 1 hbuf
+Input in_gamma 0 1 gamma
+Input in_beta 0 1 beta
+Input in_f16r 0 1 f16r
+Input in_img0 0 1 img0
+Input in_img1 0 1 img1
+TfactFilm film 3 1 hbuf gamma beta hf
+Convolution cb6.c6 1 1 hf a6o 0=96 1=3 11=3 2=1 12=1 3=1 13=1 4=1 14=1 15=1 16=1 5=1 6=82944
+PReLU cb6.p6 1 1 a6o a6op 0=96
+Convolution cb7.c7 1 1 a6op a7o 0=96 1=3 11=3 2=1 12=1 3=1 13=1 4=1 14=1 15=1 16=1 5=1 6=82944
+PReLU cb7.p7 1 1 a7o a7op 0=96
+Eltwise skadd 2 1 a7op f16r t7 0=1
+Deconvolution lastconv 1 1 t7 t8 0=5 1=4 11=4 2=1 12=1 3=2 13=2 4=1 14=1 15=1 16=1 5=1 6=7680
+Crop cflow 1 1 t8 flow4 0=0 1=0 2=0 3=-233 4=-233 5=4
+Crop cmask 1 1 t8 mask1 0=0 1=0 2=4 3=-233 4=-233 5=-233
+TfactRPrep rprep 4 1 flow4 mask1 img0 img1 r0
+Convolution rc0.c0 1 1 r0 r1 0=16 1=3 11=3 2=1 12=1 3=1 13=1 4=1 14=1 15=1 16=1 5=1 6=1584
+PReLU rc0.p0 1 1 r1 r1p 0=16
+Convolution rc1.c1 1 1 r1p r2 0=16 1=3 11=3 2=1 12=1 3=1 13=1 4=1 14=1 15=1 16=1 5=1 6=2304
+PReLU rc1.p1 1 1 r2 r2p 0=16
+Convolution rc2.c2 1 1 r2p r3 0=16 1=3 11=3 2=1 12=1 3=1 13=1 4=1 14=1 15=1 16=1 5=1 6=2304
+PReLU rc2.p2 1 1 r3 r3p 0=16
+Padding rpad 1 1 r3p r3pp 0=1 1=1 2=1 3=1 4=1
+Convolution rout 1 1 r3pp r4 0=3 1=3 11=3 2=1 12=1 3=1 13=1 4=0 14=0 15=0 16=0 5=1 6=432
+Sigmoid rsig 1 1 r4 r5
+Scale r2s 1 1 r5 r6 0=3 1=1
+TfactCompose comp 5 1 flow4 mask1 r6 img0 img1 out

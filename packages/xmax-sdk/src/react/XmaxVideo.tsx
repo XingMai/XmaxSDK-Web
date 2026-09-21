@@ -1,23 +1,23 @@
 import {
   VideoContentMode,
-  XmaxRealtimeVideoView,
+  XmaxVideoView,
   type RealtimeVideoTrack,
-} from "@xmax/sdk";
+} from "../index";
 import {
   useEffect,
   useRef,
   type CSSProperties,
 } from "react";
 
-export interface XmaxRealtimeVideoProps {
-  /** 当前显示的本地视频轨道。 */
-  localTrack?: RealtimeVideoTrack;
-
-  /** 当前显示的远端生成视频轨道；首帧提交后自动渐入。 */
-  remoteTrack?: RealtimeVideoTrack;
+export interface XmaxVideoProps {
+  /** 当前显示的视频轨道；置空时清空画面。 */
+  track?: RealtimeVideoTrack;
 
   /** 视频内容在容器中的显示模式，默认 fill。 */
   videoContentMode?: VideoContentMode;
+
+  /** 是否镜像显示（仅影响显示，不影响发布流）。 */
+  mirrored?: boolean;
 
   /** 容器类名。 */
   className?: string;
@@ -27,26 +27,25 @@ export interface XmaxRealtimeVideoProps {
 }
 
 /**
- * 本地预览和远端生成画面自动切换的 React 组件。
+ * 单轨视频 React 组件：把一路视频轨渲染到容器。
  */
-export function XmaxRealtimeVideo(props: XmaxRealtimeVideoProps) {
+export function XmaxVideo(props: XmaxVideoProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const viewRef = useRef<XmaxRealtimeVideoView | undefined>(undefined);
+  const viewRef = useRef<XmaxVideoView | undefined>(undefined);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) {
       return;
     }
-    const view = new XmaxRealtimeVideoView();
+    const view = new XmaxVideoView();
     view.element.style.width = "100%";
     view.element.style.height = "100%";
     view.attach(container);
     viewRef.current = view;
     return () => {
       viewRef.current = undefined;
-      view.localTrack = undefined;
-      view.remoteTrack = undefined;
+      view.track = undefined;
       view.detach();
     };
   }, []);
@@ -54,16 +53,9 @@ export function XmaxRealtimeVideo(props: XmaxRealtimeVideoProps) {
   useEffect(() => {
     const view = viewRef.current;
     if (view) {
-      view.localTrack = props.localTrack;
+      view.track = props.track;
     }
-  }, [props.localTrack]);
-
-  useEffect(() => {
-    const view = viewRef.current;
-    if (view) {
-      view.remoteTrack = props.remoteTrack;
-    }
-  }, [props.remoteTrack]);
+  }, [props.track]);
 
   useEffect(() => {
     const view = viewRef.current;
@@ -71,6 +63,13 @@ export function XmaxRealtimeVideo(props: XmaxRealtimeVideoProps) {
       view.videoContentMode = props.videoContentMode;
     }
   }, [props.videoContentMode]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (view && props.mirrored !== undefined) {
+      view.isMirrored = props.mirrored;
+    }
+  }, [props.mirrored]);
 
   return (
     <div

@@ -1,5 +1,5 @@
 /** SDK 当前版本号。 */
-export const XMAX_SDK_VERSION = "0.1.0";
+export const XMAX_SDK_VERSION = "1.0.0";
 
 export interface RuntimeInfoSnapshot {
   /** 运行平台标识。 */

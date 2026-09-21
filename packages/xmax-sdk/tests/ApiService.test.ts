@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
+import { RuntimeInfo, XMAX_SDK_VERSION } from "../src/Foundation/Runtime/RuntimeInfo";
 import { ApiService, type ApiFetch } from "../src/Service/Network/ApiService";
 import { ApiMethod } from "../src/Service/Network/ApiServicing";
 
@@ -54,6 +55,8 @@ describe("ApiService", () => {
     expect(request.init.method).toBe(ApiMethod.post);
     expect(request.init.headers["X-Api-Key"]).toBe("test-key");
     expect(request.init.headers["X-Platform"]).toBe("web");
+    expect(request.init.headers["X-SDK-Version"]).toBe(XMAX_SDK_VERSION);
+    expect(RuntimeInfo.toJSON().sdk_version).toBe(XMAX_SDK_VERSION);
     expect(JSON.parse(request.init.body ?? "")).toEqual({ model: "x2.0" });
   });
 

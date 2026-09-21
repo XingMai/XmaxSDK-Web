@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "model": "tfact2_ours",
+  "status": "converted-candidate-not-inference-validated",
+  "targetRuntime": "framegen@1.4.0",
+  "encoding": "little-endian-float32",
+  "offsetUnit": "float32-elements",
+  "tensorCount": 47,
+  "parameterCount": 736456,
+  "bytes": 2945824,
+  "weightsSha256": "daa1d46cb7717344ecdd9b8c171bf7c3a67fd4acedf0add436e6ea21689d7a35",
+  "sources": {
+    "trunk.param": {
+      "bytes": 1109,
+      "sha256": "e8086fed5c2831f686a4911fc5122bc274fa5ae21cfacefadc32517c20678191"
+    },
+    "trunk.bin": {
+      "bytes": 2172704,
+      "sha256": "91f31fc0c6ba56c75658b70392929b39475b920784710bd365a05bbe0ef54a74"
+    },
+    "mid.param": {
+      "bytes": 1327,
+      "sha256": "8b17abb55ee12a0d71d0be00daeda799b56d4c8b65fed981bd6932315059fdee"
+    },
+    "mid.bin": {
+      "bytes": 722772,
+      "sha256": "d129678dc10b26c433a95e297161d3bd2fa0ac16dcb34ca4f59c0e6f1e64fd8e"
+    },
+    "film_mlp.bin": {
+      "bytes": 50432,
+      "sha256": "9bb91e7da0b56f5b02a8563b8305b847fbaca37ae0fa2739757c9f10a2553dad"
+    }
+  },
+  "transformations": [
+    "Remove FP32 NCNN storage flags",
+    "Transpose lastconv [5,96,4,4] to [96,5,4,4] without flipping kernels",
+    "Validate and omit constant Scale [2,2,2], bias [-1,-1,-1]",
+    "Concatenate 47 tensors in runtime manifest order"
+  ],
+  "pendingValidation": [
+    "Confirm headerless film_mlp.bin order: film.0.weight, film.0.bias, film.2.weight, film.2.bias",
+    "Confirm custom TfactFilm, TfactRPrep, TfactCompose and host preprocessing against rt.js",
+    "Compare native reference and WebGPU output for identical input frames (including timestep 0.5)",
+    "Measure real-video quality and GPU performance before replacing SDK defaults"
+  ]
+}

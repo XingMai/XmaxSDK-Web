@@ -10,8 +10,7 @@
   },
   "dependencies": {
     "@fontsource-variable/dm-sans": "^5.3.0",
-    "@xmax/react": "workspace:*",
-    "@xmax/sdk": "workspace:*",
+    "@xmaxai/web-sdk": "workspace:*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

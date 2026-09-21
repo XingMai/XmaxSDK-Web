@@ -3,7 +3,7 @@
 通过 `XmaxConfiguration.loggerOptions` 配置日志类型，默认 `none`：
 
 ```ts
-import { XmaxClient, XmaxConfiguration, XmaxLoggerOption } from "@xmax/sdk";
+import { XmaxClient, XmaxConfiguration, XmaxLoggerOption } from "@xmaxai/web-sdk";
 
 const client = new XmaxClient(new XmaxConfiguration({
   apiKey,

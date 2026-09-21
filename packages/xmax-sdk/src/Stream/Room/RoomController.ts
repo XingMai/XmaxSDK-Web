@@ -278,10 +278,10 @@ export class RoomController implements RoomControlling {
         throw XmaxError.from(error);
       }
     }
-    XmaxLogger.room.debug(
+    XmaxLogger.room.info(
       () =>
         `发送房间信令 (Outbound Room Signaling)\n` +
-        `└─ ${XmaxLogger.localized("内容：", "Content: ")}${message}`,
+        `└─ ${XmaxLogger.localized("内容：", "Content:")}\n${JSON.stringify(JSON.parse(message), null, 2)}`,
     );
   }
 

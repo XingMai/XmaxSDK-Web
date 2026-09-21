@@ -14,7 +14,7 @@ export interface RealtimeConfigurationInit {
 
   /**
    * 是否默认开启远端生成画面的插帧。
-   * 与 iOS 对齐；frameInterpolation.enabled 显式设置时优先。
+   * frameInterpolation.enabled 显式设置时优先。
    */
   isFrameInterpolationEnabled?: boolean;
   frameInterpolation?: FrameInterpolationConfiguration;

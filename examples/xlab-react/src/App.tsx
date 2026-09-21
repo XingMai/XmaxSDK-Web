@@ -16,13 +16,14 @@ import {
   type RemoteVideoStatistics,
   type RealtimeState,
   type XmaxRealtimeManaging,
-} from "@xmax/sdk";
-import { XmaxVideo } from "@xmax/react";
+} from "@xmaxai/web-sdk";
+import { XmaxVideo } from "@xmaxai/web-sdk/react";
 import { formatNetworkQuality } from "./formatNetworkQuality";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { EXAMPLE_MODES, type ExampleModeKey } from "./presets";
 import { ReferenceLibrary, type ReferenceItem } from "./ReferenceLibrary";
 import { ReferenceList } from "./ReferenceList";
+import { RemoteVolumeControl } from "./RemoteVolumeControl";
 import { compressReferenceImage } from "./compressReferenceImage";
 
 const API_KEY_STORAGE = "xmax.xlab.apiKey";
@@ -80,6 +81,7 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [interpolationRequested, setInterpolationRequested] = useState(true);
   const [interpolationSwitching, setInterpolationSwitching] = useState(false);
+  const [remoteAudioVolume, setRemoteAudioVolume] = useState(0);
 
   const realtimeRef = useRef<XmaxRealtimeManaging | undefined>(undefined);
   const generationBusyRef = useRef(false);
@@ -345,6 +347,7 @@ export function App() {
     let switchedToSession = false;
     try {
       setActiveModeKey("charx");
+      await realtime.setRemoteAudioVolume(remoteAudioVolume);
       await realtime.setLaunchTimingListener((timing) => {
         if (realtimeRef.current === realtime) {
           setLaunchTiming(timing);
@@ -495,6 +498,19 @@ export function App() {
     references.setMode(mode);
     setActiveModeKey(mode);
     setErrorText("");
+  }
+
+  async function handleRemoteVolumeChange(volume: number) {
+    const realtime = realtimeRef.current;
+    if (!realtime) return;
+    try {
+      await realtime.setRemoteAudioVolume(volume);
+      if (realtimeRef.current === realtime) setRemoteAudioVolume(volume);
+    } catch (error) {
+      if (realtimeRef.current === realtime) {
+        setErrorText(error instanceof Error ? error.message : String(error));
+      }
+    }
   }
 
   /** 停止会话并立刻回到初始界面，连接在后台释放。 */
@@ -750,6 +766,8 @@ export function App() {
           <img className="brandLogo" src="/xmax-wordmark.png" alt="Xmax" />
         </div>
         <div className="sessionControls">
+          <RemoteVolumeControl volume={remoteAudioVolume} disabled={!sessionActive || !realtimeRef.current}
+            onChange={handleRemoteVolumeChange} />
           <button
             type="button"
             className={`interpolationPill${interpolationRequested ? " active" : ""}`}

@@ -2,8 +2,8 @@
 
 ## 接入范围（已实现）
 
-1. 内置 `framegen@1.4.0` runtime 与 v7-small 权重；SDK 构建产物包含模型，无需调用方配置 CDN 或复制资源。
-2. 沿用 iOS 的 `isFrameInterpolationEnabled`、运行时开关及实际生效状态；补充可选 `frameInterpolation` 配置。
+1. 内置 `framegen@1.4.0` runtime 与自训 `tfact2-ours` 权重，人工初步试用正常，尚待完整推理效果验收。仓库只保留自训模型，原模型备份和回切配置已移除。SDK 构建产物只嵌入自训权重，无需调用方配置 CDN 或复制资源。
+2. 提供 `isFrameInterpolationEnabled`、运行时开关及可选 `frameInterpolation` 配置。
 3. 保持原始生成与回传尺寸；插帧开关及故障降级只影响客户端渲染，不发送 `change_target_size`。
 4. 在远端渲染管线中实现 WebGPU 2× 插帧（最多 60fps）、尺寸过渡、关闭/换轨/卸载清理及原视频降级。
 5. 验证配置事务、尺寸规则、帧调度、异步清理与打包；真实 GPU / TRTC 效果单独记录。
@@ -27,12 +27,12 @@ console.log(realtime.isFrameInterpolationEnabled);
 
 模型与 runtime 随 SDK 分发；只在开启且能力可用时创建 GPU 资源。
 约 2.95MB 原始权重编码进 JS（base64 约 3.93MB），ESM/CJS 单份产物约 4MB，
-由应用正常打包和传输，无独立模型 fetch。`pnpm --filter @xmax/sdk build` 会从固定依赖重新生成资源。
+由应用正常打包和传输，无独立模型 fetch。`pnpm --filter @xmaxai/web-sdk build` 会按 `models/active-model.json` 的选择重新生成资源，并校验权重 SHA-256 和 manifest。
 要求安全上下文、WebGPU、`shader-f16` 与 `requestVideoFrameCallback`，按能力检测而非浏览器名称判断。
 首次默认开启不支持时直接播放原视频；显式运行时开启不支持时抛出
 `FRAME_INTERPOLATION_UNSUPPORTED`，现有生成继续运行。
 
-Web 不沿用 iOS 的 90 万像素限制，也不因插帧降低回传分辨率。
+插帧不设置固定像素总量上限，也不降低回传分辨率。
 例如 `1920×1024`、`1280×720` 均按原始尺寸处理；开启、关闭、失败降级都不改变服务端回传尺寸。
 仅保留实际 GPU 纹理尺寸限制和运行时性能降级。尺寸暂不匹配时直接显示原视频；
 GPU 内补齐为 16 的倍数并裁去补边，保持原始分辨率与比例。
@@ -46,7 +46,7 @@ RTC 统计仍反映收到的原始远端流帧率；不将插帧后的显示帧�
 ## 验证
 
 - SDK 单元测试覆盖配置优先级、原始尺寸保留、能力检测、开关和故障不发送尺寸信令、迟到回调、GPU 超时和卸载清理。
-- 本机 Chrome WebGPU 已运行 320×180、1248×702 合成 MediaStream，实际输出插帧，
+- 原模型接入基线：本机 Chrome WebGPU 已运行 320×180、1248×702 合成 MediaStream，实际输出插帧，
   验证关闭、重新开启、卸载、重新挂载和停止；无 GPU 初始化或处理错误。
 - 独立验证页：使用 Vite 以 `packages/xmax-sdk` 为根目录启动，访问
   `/tests/browser/interpolation.html?width=1248&height=702`。不使用摄像头或 API Key。
@@ -62,5 +62,8 @@ React 的 `XmaxVideo` 与 `XmaxRealtimeVideo` 共用底层视频视图，无需�
 
 ## 模型替换
 
-当前使用 Framegen 自带模型作为接入基线。自训模型须保持 runtime 对应的网络结构、张量名称、
-权重布局和 manifest 格式；仅替换任意 `.bin` 文件不能保证兼容。替换权重后重新生成 SDK 内置资源并构建。
+当前仅使用 `tfact2-ours` 自训模型，`packages/xmax-sdk/models/active-model.json` 记录该模型标识。
+更新模型并重新构建后，需刷新页面并重建视频会话，避免旧会话继续使用缓存的 GPU 权重。
+原模型不再作为仓库备份或回退选项；Framegen 运行时依赖保留，但不嵌入其自带权重。
+自训模型须保持 runtime 对应的网络结构、张量名称、权重布局和 manifest 格式；
+仅替换任意 `.bin` 文件不能保证兼容。转换与未验证事项见 [模型说明](../packages/xmax-sdk/models/README.md)。

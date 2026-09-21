@@ -1,10 +1,14 @@
 {
   "name": "xmax-sdk-web",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
+  "license": "MIT",
   "description": "XmaxSDK for Web — Realtime Interactive Video Generation",
   "type": "module",
+  "packageManager": "pnpm@9.15.9",
   "scripts": {
+    "ci:check": "bash .cicd/ci-check.sh",
+    "ci:test": "node --test .cicd/tests/*.test.mjs",
     "build": "pnpm -r --filter './packages/*' build",
     "test": "pnpm -r --filter './packages/*' test",
     "typecheck": "pnpm -r --filter './packages/*' typecheck",

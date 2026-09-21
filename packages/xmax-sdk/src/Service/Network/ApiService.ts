@@ -1,5 +1,6 @@
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
+import { XMAX_SDK_VERSION } from "../../Foundation/Runtime/RuntimeInfo";
 import { ApiMethod, type ApiServicing } from "./ApiServicing";
 
 /** Xmax API 统一响应信封中的公共元数据。 */
@@ -199,7 +200,7 @@ export class ApiService implements ApiServicing {
           "Content-Type": "application/json",
           "X-Api-Key": this.apiKey,
           "X-Platform": "web",
-          "X-SDK-Version": "0.1.0",
+          "X-SDK-Version": XMAX_SDK_VERSION,
         },
         body: encodedBody,
         signal: AbortSignal.timeout(this.timeoutMs),

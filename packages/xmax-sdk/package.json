@@ -1,6 +1,7 @@
 {
-  "name": "@xmax/sdk",
-  "version": "0.1.0",
+  "name": "@xmaxai/web-sdk",
+  "version": "1.0.0",
+  "license": "MIT",
   "description": "XmaxSDK for Web — Realtime Interactive Video Generation",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -11,11 +12,16 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
+    },
+    "./react": {
+      "types": "./dist/react/index.d.ts",
+      "import": "./dist/react/index.js",
+      "require": "./dist/react/index.cjs"
     }
   },
   "files": [
     "dist",
-    "THIRD_PARTY_NOTICES.md"
+    "LICENSE"
   ],
   "scripts": {
     "build": "node scripts/embed-framegen.mjs && tsup",
@@ -23,10 +29,18 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@types/react": "^18.3.12",
+    "react": "^18.3.1",
     "@webgpu/types": "^0.1.64",
     "tsup": "^8.3.5",
     "typescript": "~5.6.3",
     "vitest": "^2.1.8"
+  },
+  "peerDependencies": {
+    "react": ">=17"
+  },
+  "peerDependenciesMeta": {
+    "react": { "optional": true }
   },
   "dependencies": {
     "framegen": "1.4.0",

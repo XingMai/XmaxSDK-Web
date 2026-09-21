@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
+import { XmaxLogger, XmaxLoggerOption } from "../src/Foundation/Logging/XmaxLogger";
 import type { RtcEventListener } from "../src/Foundation/RTC/RtcEventListener";
 import type { RoomJoinConfiguration } from "../src/Foundation/RTC/RoomJoinConfiguration";
 import type { RtcManaging } from "../src/Foundation/RTC/RtcManaging";
@@ -178,6 +179,29 @@ describe("RoomController", () => {
       ref_image_path: "ref/1.png",
     });
     expect(message.runtime?.platform).toBe("web");
+  });
+
+  it("pretty-prints outbound signaling at info level without changing the wire message", async () => {
+    const { controller, rtc } = makeController();
+    await controller.join(connection, noopEnsureActive);
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    XmaxLogger.configure(XmaxLoggerOption.business);
+    try {
+      controller.startGeneration({ taskID: "task-001", videoFormat, context });
+
+      expect(rtc.sentMessages).toHaveLength(1);
+      const raw = rtc.sentMessages[0]!;
+      const payload = JSON.parse(raw);
+      expect(raw).toBe(JSON.stringify(payload));
+      expect(info).toHaveBeenCalledTimes(1);
+      const args = info.mock.calls[0]!;
+      expect(args[args.length - 1]).toContain(
+        `发送房间信令 (Outbound Room Signaling)\n└─ 内容：\n${JSON.stringify(payload, null, 2)}`,
+      );
+    } finally {
+      XmaxLogger.configure(XmaxLoggerOption.none);
+      info.mockRestore();
+    }
   });
 
   it("sends condition change, target size, stop and tracks signaling", async () => {

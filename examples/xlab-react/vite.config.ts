@@ -7,11 +7,11 @@ export default defineConfig({
   resolve: {
     alias: {
       // 开发时直接使用包源码，无需先构建 SDK。
-      "@xmax/sdk": fileURLToPath(
-        new URL("../../packages/xmax-sdk/src/index.ts", import.meta.url),
+      "@xmaxai/web-sdk/react": fileURLToPath(
+        new URL("../../packages/xmax-sdk/src/react/index.ts", import.meta.url),
       ),
-      "@xmax/react": fileURLToPath(
-        new URL("../../packages/react/src/index.ts", import.meta.url),
+      "@xmaxai/web-sdk": fileURLToPath(
+        new URL("../../packages/xmax-sdk/src/index.ts", import.meta.url),
       ),
     },
   },

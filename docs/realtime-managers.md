@@ -1,6 +1,6 @@
 # 实时 Manager 职责
 
-Web 按 iOS 的连接与生成职责边界拆分，应用仍只使用 `XmaxRealtimeManager`，公开 API、状态回调和统计回调不变。两个子 Manager 为 SDK 内部组件，不从包入口导出。
+实时能力按连接与生成职责拆分，应用只使用 `XmaxRealtimeManager`，由其提供公开 API、状态回调和统计回调。两个子 Manager 为 SDK 内部组件，不从包入口导出。
 
 | 组件 | 职责与持有状态 |
 | --- | --- |

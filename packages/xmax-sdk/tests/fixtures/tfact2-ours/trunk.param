@@ -1,0 +1,20 @@
+7767517
+18 18
+Input in 0 1 xq
+Convolution conv0a.c0 1 1 xq c0a 0=48 1=3 11=3 2=1 12=1 3=2 13=2 4=1 14=1 15=1 16=1 5=1 6=2592
+PReLU conv0a.p0 1 1 c0a c0ap 0=48
+Convolution conv0b.c1 1 1 c0ap f16r 0=96 1=3 11=3 2=1 12=1 3=2 13=2 4=1 14=1 15=1 16=1 5=1 6=41472
+PReLU conv0b.p1 1 1 f16r f16rp 0=96
+Convolution cb0.c0 1 1 f16rp cb0o 0=96 1=3 11=3 2=1 12=1 3=1 13=1 4=1 14=1 15=1 16=1 5=1 6=82944
+PReLU cb0.p0 1 1 cb0o cb0pr 0=96
+Convolution cb1.c0 1 1 cb0pr cb1o 0=96 1=3 11=3 2=1 12=1 3=1 13=1 4=1 14=1 15=1 16=1 5=1 6=82944
+PReLU cb1.p0 1 1 cb1o cb1pr 0=96
+Convolution cb2.c0 1 1 cb1pr cb2o 0=96 1=3 11=3 2=1 12=1 3=1 13=1 4=1 14=1 15=1 16=1 5=1 6=82944
+PReLU cb2.p0 1 1 cb2o cb2pr 0=96
+Convolution cb3.c0 1 1 cb2pr cb3o 0=96 1=3 11=3 2=1 12=1 3=1 13=1 4=1 14=1 15=1 16=1 5=1 6=82944
+PReLU cb3.p0 1 1 cb3o cb3pr 0=96
+Convolution cb4.c0 1 1 cb3pr cb4o 0=96 1=3 11=3 2=1 12=1 3=1 13=1 4=1 14=1 15=1 16=1 5=1 6=82944
+PReLU cb4.p0 1 1 cb4o cb4pr 0=96
+Convolution cb5.c0 1 1 cb4pr hbuf 0=96 1=3 11=3 2=1 12=1 3=1 13=1 4=1 14=1 15=1 16=1 5=1 6=82944
+PReLU cb5.p0 1 1 hbuf hbuf 0=96
+Concat both 2 1 f16rp hbuf both 0=0

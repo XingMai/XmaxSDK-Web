@@ -78,7 +78,7 @@ export class RtcStatsLogger {
     return [title, ...lines.map((line, index) => `${index === lines.length - 1 ? "└─" : "├─"} ${line}`)].join("\n");
   }
 
-  /** TRTC 丢包率已是百分数，无需像 iOS 火山的 ratio 再乘 100。 */
+  /** TRTC 丢包率已是百分数，无需再乘 100。 */
   private static value(value: number | undefined, unit = ""): string {
     if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
       return "—";
