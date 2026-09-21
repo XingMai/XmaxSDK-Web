@@ -379,19 +379,6 @@ button:disabled {
   pointer-events: none;
 }
 
-.switchButton {
-  position: absolute;
-  right: 14px;
-  bottom: 12px;
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  border: none;
-  background: rgba(255, 255, 255, 0.85);
-  color: var(--text);
-  font-size: 16px;
-}
-
 /* ── 生成条件 ──────────────────────────── */
 
 .promptBar {

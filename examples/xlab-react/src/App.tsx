@@ -213,23 +213,6 @@ export function App() {
     }
   }
 
-  async function handleSwitchCamera() {
-    const realtime = realtimeRef.current;
-    if (!realtime) {
-      return;
-    }
-    setBusy(true);
-    setErrorText("");
-    try {
-      const stream = await realtime.switchCamera();
-      setLocalStream(stream);
-    } catch (error) {
-      setErrorText(error instanceof Error ? error.message : String(error));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   /** 选中风格预设：拉取参考图上传为生成条件；生成中自动应用。 */
   async function handleSelectPreset(preset: StylePreset) {
     if (!apiKey) {
@@ -574,14 +557,6 @@ export function App() {
             style={{ width: "100%", height: "100%" }}
           />
           <span className="stageLabel">Local</span>
-          <button
-            className="switchButton"
-            onClick={handleSwitchCamera}
-            disabled={busy}
-            title="Switch camera"
-          >
-            ⇄
-          </button>
         </div>
         <div className="stage">
           <XmaxVideo
