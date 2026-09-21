@@ -330,6 +330,7 @@ export function App() {
     // 会话建立成功后是否已切换到生成页面。
     let switchedToSession = false;
     try {
+      setActiveModeKey("charx");
       await realtime.setLaunchTimingListener((timing) => {
         if (realtimeRef.current === realtime) {
           setLaunchTiming(timing);
@@ -354,11 +355,17 @@ export function App() {
         switchedToSession = true;
         setLocalStream(stream);
       });
-      const remote = await realtime.startGeneration({
-        localStream: stream,
-        context: new RealtimeContext({ prompt: submitPrompt, referencePath }),
+      // 与点击预置图复用选中逻辑，首次请求直接携带该条目的生成条件。
+      await references.selectInitialReference(async (reference) => {
+        const remote = await realtime.startGeneration({
+          localStream: stream,
+          context: new RealtimeContext({
+            prompt: reference.prompt,
+            referencePath: reference.reference_path,
+          }),
+        });
+        if (realtimeRef.current === realtime) setRemoteStream(remote);
       });
-      setRemoteStream(remote);
     } catch (error) {
       if (!switchedToSession) {
         // 会话尚未建立时释放本次会话，停留在初始界面。

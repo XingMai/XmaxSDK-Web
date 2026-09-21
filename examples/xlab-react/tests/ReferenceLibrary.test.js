@@ -17,6 +17,38 @@ function deferred() {
 describe("ReferenceLibrary", () => {
   afterEach(() => vi.restoreAllMocks());
 
+  it("selects the first character preset and generates exactly once without uploading on entry", async () => {
+    const upload = vi.fn();
+    const library = new ReferenceLibrary(upload);
+    const mode = EXAMPLE_MODES.find((mode) => mode.key === "charx");
+    const generate = vi.fn(async (reference) => {
+      expect(library.snapshot.find((item) => item.is_selected)).toEqual(reference);
+      expect(reference).toMatchObject({
+        mode: "charx", name: mode.presets[0].name, prompt: mode.prompt,
+        reference_path: mode.presets[0].reference, is_selected: true,
+      });
+    });
+    await library.selectInitialReference(generate);
+    expect(generate).toHaveBeenCalledOnce();
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it("resets entry to the first built-in character preset after uploads and a mode change", async () => {
+    const library = new ReferenceLibrary(async () => "https://cos.example/local");
+    const firstPresetID = library.snapshot[0].id;
+    await library.addFile(localFile(), "local prompt", async () => {});
+    library.setMode("clothx");
+    await library.select(library.snapshot.find((item) => item.mode === "clothx").id, async () => {});
+    const generate = vi.fn(async () => {});
+    await library.selectInitialReference(generate);
+    expect(library.snapshot.filter((item) => item.is_selected).map((item) => item.id)).toEqual([firstPresetID]);
+    expect(generate).toHaveBeenCalledOnce();
+    // 之后仍可正常点击该模式中的其他条目，不会每次点击都重置默认图。
+    const next = library.snapshot.find((item) => item.mode === "charx" && !item.file && item.id !== firstPresetID);
+    await library.select(next.id, generate);
+    expect(library.snapshot.find((item) => item.is_selected).id).toBe(next.id);
+  });
+
   it("gives each preset its own stable identity, prompt, path and selection state", () => {
     const library = new ReferenceLibrary(vi.fn());
     expect(new Set(library.snapshot.map((item) => item.id)).size).toBe(library.snapshot.length);

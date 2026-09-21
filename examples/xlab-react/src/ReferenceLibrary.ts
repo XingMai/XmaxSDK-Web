@@ -68,6 +68,14 @@ export class ReferenceLibrary {
     this.clearSelection();
   }
 
+  /** 每次进入生成页都从角色替换的第一张预置图开始，不受之前上传和选中项影响。 */
+  async selectInitialReference(apply: ApplyReference): Promise<void> {
+    const first = this.items.find((item) => item.mode === "charx" && !item.file);
+    if (!first) throw new Error("No character replacement preset is available");
+    this.setMode("charx");
+    await this.select(first.id, apply);
+  }
+
   clearSelection(): void {
     this.intent += 1;
     this.update(this.items.map((item) => ({ ...item, is_selected: false })));
