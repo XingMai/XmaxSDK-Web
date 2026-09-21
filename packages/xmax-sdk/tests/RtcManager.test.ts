@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { XmaxLogger, XmaxLoggerOption } from "../src/Foundation/Logging/XmaxLogger";
 import { XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import { CameraPosition } from "../src/Foundation/Media/Camera/CameraPosition";
 import { RemoteStream } from "../src/Foundation/RTC/RemoteStream";
@@ -42,6 +43,10 @@ class FakeRtcEngine {
     const list = this.handlers.get(event) ?? [];
     list.push(handler);
     this.handlers.set(event, list);
+  }
+
+  off(event: string, handler: (event: unknown) => void): void {
+    this.handlers.set(event, (this.handlers.get(event) ?? []).filter((item) => item !== handler));
   }
 
   emit(event: string, payload: unknown): void {
@@ -126,7 +131,175 @@ const joinConfig = new RoomJoinConfiguration({
   privateMapKey: "pmk-v1",
 });
 
+describe("RtcManager performance logging", () => {
+  afterEach(() => {
+    XmaxLogger.configure(XmaxLoggerOption.none);
+    vi.restoreAllMocks();
+  });
+
+  const emitMetrics = (engine: FakeRtcEngine) => {
+    engine.emit("statistics", {
+      rtt: 32, upLoss: 1.5, downLoss: 0,
+      bytesSent: 1000, bytesReceived: 2000,
+      localStatistics: { video: [] }, remoteStatistics: [],
+    });
+    engine.emit("network-quality", {
+      uplinkNetworkQuality: 1, downlinkNetworkQuality: 2,
+      uplinkRTT: 32, downlinkRTT: 48, uplinkLoss: 1.5, downlinkLoss: 0,
+    });
+  };
+
+  it("only logs while joined, follows dynamic options, and resumes on rejoin", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    XmaxLogger.configure(XmaxLoggerOption.performance);
+    const { manager, engine } = makeManager();
+    await manager.initialize();
+    await manager.initialize();
+    emitMetrics(engine);
+    expect(info).not.toHaveBeenCalled();
+
+    await manager.joinRoom(joinConfig);
+    emitMetrics(engine);
+    expect(info).toHaveBeenCalledTimes(2);
+    expect(info.mock.calls[0]![0]).toContain("RTC Statistics");
+    expect(info.mock.calls[1]![0]).toContain("Network Quality Metrics");
+    XmaxLogger.configure(XmaxLoggerOption.business);
+    emitMetrics(engine);
+    expect(info).toHaveBeenCalledTimes(2);
+    XmaxLogger.configure(XmaxLoggerOption.all);
+    emitMetrics(engine);
+    expect(info).toHaveBeenCalledTimes(4);
+
+    await manager.leaveRoom();
+    emitMetrics(engine);
+    expect(info).toHaveBeenCalledTimes(4);
+    await manager.joinRoom(joinConfig);
+    emitMetrics(engine);
+    expect(info).toHaveBeenCalledTimes(6);
+    await manager.destroy();
+  });
+
+  it("removes statistics subscriptions on destroy without duplicates after reinitialization", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    XmaxLogger.configure(XmaxLoggerOption.performance);
+    const { manager, engine } = makeManager();
+    const off = vi.spyOn(engine, "off");
+    await manager.initialize();
+    await manager.joinRoom(joinConfig);
+    await manager.destroy();
+    expect(off).toHaveBeenCalledWith("statistics", expect.any(Function));
+    expect(off).toHaveBeenCalledWith("network-quality", expect.any(Function));
+    emitMetrics(engine);
+    expect(info).not.toHaveBeenCalled();
+
+    await manager.initialize();
+    await manager.joinRoom(joinConfig);
+    emitMetrics(engine);
+    expect(info).toHaveBeenCalledTimes(2);
+    await manager.destroy();
+  });
+});
+
 describe("RtcManager", () => {
+  it("maps remote main-video statistics with cloud RTT and optional video E2E", async () => {
+    const { manager, engine } = makeManager();
+    const listener = vi.fn();
+    manager.setEventListener({
+      onRemoteVideoPublished: () => {}, onCustomMessageReceived: () => {},
+      onRemoteVideoStatistics: listener,
+    });
+    await manager.initialize();
+    await manager.joinRoom(joinConfig);
+    engine.emit("statistics", {
+      rtt: 20,
+      localStatistics: { video: [{ videoType: "big", width: 640, height: 480, frameRate: 30, bitrate: 500 }] },
+      remoteStatistics: [
+        { userId: "audio-only", audio: { point2pointDelay: 999 }, video: [] },
+        { userId: "bot-1", audio: { point2pointDelay: 143 }, video: [
+          { videoType: "small", width: 320, height: 180 },
+          { videoType: "big", width: 1920, height: 1024, frameRate: 26, bitrate: 6399.74, jitterBufferDelay: 42, point2pointDelay: 87 },
+          { videoType: "sub", width: 1280, height: 720 },
+        ] },
+      ],
+    });
+    expect(listener).toHaveBeenLastCalledWith([{
+      userID: "bot-1", width: 1920, height: 1024, frameRate: 26,
+      bitrateKbps: 6399.74, rttMs: 20, endToEndDelayMs: 87,
+    }]);
+    expect(Object.isFrozen(listener.mock.calls[0]![0])).toBe(true);
+    expect(Object.isFrozen(listener.mock.calls[0]![0][0])).toBe(true);
+
+    engine.emit("statistics", {
+      rtt: -1,
+      remoteStatistics: [{ userId: "bot-1", video: [
+        { videoType: "big", width: 1920, height: 1024, frameRate: 0, bitrate: 0, jitterBufferDelay: 87 },
+      ] }],
+    });
+    expect(listener).toHaveBeenLastCalledWith([{
+      userID: "bot-1", width: 1920, height: 1024, frameRate: 0,
+      bitrateKbps: 0, rttMs: undefined, endToEndDelayMs: undefined,
+    }]);
+    engine.emit("statistics", { rtt: 10, remoteStatistics: [] });
+    expect(listener).toHaveBeenLastCalledWith([]);
+    await manager.leaveRoom();
+    engine.emit("statistics", { remoteStatistics: [] });
+    expect(listener).toHaveBeenCalledTimes(3);
+    await manager.destroy();
+  });
+
+  it("forwards actual local main-video metrics independently of the log option", async () => {
+    XmaxLogger.configure(XmaxLoggerOption.none);
+    const { manager, engine } = makeManager();
+    const listener = vi.fn();
+    manager.setEventListener({
+      onRemoteVideoPublished: () => {},
+      onCustomMessageReceived: () => {},
+      onLocalVideoStatistics: listener,
+    });
+    await manager.initialize();
+    const stats = {
+      localStatistics: { video: [
+        { videoType: "small", width: 320, height: 180, frameRate: 10, bitrate: 200 },
+        { videoType: "big", width: 1920, height: 1024, frameRate: 29, bitrate: 6006.51 },
+        { videoType: "sub", width: 1280, height: 720, frameRate: 15, bitrate: 500 },
+      ] },
+      remoteStatistics: [{ video: [{ videoType: "big", width: 640, height: 480, frameRate: 26, bitrate: 800 }] }],
+    };
+    engine.emit("statistics", stats);
+    expect(listener).not.toHaveBeenCalled();
+    await manager.joinRoom(joinConfig);
+    engine.emit("statistics", stats);
+    expect(listener).toHaveBeenLastCalledWith({ width: 1920, height: 1024, frameRate: 29, bitrateKbps: 6006.51 });
+    expect(Object.isFrozen(listener.mock.calls[0]![0])).toBe(true);
+
+    engine.emit("statistics", { localStatistics: { video: [{ videoType: "small" }] } });
+    expect(listener).toHaveBeenLastCalledWith(undefined);
+    await manager.leaveRoom();
+    engine.emit("statistics", stats);
+    expect(listener).toHaveBeenCalledTimes(2);
+    await manager.destroy();
+  });
+
+  it("normalizes invalid video metrics while retaining zero fps and bitrate", async () => {
+    const { manager, engine } = makeManager();
+    const listener = vi.fn();
+    manager.setEventListener({
+      onRemoteVideoPublished: () => {}, onCustomMessageReceived: () => {},
+      onLocalVideoStatistics: listener,
+    });
+    await manager.initialize();
+    await manager.joinRoom(joinConfig);
+    engine.emit("statistics", { localStatistics: { video: [
+      { videoType: "big", width: 0, height: Infinity, frameRate: NaN, bitrate: -1 },
+    ] } });
+    expect(listener).toHaveBeenLastCalledWith({ width: undefined, height: undefined, frameRate: undefined, bitrateKbps: undefined });
+    engine.emit("statistics", { localStatistics: { video: [
+      { videoType: "big", width: 1920, height: 1024, frameRate: 0, bitrate: 0 },
+    ] } });
+    expect(listener).toHaveBeenLastCalledWith({ width: 1920, height: 1024, frameRate: 0, bitrateKbps: 0 });
+    await manager.destroy();
+  });
+
   it("initializes once and destroys the engine with the lease", async () => {
     const { manager, engine } = makeManager();
     expect(manager.isInitialized).toBe(false);

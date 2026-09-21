@@ -2,6 +2,7 @@ import { XmaxError, XmaxErrorCode, type XmaxErrorListener } from "../Foundation/
 import { XmaxLogger } from "../Foundation/Logging/XmaxLogger";
 import { RemoteStream } from "../Foundation/RTC/RemoteStream";
 import type { RtcManaging } from "../Foundation/RTC/RtcManaging";
+import type { RemoteVideoStatisticsListener, VideoStatisticsListener } from "../Foundation/RTC/VideoStatistics";
 import type { RealtimePoint } from "../Service/Realtime/RealtimePoint";
 import type { RealtimeSessionConnection } from "../Service/Realtime/RealtimeSessionConnection";
 import type { RealtimeVideoFormat } from "../Service/Realtime/RealtimeVideoFormat";
@@ -86,6 +87,8 @@ export class StreamController implements StreamControlling {
   // 事件监听
   private readonly errorListener: XmaxErrorListener;
   private readonly remoteStreamListener: RemoteStreamListener;
+  private localVideoStatisticsListener?: VideoStatisticsListener;
+  private remoteVideoStatisticsListener?: RemoteVideoStatisticsListener;
 
   // 生成配置
   private readonly generationTimeoutMs: number;
@@ -120,6 +123,17 @@ export class StreamController implements StreamControlling {
 
     // RTC 事件监听权归传输层：房间消息交给房间控制器组包分发。
     this.rtcManager.setEventListener({
+      onRemoteVideoStatistics: (statistics) => {
+        const userID = this.state.activeRemoteStream?.userID;
+        this.remoteVideoStatisticsListener?.(
+          userID ? statistics.find((item) => item.userID === userID) : undefined,
+        );
+      },
+      onLocalVideoStatistics: (statistics) => {
+        if (this.state.localVideoPublished) {
+          this.localVideoStatisticsListener?.(statistics);
+        }
+      },
       onCustomMessageReceived: (senderUserID, message) => {
         this.roomController.handleIncomingMessage(senderUserID, message);
       },
@@ -132,6 +146,16 @@ export class StreamController implements StreamControlling {
   /** 当前是否存在正在启动或已经运行的生成任务。 */
   get hasGenerationTask(): boolean {
     return this.state.generationTaskID !== undefined;
+  }
+
+  /** 设置本地主视频流统计监听器，不改变 RTC 事件监听权。 */
+  setLocalVideoStatisticsListener(listener?: VideoStatisticsListener): void {
+    this.localVideoStatisticsListener = listener;
+  }
+
+  /** 监听当前实际生成结果流的统计，不按会话下发的 botID 猜测结果流身份。 */
+  setRemoteVideoStatisticsListener(listener?: RemoteVideoStatisticsListener): void {
+    this.remoteVideoStatisticsListener = listener;
   }
 
   /** 当前远端生成音频播放音量，取值范围为 `0...1`。 */
@@ -628,6 +652,7 @@ export class StreamController implements StreamControlling {
 
   /** 通知渲染层清理远端生成流；失败仅记录日志。 */
   private clearRemoteStream(): void {
+    this.remoteVideoStatisticsListener?.(undefined);
     try {
       this.remoteStreamListener(null);
     } catch (error) {

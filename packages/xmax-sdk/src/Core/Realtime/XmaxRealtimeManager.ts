@@ -3,6 +3,7 @@ import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
 import { CameraPosition } from "../../Foundation/Media/Camera/CameraPosition";
 import { RtcManager } from "../../Foundation/RTC/RtcManager";
 import type { RtcManaging } from "../../Foundation/RTC/RtcManaging";
+import type { RemoteVideoStatistics, RemoteVideoStatisticsListener, VideoStatistics, VideoStatisticsListener } from "../../Foundation/RTC/VideoStatistics";
 import { CameraController } from "../../Media/Camera/CameraController";
 import type { CameraControlling } from "../../Media/Camera/CameraControlling";
 import { VideoRenderRegistry } from "../../Service/Realtime/VideoRenderBinding";
@@ -58,6 +59,11 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   private readonly cameraController: CameraControlling;
   private readonly launchTimer = new RealtimeLaunchTimer();
   private remoteFrameDisplayHandler?: () => void;
+  private localVideoStatistics?: VideoStatistics;
+  private localVideoStatisticsListener?: VideoStatisticsListener;
+  private remoteVideoStatistics?: RemoteVideoStatistics;
+  private remoteVideoStatisticsListener?: RemoteVideoStatisticsListener;
+  private acceptsVideoStatistics = false;
 
   // 服务层组件
   private readonly sessionService?: RealtimeSessionServicing;
@@ -124,6 +130,18 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       errorHandler: this.errorHandler,
       cleanup: (scope, taskID) => this.performCleanup(scope, taskID),
     });
+    this.streamController.setLocalVideoStatisticsListener((statistics) => {
+      if (this.acceptsVideoStatistics) {
+        this.localVideoStatistics = statistics ? Object.freeze({ ...statistics }) : undefined;
+        this.notifyLocalVideoStatistics();
+      }
+    });
+    this.streamController.setRemoteVideoStatisticsListener((statistics) => {
+      if (this.acceptsVideoStatistics) {
+        this.remoteVideoStatistics = statistics ? Object.freeze({ ...statistics }) : undefined;
+        this.notifyRemoteVideoStatistics();
+      }
+    });
   }
 
   /** 当前实时连接与生成状态。 */
@@ -153,6 +171,52 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   /** 监听启动耗时；设置后立即回放，传 undefined 取消监听。 */
   async setLaunchTimingListener(listener?: RealtimeLaunchTimingListener): Promise<void> {
     this.launchTimer.setListener(listener);
+  }
+
+  /** 监听本地主视频流的实际运行统计；立即回放最新快照。 */
+  async setLocalVideoStatisticsListener(listener?: VideoStatisticsListener): Promise<void> {
+    this.localVideoStatisticsListener = listener;
+    this.notifyLocalVideoStatistics();
+  }
+
+  /** 监听当前生成结果流的实际运行统计；立即回放最新快照。 */
+  async setRemoteVideoStatisticsListener(listener?: RemoteVideoStatisticsListener): Promise<void> {
+    this.remoteVideoStatisticsListener = listener;
+    this.notifyRemoteVideoStatistics();
+  }
+
+  private notifyRemoteVideoStatistics(): void {
+    try {
+      void Promise.resolve(this.remoteVideoStatisticsListener?.(this.remoteVideoStatistics)).catch(() => {});
+    } catch {
+      // 统计观察者不得打断生成或资源清理。
+    }
+  }
+
+  private clearRemoteVideoStatistics(): void {
+    const hadStatistics = this.remoteVideoStatistics !== undefined;
+    this.remoteVideoStatistics = undefined;
+    if (hadStatistics) {
+      this.notifyRemoteVideoStatistics();
+    }
+  }
+
+  private notifyLocalVideoStatistics(): void {
+    try {
+      void Promise.resolve(this.localVideoStatisticsListener?.(this.localVideoStatistics)).catch(() => {});
+    } catch {
+      // 统计观察者不得打断采集、生成或资源清理。
+    }
+  }
+
+  private clearVideoStatistics(): void {
+    this.acceptsVideoStatistics = false;
+    this.clearRemoteVideoStatistics();
+    const hadStatistics = this.localVideoStatistics !== undefined;
+    this.localVideoStatistics = undefined;
+    if (hadStatistics) {
+      this.notifyLocalVideoStatistics();
+    }
   }
 
   /**
@@ -207,6 +271,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         );
         token.ensureCurrent();
         const completeCamera = this.launchTimer.startCamera();
+        this.clearVideoStatistics();
         let stream: RealtimeMediaStream;
         try {
           token.ensureCurrent();
@@ -233,6 +298,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       undefined,
       async (token) => {
         this.launchTimer.cancel();
+        this.clearVideoStatistics();
         await this.cameraController.stopLocalCameraStream();
         token.ensureCurrent();
         await this.coordinator.commit(
@@ -372,6 +438,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   /** 断开实时连接并保留当前本地媒体预览。 */
   async disconnect(): Promise<void> {
     this.launchTimer.cancel();
+    this.clearVideoStatistics();
     await this.coordinator.disconnect();
   }
 
@@ -381,6 +448,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    */
   async close(): Promise<void> {
     this.launchTimer.cancel();
+    this.clearVideoStatistics();
     await this.coordinator.terminate(RealtimeTerminationScope.all);
   }
 
@@ -441,6 +509,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     token.ensureCurrent();
     completeConnection();
     token.ensureCurrent();
+    this.acceptsVideoStatistics = true;
 
     sessionService.startHeartbeat(session.id, {
       onFailure: (sessionID, error) => {
@@ -593,6 +662,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    * @throws 远端流到达但当前没有活动连接时抛出错误，使生成确认失败。
    */
   private handleRemoteStreamBinding(binding: RemoteStreamBinding | null): void {
+    this.clearRemoteVideoStatistics();
     const track = this.activeRemoteTrack;
     if (!binding) {
       if (track) {
@@ -718,6 +788,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   ): Promise<RealtimeCleanupResult> {
     this.launchTimer.cancel();
     this.remoteFrameDisplayHandler = undefined;
+    this.clearVideoStatistics();
     const sessionID = this.activeSession?.id;
 
     this.sessionService?.stopHeartbeat();

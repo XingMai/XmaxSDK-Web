@@ -8,6 +8,7 @@ import type {
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import type { RealtimeConfiguration } from "./RealtimeConfiguration";
 import type { RealtimeLaunchTimingListener } from "../../Service/Realtime/RealtimeLaunchTiming";
+import type { RemoteVideoStatisticsListener, VideoStatisticsListener } from "../../Foundation/RTC/VideoStatistics";
 
 /**
  * 定义 SDK 对接入方提供的实时媒体与生成控制能力。
@@ -38,6 +39,20 @@ export interface XmaxRealtimeManaging {
    * 传入 undefined 清除监听器；监听器异常不影响生成流程。
    */
   setLaunchTimingListener(listener?: RealtimeLaunchTimingListener): Promise<void>;
+
+  /**
+   * 监听本地主视频流实际分辨率、帧率及码率（kbps），独立于日志开关。
+   * 设置后立即回放最新快照；未取得数据或停止/断开时回调 undefined。
+   * 传入 undefined 取消监听；监听器异常不影响生成流程。
+   */
+  setLocalVideoStatisticsListener(listener?: VideoStatisticsListener): Promise<void>;
+
+  /**
+   * 监听当前生成结果流的分辨率、帧率、码率、云端 RTT 和媒体 E2E 估算值。
+   * 独立于日志开关；立即回放最新快照，流消失或断开时回调 undefined。
+   * 传入 undefined 取消监听；监听器异常不影响生成流程。
+   */
+  setRemoteVideoStatisticsListener(listener?: RemoteVideoStatisticsListener): Promise<void>;
 
   /**
    * 设置本地媒体预览音量。

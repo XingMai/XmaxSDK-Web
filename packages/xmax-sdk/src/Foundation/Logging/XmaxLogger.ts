@@ -7,7 +7,7 @@ export enum XmaxLoggerOption {
   none = 0,
   /** Room、API、Realtime、Storage 等业务运行日志。 */
   business = 1 << 0,
-  /** RTC 性能指标及性能告警日志。 */
+  /** RTC 网络质量和音视频运行统计，输出到 console.info。 */
   performance = 1 << 1,
   /** 输出全部 XmaxSDK 日志。 */
   all = business | performance,
@@ -31,6 +31,12 @@ const CONSOLE_METHOD: Record<XmaxLogLevel, "debug" | "info" | "warn" | "error"> 
   warning: "warn",
   error: "error",
 };
+
+/** Xmax 品牌标签：蓝底白字。 */
+const BRAND_BADGE_STYLE = "background:#2563eb;color:#fff;border-radius:3px;padding:1px 4px;font-weight:600;";
+
+/** 业务域标签：使用深灰蓝，与 Xmax 品牌标签明确区分。 */
+const CATEGORY_BADGE_STYLE = "background:#475569;color:#fff;border-radius:3px;padding:1px 4px;font-weight:600;";
 
 /**
  * 统一输出带 Xmax 前缀和类别的控制台日志。
@@ -110,7 +116,20 @@ export class XmaxLogger {
     if (!XmaxLogger.isEnabled(option)) {
       return;
     }
-    // eslint-disable-next-line no-console
-    console[CONSOLE_METHOD[level]](`[XmaxSDK][${this.category}] ${message()}`);
+    const text = message();
+    if (typeof window !== "undefined" && typeof document !== "undefined") {
+      // 正文通过 %s 传入，避免其中的 %c / %s 等内容被当作控制台格式指令。
+      console[CONSOLE_METHOD[level]](
+        `%c[Xmax]%c %c[${this.category}]%c\n%s`,
+        BRAND_BADGE_STYLE,
+        "",
+        CATEGORY_BADGE_STYLE,
+        "",
+        text,
+      );
+      return;
+    }
+    // SSR、Node 和其他非页面环境使用纯文本前缀。
+    console[CONSOLE_METHOD[level]](`[Xmax][${this.category}] ${text}`);
   }
 }

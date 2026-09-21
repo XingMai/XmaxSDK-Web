@@ -1,4 +1,5 @@
 import type { RemoteStream } from "../Foundation/RTC/RemoteStream";
+import type { RemoteVideoStatisticsListener, VideoStatisticsListener } from "../Foundation/RTC/VideoStatistics";
 import type { RealtimeContext } from "../Service/Realtime/RealtimeContext";
 import type { RealtimePoint } from "../Service/Realtime/RealtimePoint";
 import type { RealtimeSessionConnection } from "../Service/Realtime/RealtimeSessionConnection";
@@ -127,4 +128,10 @@ export interface StreamControlling {
 
   /** 设置房间业务消息监听器，传入空值时清除监听器。 */
   setRoomListener(listener?: RoomListener): void;
+
+  /** 设置本地主视频流统计监听器，传入 undefined 清除。 */
+  setLocalVideoStatisticsListener(listener?: VideoStatisticsListener): void;
+
+  /** 监听当前实际生成结果流的统计，按已接受的远端用户标识过滤。 */
+  setRemoteVideoStatisticsListener(listener?: RemoteVideoStatisticsListener): void;
 }

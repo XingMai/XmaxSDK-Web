@@ -18,6 +18,7 @@ import { RealtimeVideoFormat } from "../src/Service/Realtime/RealtimeVideoFormat
 import { RealtimeVideoTrack } from "../src/Service/Realtime/RealtimeVideoTrack";
 import { StreamID } from "../src/Service/Realtime/StreamID";
 import type { RealtimeLaunchTiming } from "../src/Service/Realtime/RealtimeLaunchTiming";
+import type { RemoteVideoStatisticsListener, VideoStatisticsListener } from "../src/Foundation/RTC/VideoStatistics";
 import { VideoRenderRegistry } from "../src/Service/Realtime/VideoRenderBinding";
 import type {
   StreamControlling,
@@ -118,6 +119,18 @@ class CameraControllingStub implements CameraControlling {
 
 /** 传输层桩：记录全部调用，生成确认由测试手动控制。 */
 class StreamControllingStub implements StreamControlling {
+  remoteVideoStatisticsListener?: RemoteVideoStatisticsListener;
+
+  setRemoteVideoStatisticsListener(listener?: RemoteVideoStatisticsListener): void {
+    this.remoteVideoStatisticsListener = listener;
+  }
+
+  localVideoStatisticsListener?: VideoStatisticsListener;
+
+  setLocalVideoStatisticsListener(listener?: VideoStatisticsListener): void {
+    this.localVideoStatisticsListener = listener;
+  }
+
   hasGenerationTask = false;
   remoteAudioVolume = 1;
 
@@ -262,6 +275,104 @@ function makeLocalStream(camera: CameraControllingStub): RealtimeMediaStream {
 }
 
 const testContext = new RealtimeContext({ prompt: "a red cube" });
+
+describe("XmaxRealtimeManager remote video statistics", () => {
+  it("replays snapshots and clears missing or stopped result metrics without accepting late updates", async () => {
+    const { manager, camera, stream } = makeManager();
+    const listener = vi.fn();
+    const stats = { userID: "bot-1", width: 1920, height: 1024, frameRate: 26, bitrateKbps: 6400, rttMs: 20, endToEndDelayMs: 87 };
+    await manager.setRemoteVideoStatisticsListener(listener);
+    expect(listener).toHaveBeenLastCalledWith(undefined);
+    stream.remoteVideoStatisticsListener?.(stats);
+    expect(listener).toHaveBeenCalledTimes(1);
+    const localStream = makeLocalStream(camera);
+    await manager.connect(localStream);
+    stream.remoteVideoStatisticsListener?.(stats);
+    expect(listener).toHaveBeenLastCalledWith(stats);
+    expect(Object.isFrozen(listener.mock.calls.at(-1)![0])).toBe(true);
+    const replay = vi.fn();
+    await manager.setRemoteVideoStatisticsListener(replay);
+    expect(replay).toHaveBeenLastCalledWith(stats);
+    stream.remoteVideoStatisticsListener?.(undefined);
+    expect(replay).toHaveBeenLastCalledWith(undefined);
+    stream.remoteVideoStatisticsListener?.(stats);
+
+    const disconnecting = manager.disconnect();
+    stream.remoteVideoStatisticsListener?.(stats);
+    await disconnecting;
+    expect(replay).toHaveBeenLastCalledWith(undefined);
+    expect(replay).toHaveBeenCalledTimes(4);
+    await manager.connect(localStream);
+    stream.remoteVideoStatisticsListener?.({ ...stats, endToEndDelayMs: undefined });
+    expect(replay).toHaveBeenLastCalledWith({ ...stats, endToEndDelayMs: undefined });
+    const closing = manager.close();
+    stream.remoteVideoStatisticsListener?.(stats);
+    await closing;
+    expect(replay).toHaveBeenLastCalledWith(undefined);
+    expect(replay).toHaveBeenCalledTimes(6);
+  });
+
+  it.each([false, true])("isolates remote metric observer failures and supports unsubscribe (async: %s)", async (asyncListener) => {
+    const { manager, camera, stream } = makeManager();
+    const fail = vi.fn(() => { throw new Error("observer failed"); });
+    await manager.setRemoteVideoStatisticsListener(asyncListener ? async () => fail() : fail);
+    await manager.connect(makeLocalStream(camera));
+    expect(() => stream.remoteVideoStatisticsListener?.({ userID: "bot-1", rttMs: 0, endToEndDelayMs: 0 })).not.toThrow();
+    expect(fail).toHaveBeenCalledTimes(2);
+    await manager.setRemoteVideoStatisticsListener();
+    stream.remoteVideoStatisticsListener?.({ userID: "bot-1", frameRate: 30 });
+    expect(fail).toHaveBeenCalledTimes(2);
+    await manager.close();
+  });
+});
+
+describe("XmaxRealtimeManager local video statistics", () => {
+  it("replays immutable snapshots, clears on disconnect, and ignores late callbacks", async () => {
+    const { manager, camera, stream } = makeManager();
+    const stats = { width: 1920, height: 1024, frameRate: 30, bitrateKbps: 6006.51 };
+    const listener = vi.fn();
+    await manager.setLocalVideoStatisticsListener(listener);
+    expect(listener).toHaveBeenLastCalledWith(undefined);
+    stream.localVideoStatisticsListener?.(stats);
+    expect(listener).toHaveBeenCalledTimes(1);
+    const localStream = makeLocalStream(camera);
+    await manager.connect(localStream);
+    stream.localVideoStatisticsListener?.(stats);
+    expect(listener).toHaveBeenLastCalledWith(stats);
+    expect(Object.isFrozen(listener.mock.calls.at(-1)![0])).toBe(true);
+    const replay = vi.fn();
+    await manager.setLocalVideoStatisticsListener(replay);
+    expect(replay).toHaveBeenLastCalledWith(stats);
+
+    const disconnecting = manager.disconnect();
+    expect(replay).toHaveBeenLastCalledWith(undefined);
+    stream.localVideoStatisticsListener?.(stats);
+    await disconnecting;
+    expect(replay).toHaveBeenCalledTimes(2);
+
+    await manager.connect(localStream);
+    stream.localVideoStatisticsListener?.({ ...stats, frameRate: 25 });
+    expect(replay).toHaveBeenLastCalledWith({ ...stats, frameRate: 25 });
+    const closing = manager.close();
+    stream.localVideoStatisticsListener?.(stats);
+    await closing;
+    expect(replay).toHaveBeenLastCalledWith(undefined);
+    expect(replay).toHaveBeenCalledTimes(4);
+  });
+
+  it.each([false, true])("isolates throwing observers and supports unsubscribe (async: %s)", async (asyncListener) => {
+    const { manager, camera, stream } = makeManager();
+    const fail = vi.fn(() => { throw new Error("observer failed"); });
+    await manager.setLocalVideoStatisticsListener(asyncListener ? async () => fail() : fail);
+    await manager.connect(makeLocalStream(camera));
+    expect(() => stream.localVideoStatisticsListener?.({ frameRate: 0, bitrateKbps: 0 })).not.toThrow();
+    expect(fail).toHaveBeenCalledTimes(2);
+    await manager.setLocalVideoStatisticsListener();
+    stream.localVideoStatisticsListener?.({ frameRate: 30 });
+    expect(fail).toHaveBeenCalledTimes(2);
+    await manager.close();
+  });
+});
 
 describe("XmaxRealtimeManager launch timing", () => {
   afterEach(() => vi.restoreAllMocks());

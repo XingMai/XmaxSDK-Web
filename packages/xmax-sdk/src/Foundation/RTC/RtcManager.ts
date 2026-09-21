@@ -1,4 +1,5 @@
 import { XmaxError, XmaxErrorCode } from "../Errors/XmaxError";
+import type { NetworkQuality, TRTCStatistics } from "trtc-sdk-v5";
 import { XmaxLogger } from "../Logging/XmaxLogger";
 import { CameraPosition } from "../Media/Camera/CameraPosition";
 import {
@@ -9,6 +10,7 @@ import {
 import type { RtcEventListener } from "./RtcEventListener";
 import type { RoomJoinConfiguration } from "./RoomJoinConfiguration";
 import type { RtcCameraCaptureOptions, RtcManaging } from "./RtcManaging";
+import { RtcStatsLogger } from "./RtcStatsLogger";
 import {
   RtcVideoEncoderPreference,
   type VideoEncodingConfiguration,
@@ -19,6 +21,8 @@ const RTC_EVENT = {
   remoteVideoAvailable: "remote-video-available",
   remoteVideoUnavailable: "remote-video-unavailable",
   customMessage: "custom-message",
+  statistics: "statistics",
+  networkQuality: "network-quality",
 } as const;
 
 /** TRTC 主流类型标识。 */
@@ -47,6 +51,7 @@ const QOS_PREFERENCE_MAP: Record<RtcVideoEncoderPreference, "smooth" | "clear"> 
 /** 引擎事件订阅需要的最小接口，用于隔离 TRTC 事件枚举类型。 */
 interface RtcEventSource {
   on(event: string, handler: (event: never) => void): void;
+  off(event: string, handler: (event: never) => void): void;
 }
 
 /** TRTC 远端视频事件的负载。 */
@@ -85,6 +90,7 @@ export class RtcManager implements RtcManaging {
 
   // 事件监听
   private eventListener?: RtcEventListener;
+  private removeStatsListeners?: () => void;
 
   /**
    * 创建 RTC 管理器。
@@ -118,6 +124,8 @@ export class RtcManager implements RtcManaging {
     this.isCapturing = false;
     this.isAudioCapturing = false;
     this.isInRoom = false;
+    this.removeStatsListeners?.();
+    this.removeStatsListeners = undefined;
     if (!lease) {
       return;
     }
@@ -465,9 +473,54 @@ export class RtcManager implements RtcManaging {
     this.eventListener = listener;
   }
 
-  /** 注册引擎事件桥接：远端视频发布状态与房间自定义消息。 */
+  /** 注册引擎事件桥接：媒体、消息及性能日志。 */
   private registerEventBridge(engine: RtcEngine): void {
     const source = engine as unknown as RtcEventSource;
+    // 直接使用 TRTC 的统计周期，不创建定时器；退房和旧引擎的迟到事件不输出。
+    const onStatistics = (stats: TRTCStatistics) => {
+      if (this.isInRoom && this.lease?.engine === engine) {
+        RtcStatsLogger.logStatistics(stats);
+        const video = stats.localStatistics?.video?.find((item) => item.videoType === "big");
+        const valid = (value: number | undefined, minimum: number) =>
+          typeof value === "number" && Number.isFinite(value) && value >= minimum ? value : undefined;
+        this.eventListener?.onLocalVideoStatistics?.(video ? Object.freeze({
+          width: valid(video.width, 1),
+          height: valid(video.height, 1),
+          frameRate: valid(video.frameRate, 0),
+          bitrateKbps: valid(video.bitrate, 0),
+        }) : undefined);
+        this.eventListener?.onRemoteVideoStatistics?.(Object.freeze(
+          (stats.remoteStatistics ?? []).flatMap((remote) => {
+            const video = remote.video?.find((item) => item.videoType === "big");
+            if (!video) {
+              return [];
+            }
+            // 当前 TRTC 类型声明漏了这个可选运行时字段，缺失时不以缓冲延迟替代。
+            const playback = video as typeof video & { point2pointDelay?: number };
+            return [Object.freeze({
+              userID: remote.userId,
+              width: valid(video.width, 1),
+              height: valid(video.height, 1),
+              frameRate: valid(video.frameRate, 0),
+              bitrateKbps: valid(video.bitrate, 0),
+              rttMs: valid(stats.rtt, 0),
+              endToEndDelayMs: valid(playback.point2pointDelay, 0),
+            })];
+          }),
+        ));
+      }
+    };
+    const onNetworkQuality = (stats: NetworkQuality) => {
+      if (this.isInRoom && this.lease?.engine === engine) {
+        RtcStatsLogger.logNetworkQuality(stats);
+      }
+    };
+    source.on(RTC_EVENT.statistics, onStatistics);
+    source.on(RTC_EVENT.networkQuality, onNetworkQuality);
+    this.removeStatsListeners = () => {
+      source.off(RTC_EVENT.statistics, onStatistics);
+      source.off(RTC_EVENT.networkQuality, onNetworkQuality);
+    };
     source.on(RTC_EVENT.remoteVideoAvailable, (event: RtcRemoteVideoEvent) => {
       if (event.streamType !== STREAM_TYPE_MAIN) {
         return;

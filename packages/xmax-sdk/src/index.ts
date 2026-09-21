@@ -14,6 +14,12 @@ export type { XmaxErrorListener } from "./Foundation/Errors/XmaxError";
 export { XmaxLogger, XmaxLoggerOption } from "./Foundation/Logging/XmaxLogger";
 export { CameraPosition } from "./Foundation/Media/Camera/CameraPosition";
 export { VideoContentMode } from "./Foundation/Media/Video/VideoContentMode";
+export type {
+  VideoStatistics,
+  VideoStatisticsListener,
+  RemoteVideoStatistics,
+  RemoteVideoStatisticsListener,
+} from "./Foundation/RTC/VideoStatistics";
 export { XmaxEnvironment, apiBaseURL } from "./Foundation/Runtime/XmaxEnvironment";
 
 // Service / Realtime

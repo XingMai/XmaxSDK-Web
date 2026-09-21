@@ -99,6 +99,9 @@ export class RtcEngineManager {
   /** 动态加载 TRTC SDK 并创建引擎实例。 */
   private static async defaultMakeEngine(): Promise<RtcEngine> {
     const module = await import("trtc-sdk-v5");
+    // NONE：关闭 TRTC 自身的 console 输出；保留默认的诊断日志上传。
+    // 在 create 之前设置，避免实例创建和进房日志淹没 XmaxSDK 日志。
+    module.default.setLogLevel(5);
     return module.default.create();
   }
 
