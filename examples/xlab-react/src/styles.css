@@ -501,6 +501,7 @@ button:disabled {
 
 .modeTabs {
   display: flex;
+  justify-content: center;
   gap: 8px;
   margin-bottom: 18px;
 }
@@ -532,10 +533,9 @@ button:disabled {
 }
 
 .presetRow {
-  display: grid;
-  grid-auto-flow: column;
-  grid-template-rows: repeat(2, auto);
-  justify-content: start;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 14px;
   overflow-x: auto;
   padding-bottom: 8px;
@@ -552,6 +552,11 @@ button:disabled {
 .presetRow.dragging {
   cursor: grabbing;
   scroll-behavior: auto;
+}
+
+.presetLine {
+  display: flex;
+  gap: 14px;
 }
 
 .presetItem {

@@ -723,28 +723,41 @@ export function App() {
           </div>
         ) : (
           <div className="presetRow" ref={presetRowRef}>
-            <button
-              className="presetItem uploadItem"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={referenceUploading || !apiKey}
-              title={apiKey ? "Upload your own reference image" : "Uploading a reference image requires an API Key"}
-            >
-              <span className="uploadCircle">{referenceUploading ? "…" : "＋"}</span>
-              <span>Upload</span>
-            </button>
-            {activeMode.presets.map((preset) => (
-              <button
-                key={preset.name}
-                className={
-                  selectedPreset === preset.name ? "presetItem active" : "presetItem"
-                }
-                onClick={() => void handleSelectPreset(preset)}
-                disabled={referenceUploading}
-              >
-                <img src={preset.thumbnail} alt={preset.name} loading="lazy" />
-                <span>{preset.name}</span>
-              </button>
-            ))}
+            {(() => {
+              const midpoint = Math.ceil(activeMode.presets.length / 2);
+              const lines = [
+                activeMode.presets.slice(0, midpoint),
+                activeMode.presets.slice(midpoint),
+              ];
+              return lines.map((line, lineIndex) => (
+                <div className="presetLine" key={lineIndex}>
+                  {lineIndex === 0 && (
+                    <button
+                      className="presetItem uploadItem"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={referenceUploading || !apiKey}
+                      title={apiKey ? "Upload your own reference image" : "Uploading a reference image requires an API Key"}
+                    >
+                      <span className="uploadCircle">{referenceUploading ? "…" : "＋"}</span>
+                      <span>Upload</span>
+                    </button>
+                  )}
+                  {line.map((preset) => (
+                    <button
+                      key={preset.name}
+                      className={
+                        selectedPreset === preset.name ? "presetItem active" : "presetItem"
+                      }
+                      onClick={() => void handleSelectPreset(preset)}
+                      disabled={referenceUploading}
+                    >
+                      <img src={preset.thumbnail} alt={preset.name} loading="lazy" />
+                      <span>{preset.name}</span>
+                    </button>
+                  ))}
+                </div>
+              ));
+            })()}
           </div>
         )}
       </div>
