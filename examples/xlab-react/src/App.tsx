@@ -12,6 +12,7 @@ import {
   type RealtimeMediaStream,
   type RealtimeLaunchTiming,
   type VideoStatistics,
+  type RemoteVideoStatistics,
   type RealtimeState,
   type XmaxRealtimeManaging,
 } from "@xmax/sdk";
@@ -44,6 +45,12 @@ function formatVideoMetric(value: number | undefined, unit: string): string {
   return value === undefined ? "—" : `${Number(value.toFixed(1))} ${unit}`;
 }
 
+function formatVideoResolution(statistics?: VideoStatistics): string {
+  return statistics?.width !== undefined && statistics.height !== undefined
+    ? `${statistics.width} × ${statistics.height}`
+    : "—";
+}
+
 export function App() {
   const [apiKey, setApiKey] = useState(
     () => localStorage.getItem(API_KEY_STORAGE) ?? "",
@@ -71,6 +78,7 @@ export function App() {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [launchTiming, setLaunchTiming] = useState<RealtimeLaunchTiming>({});
   const [localVideoStatistics, setLocalVideoStatistics] = useState<VideoStatistics>();
+  const [remoteVideoStatistics, setRemoteVideoStatistics] = useState<RemoteVideoStatistics>();
   const [errorText, setErrorText] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -251,14 +259,20 @@ export function App() {
     stateText === RealtimeConnectionState.generating;
   const isGenerating = stateText === RealtimeConnectionState.generating;
 
-  function attachStateListener(realtime: XmaxRealtimeManaging) {
+  function attachStateListener(
+    realtime: XmaxRealtimeManaging,
+    onConnected?: () => void,
+  ) {
     return realtime.setStateListener((state: RealtimeState) => {
       setStateText(state.connectionState);
-      // 连接释放后清空远端流，视图回到本地预览。
       if (
-        state.connectionState !== RealtimeConnectionState.connected &&
-        state.connectionState !== RealtimeConnectionState.generating
+        state.connectionState === RealtimeConnectionState.connected ||
+        state.connectionState === RealtimeConnectionState.generating
       ) {
+        // 会话建立成功后立刻切换到生成页面，不等待首帧。
+        onConnected?.();
+      } else {
+        // 连接释放后清空远端流，视图回到本地预览。
         setRemoteStream(undefined);
       }
       if (state.reason?.kind === "failure") {
@@ -270,7 +284,8 @@ export function App() {
   /**
    * 一键完成开启摄像头到开始生成的完整流程。
    *
-   * 先校验 API Key，再打开摄像头并创建会话，全部成功后才切换到生成页面。
+   * 先校验 API Key，再打开摄像头；会话建立成功即切换到生成页面，
+   * 首帧等待等后续过程在生成页面内完成。
    */
   async function handleStart() {
     if (!apiKey) {
@@ -283,6 +298,8 @@ export function App() {
       new RealtimeConfiguration({ model }),
     );
     realtimeRef.current = realtime;
+    // 会话建立成功后是否已切换到生成页面。
+    let switchedToSession = false;
     try {
       await realtime.setLaunchTimingListener((timing) => {
         if (realtimeRef.current === realtime) {
@@ -294,24 +311,33 @@ export function App() {
           setLocalVideoStatistics(statistics);
         }
       });
-      await attachStateListener(realtime);
+      await realtime.setRemoteVideoStatisticsListener((statistics) => {
+        if (realtimeRef.current === realtime) {
+          setRemoteVideoStatistics(statistics);
+        }
+      });
       const stream = await realtime.createLocalCameraStream({
         videoFormat: CAMERA_VIDEO_FORMAT,
         position: CameraPosition.front,
         useMicrophone,
       });
+      await attachStateListener(realtime, () => {
+        switchedToSession = true;
+        setLocalStream(stream);
+      });
       const remote = await realtime.startGeneration({
         localStream: stream,
         context: new RealtimeContext({ prompt: submitPrompt, referencePath }),
       });
-      setLocalStream(stream);
       setRemoteStream(remote);
     } catch (error) {
-      // 任一步骤失败时释放本次会话，停留在初始界面。
-      if (realtimeRef.current === realtime) {
-        realtimeRef.current = undefined;
+      if (!switchedToSession) {
+        // 会话尚未建立时释放本次会话，停留在初始界面。
+        if (realtimeRef.current === realtime) {
+          realtimeRef.current = undefined;
+        }
+        void realtime.close();
       }
-      void realtime.close();
       setErrorText(error instanceof Error ? error.message : String(error));
     } finally {
       setBusy(false);
@@ -435,6 +461,7 @@ export function App() {
     setLocalStream(undefined);
     setRemoteStream(undefined);
     setLocalVideoStatistics(undefined);
+    setRemoteVideoStatistics(undefined);
     setStateText(RealtimeConnectionState.idle);
     setErrorText("");
     void realtime?.close();
@@ -694,9 +721,7 @@ export function App() {
             <div className="launchTimingTotal"><dt>完整启动耗时</dt><dd>{formatLaunchTiming(launchTiming.totalMs)}</dd></div>
             <div className="localVideoStatisticsStart">
               <dt>本地分辨率</dt>
-              <dd>{localVideoStatistics?.width !== undefined && localVideoStatistics.height !== undefined
-                ? `${localVideoStatistics.width} × ${localVideoStatistics.height}`
-                : "—"}</dd>
+              <dd>{formatVideoResolution(localVideoStatistics)}</dd>
             </div>
             <div><dt>本地帧率</dt><dd>{formatVideoMetric(localVideoStatistics?.frameRate, "fps")}</dd></div>
             <div><dt>本地码率</dt><dd>{formatVideoMetric(localVideoStatistics?.bitrateKbps, "kbps")}</dd></div>
@@ -708,6 +733,13 @@ export function App() {
             style={{ width: "100%", height: "100%" }}
           />
           <span className="stageLabel">Result</span>
+          <dl className="videoStatistics" aria-label="生成结果视频统计">
+            <div><dt>分辨率</dt><dd>{formatVideoResolution(remoteVideoStatistics)}</dd></div>
+            <div><dt>帧率</dt><dd>{formatVideoMetric(remoteVideoStatistics?.frameRate, "fps")}</dd></div>
+            <div><dt>码率</dt><dd>{formatVideoMetric(remoteVideoStatistics?.bitrateKbps, "kbps")}</dd></div>
+            <div><dt>RTT（云端）</dt><dd>{formatVideoMetric(remoteVideoStatistics?.rttMs, "ms")}</dd></div>
+            <div><dt>E2E（RTC 估算）</dt><dd>{formatVideoMetric(remoteVideoStatistics?.endToEndDelayMs, "ms")}</dd></div>
+          </dl>
           <span className="watermark">✦ Xmax</span>
           {!remoteStream && (
             <span className="stageHint">
