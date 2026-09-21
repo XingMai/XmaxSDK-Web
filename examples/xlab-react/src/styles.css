@@ -463,14 +463,6 @@ button:disabled {
   margin-top: 28px;
 }
 
-.examplesToggle {
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 13px;
-  padding: 0 0 12px;
-}
-
 .presetRow {
   display: flex;
   gap: 14px;

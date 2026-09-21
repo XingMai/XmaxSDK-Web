@@ -15,7 +15,7 @@ import {
 } from "@xmax/sdk";
 import { XmaxVideo } from "@xmax/react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { STYLE_PRESETS, type StylePreset } from "./presets";
+import { EXAMPLE_PRESETS, type StylePreset } from "./presets";
 
 const API_KEY_STORAGE = "xmax.xlab.apiKey";
 const PROMPT_STORAGE = "xmax.xlab.prompt";
@@ -51,7 +51,6 @@ export function App() {
   const [referencePreview, setReferencePreview] = useState<string | undefined>();
   const [referencePath, setReferencePath] = useState<string | undefined>();
   const [referenceUploading, setReferenceUploading] = useState(false);
-  const [examplesVisible, setExamplesVisible] = useState(true);
   const [localStream, setLocalStream] = useState<RealtimeMediaStream | undefined>();
   const [remoteStream, setRemoteStream] = useState<RealtimeMediaStream | undefined>();
   const [stateText, setStateText] = useState<RealtimeConnectionState>(
@@ -627,29 +626,21 @@ export function App() {
       )}
 
       <div className="examplesSection">
-        <button
-          className="examplesToggle"
-          onClick={() => setExamplesVisible((visible) => !visible)}
-        >
-          {examplesVisible ? "Hide Examples ⌃" : "Show Examples ⌄"}
-        </button>
-        {examplesVisible && (
-          <div className="presetRow">
-            {STYLE_PRESETS.map((preset) => (
-              <button
-                key={preset.name}
-                className={
-                  selectedPreset === preset.name ? "presetItem active" : "presetItem"
-                }
-                onClick={() => void handleSelectPreset(preset)}
-                disabled={referenceUploading}
-              >
-                <img src={preset.thumbnail} alt={preset.name} loading="lazy" />
-                <span>{preset.name}</span>
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="presetRow">
+          {EXAMPLE_PRESETS.map((preset) => (
+            <button
+              key={preset.name}
+              className={
+                selectedPreset === preset.name ? "presetItem active" : "presetItem"
+              }
+              onClick={() => void handleSelectPreset(preset)}
+              disabled={referenceUploading}
+            >
+              <img src={preset.thumbnail} alt={preset.name} loading="lazy" />
+              <span>{preset.name}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {errorText && <div className="error">{errorText}</div>}
