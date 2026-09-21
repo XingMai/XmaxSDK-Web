@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@fontsource-variable/dm-sans": "^5.3.0",
     "@xmax/react": "workspace:*",
     "@xmax/sdk": "workspace:*",
     "react": "^18.3.1",
