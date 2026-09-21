@@ -202,6 +202,27 @@ button:disabled {
   background: var(--accent-hover);
 }
 
+/* 启动中不变灰，仅替换为加载指示且不可点击。 */
+.startButton:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .heroActions {
   display: flex;
   flex-direction: column;
@@ -393,6 +414,12 @@ button:disabled {
   padding-top: 5px;
   border-top: 1px solid rgba(255, 255, 255, 0.18);
   font-weight: 600;
+}
+
+.localVideoStatisticsStart {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
 }
 
 .watermark {

@@ -11,6 +11,7 @@ import {
   XmaxLoggerOption,
   type RealtimeMediaStream,
   type RealtimeLaunchTiming,
+  type VideoStatistics,
   type RealtimeState,
   type XmaxRealtimeManaging,
 } from "@xmax/sdk";
@@ -39,6 +40,10 @@ function formatLaunchTiming(milliseconds?: number): string {
   return milliseconds === undefined ? "—" : `${Math.round(milliseconds)} ms`;
 }
 
+function formatVideoMetric(value: number | undefined, unit: string): string {
+  return value === undefined ? "—" : `${Number(value.toFixed(1))} ${unit}`;
+}
+
 export function App() {
   const [apiKey, setApiKey] = useState(
     () => localStorage.getItem(API_KEY_STORAGE) ?? "",
@@ -65,6 +70,7 @@ export function App() {
   );
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [launchTiming, setLaunchTiming] = useState<RealtimeLaunchTiming>({});
+  const [localVideoStatistics, setLocalVideoStatistics] = useState<VideoStatistics>();
   const [errorText, setErrorText] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -139,7 +145,9 @@ export function App() {
   // 卸载时释放实时生命周期。
   useEffect(() => {
     return () => {
-      void realtimeRef.current?.close();
+      const realtime = realtimeRef.current;
+      realtimeRef.current = undefined;
+      void realtime?.close();
     };
   }, []);
 
@@ -279,6 +287,11 @@ export function App() {
       await realtime.setLaunchTimingListener((timing) => {
         if (realtimeRef.current === realtime) {
           setLaunchTiming(timing);
+        }
+      });
+      await realtime.setLocalVideoStatisticsListener((statistics) => {
+        if (realtimeRef.current === realtime) {
+          setLocalVideoStatistics(statistics);
         }
       });
       await attachStateListener(realtime);
@@ -421,6 +434,7 @@ export function App() {
     realtimeRef.current = undefined;
     setLocalStream(undefined);
     setRemoteStream(undefined);
+    setLocalVideoStatistics(undefined);
     setStateText(RealtimeConnectionState.idle);
     setErrorText("");
     void realtime?.close();
@@ -567,7 +581,10 @@ export function App() {
                 disabled={busy}
               >
                 {busy ? (
-                  "Starting…"
+                  <>
+                    <span className="spinner" aria-hidden="true" />
+                    Starting…
+                  </>
                 ) : (
                   <>
                     <svg
@@ -670,11 +687,19 @@ export function App() {
             style={{ width: "100%", height: "100%" }}
           />
           <span className="stageLabel">Local</span>
-          <dl className="launchTiming" aria-label="启动耗时统计">
+          <dl className="launchTiming" aria-label="启动耗时与本地视频统计">
             <div><dt>打开摄像头</dt><dd>{formatLaunchTiming(launchTiming.cameraMs)}</dd></div>
             <div><dt>建立连接</dt><dd>{formatLaunchTiming(launchTiming.connectionMs)}</dd></div>
             <div><dt>首帧到达</dt><dd>{formatLaunchTiming(launchTiming.firstFrameMs)}</dd></div>
             <div className="launchTimingTotal"><dt>完整启动耗时</dt><dd>{formatLaunchTiming(launchTiming.totalMs)}</dd></div>
+            <div className="localVideoStatisticsStart">
+              <dt>本地分辨率</dt>
+              <dd>{localVideoStatistics?.width !== undefined && localVideoStatistics.height !== undefined
+                ? `${localVideoStatistics.width} × ${localVideoStatistics.height}`
+                : "—"}</dd>
+            </div>
+            <div><dt>本地帧率</dt><dd>{formatVideoMetric(localVideoStatistics?.frameRate, "fps")}</dd></div>
+            <div><dt>本地码率</dt><dd>{formatVideoMetric(localVideoStatistics?.bitrateKbps, "kbps")}</dd></div>
           </dl>
         </div>
         <div className="stage">
