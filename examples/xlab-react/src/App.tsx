@@ -18,7 +18,8 @@ import {
 } from "@xmax/sdk";
 import { XmaxVideo } from "@xmax/react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { EXAMPLE_MODES, type ExampleModeKey, type StylePreset } from "./presets";
+import { EXAMPLE_MODES, type ExampleModeKey } from "./presets";
+import { ReferenceLibrary, type ReferenceItem } from "./ReferenceLibrary";
 
 const API_KEY_STORAGE = "xmax.xlab.apiKey";
 const PROMPT_STORAGE = "xmax.xlab.prompt";
@@ -64,12 +65,8 @@ export function App() {
       localStorage.getItem(PROMPT_STORAGE) ??
       "Turn the scene into a cyberpunk style",
   );
-  const [selectedPreset, setSelectedPreset] = useState<string | undefined>();
   const [activeModeKey, setActiveModeKey] = useState<ExampleModeKey>("charx");
   const [presetLineCapacity, setPresetLineCapacity] = useState(0);
-  const [referencePreview, setReferencePreview] = useState<string | undefined>();
-  const [referencePath, setReferencePath] = useState<string | undefined>();
-  const [referenceUploading, setReferenceUploading] = useState(false);
   const [localStream, setLocalStream] = useState<RealtimeMediaStream | undefined>();
   const [remoteStream, setRemoteStream] = useState<RealtimeMediaStream | undefined>();
   const [stateText, setStateText] = useState<RealtimeConnectionState>(
@@ -83,6 +80,7 @@ export function App() {
   const [busy, setBusy] = useState(false);
 
   const realtimeRef = useRef<XmaxRealtimeManaging | undefined>(undefined);
+  const generationBusyRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const wechatRef = useRef<HTMLDivElement>(null);
   const keyFieldRef = useRef<HTMLDivElement>(null);
@@ -142,6 +140,37 @@ export function App() {
     [apiKey],
   );
 
+  const clientRef = useRef(client);
+  clientRef.current = client;
+  const [references] = useState(() => new ReferenceLibrary(async (item, onProgress) => {
+    // 内置预设首次使用也上传 COS，成功地址缓存在条目中，后续点击直接复用。
+    let data: Blob;
+    if (item.file) {
+      data = item.file;
+    } else {
+      const response = await fetch(item.source_url!);
+      if (!response.ok) throw new Error(`Failed to load preset image (${response.status})`);
+      data = await response.blob();
+    }
+    const stored = await clientRef.current.createStorageService().uploadImage({
+      data,
+      fileName: item.file?.name ?? `${item.name.replace(/\s+/g, "-").toLowerCase()}.png`,
+      contentType: data.type || undefined,
+      onProgress,
+    });
+    return stored.url;
+  }));
+  const [referenceItems, setReferenceItems] = useState(references.snapshot);
+  useEffect(() => {
+    const unsubscribe = references.subscribe(setReferenceItems);
+    return () => { unsubscribe(); references.dispose(); };
+  }, [references]);
+  const activeReferences = referenceItems.filter((item) => item.mode === activeModeKey);
+  const selectedReference = activeReferences.find((item) => item.is_selected);
+  const referencePath = selectedReference?.reference_path;
+  const referencePreview = selectedReference?.thumbnail;
+  const referenceUploading = activeReferences.some((item) => item.upload_status === "uploading");
+
   useEffect(() => {
     localStorage.setItem(API_KEY_STORAGE, apiKey);
   }, [apiKey]);
@@ -165,7 +194,7 @@ export function App() {
   const activeMode =
     EXAMPLE_MODES.find((mode) => mode.key === activeModeKey) ??
     EXAMPLE_MODES[0]!;
-  const submitPrompt = activeMode.key === "free" ? prompt : activeMode.prompt;
+  const submitPrompt = activeMode.key === "free" ? prompt : selectedReference?.prompt ?? activeMode.prompt;
 
   // 预设列表滚动：纵向滚轮映射为横向滚动，左键按住可拖拽滚动。
   useEffect(() => {
@@ -194,7 +223,6 @@ export function App() {
       moved = false;
       startX = event.clientX;
       startScrollLeft = row.scrollLeft;
-      row.setPointerCapture(event.pointerId);
     };
     const handlePointerMove = (event: PointerEvent) => {
       if (!dragging) {
@@ -204,6 +232,8 @@ export function App() {
       if (Math.abs(deltaX) > 4) {
         moved = true;
         row.classList.add("dragging");
+        // 真正拖动后才捕获指针，否则普通点击会被重定向到容器，无法选中图片。
+        if (!row.hasPointerCapture(event.pointerId)) row.setPointerCapture(event.pointerId);
       }
       row.scrollLeft = startScrollLeft - deltaX;
     };
@@ -257,20 +287,25 @@ export function App() {
   const isConnected =
     stateText === RealtimeConnectionState.connected ||
     stateText === RealtimeConnectionState.generating;
-  const isGenerating = stateText === RealtimeConnectionState.generating;
 
   function attachStateListener(
     realtime: XmaxRealtimeManaging,
     onConnected?: () => void,
   ) {
+    // 会话建立成功的回调只触发一次，generating 等后续状态不再重复调用。
+    let connectedNotified = false;
     return realtime.setStateListener((state: RealtimeState) => {
+      if (realtimeRef.current !== realtime) return;
       setStateText(state.connectionState);
       if (
         state.connectionState === RealtimeConnectionState.connected ||
         state.connectionState === RealtimeConnectionState.generating
       ) {
         // 会话建立成功后立刻切换到生成页面，不等待首帧。
-        onConnected?.();
+        if (!connectedNotified) {
+          connectedNotified = true;
+          onConnected?.();
+        }
       } else {
         // 连接释放后清空远端流，视图回到本地预览。
         setRemoteStream(undefined);
@@ -288,10 +323,12 @@ export function App() {
    * 首帧等待等后续过程在生成页面内完成。
    */
   async function handleStart() {
+    if (generationBusyRef.current) return;
     if (!apiKey) {
       setErrorText("API Key is required");
       return;
     }
+    generationBusyRef.current = true;
     setBusy(true);
     setErrorText("");
     const realtime = client.createRealtimeManager(
@@ -340,122 +377,89 @@ export function App() {
       }
       setErrorText(error instanceof Error ? error.message : String(error));
     } finally {
+      generationBusyRef.current = false;
       setBusy(false);
     }
   }
 
   /** 提交生成条件：未生成时开始生成，生成中更新条件。 */
   async function handleSubmitPrompt() {
+    if (referenceUploading) return;
+    await submitContext(new RealtimeContext({ prompt: submitPrompt, referencePath }));
+  }
+
+  /** 所有选图和文本提交共用生成入口，条件显式传入，避免读取旧的 React state。 */
+  async function submitContext(context: RealtimeContext) {
     const realtime = realtimeRef.current;
-    if (!realtime || !localStream || !apiKey) {
+    if (!realtime || !localStream || !apiKey || generationBusyRef.current) {
       return;
     }
+    generationBusyRef.current = true;
     setBusy(true);
     setErrorText("");
     try {
       const remote = await realtime.startGeneration({
         localStream,
-        context: new RealtimeContext({ prompt: submitPrompt, referencePath }),
+        context,
       });
-      setRemoteStream(remote);
+      if (realtimeRef.current === realtime) setRemoteStream(remote);
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : String(error));
     } finally {
+      generationBusyRef.current = false;
       setBusy(false);
     }
   }
 
-  /** 选中风格预设：拉取参考图上传为生成条件；生成中自动应用。 */
-  async function handleSelectPreset(preset: StylePreset) {
-    if (!apiKey) {
-      setErrorText("Uploading a reference image requires an API Key");
-      return;
-    }
-    setSelectedPreset(preset.name);
-    setReferenceUploading(true);
+  /** 上传完成和普通点击均走同一条选中、生成逻辑。 */
+  async function applyReference(item: ReferenceItem) {
+    if (item.mode === "free") setPrompt(item.prompt);
+    await submitContext(new RealtimeContext({ prompt: item.prompt, referencePath: item.reference_path }));
+  }
+
+  async function handleSelectReference(item: ReferenceItem) {
+    if (!apiKey || generationBusyRef.current) return;
     setErrorText("");
     try {
-      const response = await fetch(preset.reference);
-      if (!response.ok) {
-        throw new Error(`Failed to load preset image (${response.status})`);
-      }
-      const data = await response.blob();
-      const stored = await client.createStorageService().uploadImage({
-        data,
-        fileName: `${preset.name.replace(/\s+/g, "-").toLowerCase()}.png`,
-        contentType: data.type || "image/png",
-      });
-      setReferencePreview(preset.thumbnail);
-      setReferencePath(stored.url);
-      // 生成中选中预设时立即应用新条件。
-      if (isGenerating) {
-        await handleSubmitPromptWith(stored.url);
-      }
+      await references.select(item.id, applyReference);
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : String(error));
-    } finally {
-      setReferenceUploading(false);
     }
   }
 
-  /** 以指定参考图路径提交生成条件（供预设选中后立即应用）。 */
-  async function handleSubmitPromptWith(reference: string) {
-    const realtime = realtimeRef.current;
-    if (!realtime || !localStream) {
-      return;
-    }
-    const remote = await realtime.startGeneration({
-      localStream,
-      context: new RealtimeContext({ prompt: submitPrompt, referencePath: reference }),
-    });
-    setRemoteStream(remote);
-  }
-
-  /** 选择本地参考图并上传，成功后作为生成条件的参考路径。 */
+  /** 本地文件立即插入列表首位预览，上传期间显示条目 loading，成功后自动选中。 */
   async function handleReferenceChange(
     event: React.ChangeEvent<HTMLInputElement>,
   ) {
     const file = event.target.files?.[0];
     event.target.value = "";
-    if (!file) {
+    if (!file || !apiKey || generationBusyRef.current) {
       return;
     }
-    setReferencePreview((previous) => {
-      if (previous && previous.startsWith("blob:")) {
-        URL.revokeObjectURL(previous);
-      }
-      return URL.createObjectURL(file);
-    });
-    setSelectedPreset(undefined);
-    setReferencePath(undefined);
-    setReferenceUploading(true);
     setErrorText("");
     try {
-      const stored = await client.createStorageService().uploadImage({
-        data: file,
-        fileName: file.name,
-        contentType: file.type || undefined,
-      });
-      setReferencePath(stored.url);
+      const uploading = references.addFile(file, submitPrompt, applyReference);
+      if (presetRowRef.current) presetRowRef.current.scrollLeft = 0;
+      await uploading;
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : String(error));
-    } finally {
-      setReferenceUploading(false);
     }
   }
 
   /** 清除当前参考图。 */
   function handleClearReference() {
-    if (referencePreview?.startsWith("blob:")) {
-      URL.revokeObjectURL(referencePreview);
-    }
-    setReferencePreview(undefined);
-    setReferencePath(undefined);
-    setSelectedPreset(undefined);
+    references.clearSelection();
+  }
+
+  function handleModeChange(mode: ExampleModeKey) {
+    references.setMode(mode);
+    setActiveModeKey(mode);
+    setErrorText("");
   }
 
   /** 停止会话并立刻回到初始界面，连接在后台释放。 */
   function handleStop() {
+    references.clearSelection();
     const realtime = realtimeRef.current;
     realtimeRef.current = undefined;
     setLocalStream(undefined);
@@ -714,18 +718,19 @@ export function App() {
             style={{ width: "100%", height: "100%" }}
           />
           <span className="stageLabel">Local</span>
-          <dl className="launchTiming" aria-label="启动耗时与本地视频统计">
-            <div><dt>打开摄像头</dt><dd>{formatLaunchTiming(launchTiming.cameraMs)}</dd></div>
-            <div><dt>建立连接</dt><dd>{formatLaunchTiming(launchTiming.connectionMs)}</dd></div>
-            <div><dt>首帧到达</dt><dd>{formatLaunchTiming(launchTiming.firstFrameMs)}</dd></div>
-            <div className="launchTimingTotal"><dt>完整启动耗时</dt><dd>{formatLaunchTiming(launchTiming.totalMs)}</dd></div>
-            <div className="localVideoStatisticsStart">
-              <dt>本地分辨率</dt>
-              <dd>{formatVideoResolution(localVideoStatistics)}</dd>
-            </div>
-            <div><dt>本地帧率</dt><dd>{formatVideoMetric(localVideoStatistics?.frameRate, "fps")}</dd></div>
-            <div><dt>本地码率</dt><dd>{formatVideoMetric(localVideoStatistics?.bitrateKbps, "kbps")}</dd></div>
-          </dl>
+          <div className="localStatistics">
+            <dl className="launchTiming" aria-label="启动耗时统计">
+              <div><dt>打开摄像头</dt><dd>{formatLaunchTiming(launchTiming.cameraMs)}</dd></div>
+              <div><dt>建立连接</dt><dd>{formatLaunchTiming(launchTiming.connectionMs)}</dd></div>
+              <div><dt>首帧到达</dt><dd>{formatLaunchTiming(launchTiming.firstFrameMs)}</dd></div>
+              <div className="launchTimingTotal"><dt>完整启动耗时</dt><dd>{formatLaunchTiming(launchTiming.totalMs)}</dd></div>
+            </dl>
+            <dl className="videoStatistics" aria-label="本地视频统计">
+              <div><dt>本地分辨率</dt><dd>{formatVideoResolution(localVideoStatistics)}</dd></div>
+              <div><dt>本地帧率</dt><dd>{formatVideoMetric(localVideoStatistics?.frameRate, "fps")}</dd></div>
+              <div><dt>本地码率</dt><dd>{formatVideoMetric(localVideoStatistics?.bitrateKbps, "kbps")}</dd></div>
+            </dl>
+          </div>
         </div>
         <div className="stage">
           <XmaxVideo
@@ -757,7 +762,8 @@ export function App() {
               className={
                 mode.key === activeModeKey ? "modeTab active" : "modeTab"
               }
-              onClick={() => setActiveModeKey(mode.key)}
+              onClick={() => handleModeChange(mode.key)}
+              disabled={busy}
             >
               {mode.label}
             </button>
@@ -772,7 +778,7 @@ export function App() {
           onChange={handleReferenceChange}
         />
 
-        {activeMode.key === "free" ? (
+        {activeMode.key === "free" && (
           <div className="promptBar">
             <input
               type="text"
@@ -786,14 +792,6 @@ export function App() {
               }}
             />
             <button
-              className="uploadButton"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={referenceUploading || !apiKey}
-              title={apiKey ? "" : "Uploading a reference image requires an API Key"}
-            >
-              ⤒ Upload image
-            </button>
-            <button
               className="submitButton"
               onClick={handleSubmitPrompt}
               disabled={busy || !apiKey || referenceUploading}
@@ -802,7 +800,7 @@ export function App() {
               ➜
             </button>
           </div>
-        ) : (
+        )}
           <div className="presetRow" ref={presetRowRef}>
             {(() => {
               const uploadItem = (
@@ -810,29 +808,44 @@ export function App() {
                   key="__upload__"
                   className="presetItem uploadItem"
                   onClick={() => fileInputRef.current?.click()}
-                  disabled={referenceUploading || !apiKey}
+                  disabled={busy || !apiKey}
                   title={apiKey ? "Upload your own reference image" : "Uploading a reference image requires an API Key"}
                 >
-                  <span className="uploadCircle">{referenceUploading ? "…" : "＋"}</span>
+                  <span className="uploadCircle">＋</span>
                   <span>Upload</span>
                 </button>
               );
               const items = [
-                uploadItem,
-                ...activeMode.presets.map((preset) => (
+                ...activeReferences.map((preset) => (
                   <button
-                    key={preset.name}
+                    key={preset.id}
                     className={
-                      selectedPreset === preset.name ? "presetItem active" : "presetItem"
+                      preset.is_selected ? "presetItem active" : "presetItem"
                     }
-                    onClick={() => void handleSelectPreset(preset)}
-                    disabled={referenceUploading}
+                    onClick={() => void handleSelectReference(preset)}
+                    disabled={busy || !apiKey || preset.upload_status === "uploading"}
+                    aria-pressed={preset.is_selected}
+                    aria-busy={preset.upload_status === "uploading"}
+                    title={preset.error ? `${preset.error} — Click to retry` : preset.name}
                   >
-                    <img src={preset.thumbnail} alt={preset.name} loading="lazy" />
+                    <span className="presetThumbnail">
+                      <img src={preset.thumbnail} alt={preset.name} loading="lazy" draggable={false} />
+                      {preset.upload_status === "uploading" && (
+                        <span className="presetUploadOverlay" role="status">
+                          <span className="presetSpinner" />
+                          {preset.upload_progress ? `${preset.upload_progress}%` : "Uploading…"}
+                        </span>
+                      )}
+                      {preset.upload_status === "error" && (
+                        <span className="presetUploadOverlay presetUploadError">Retry</span>
+                      )}
+                    </span>
                     <span>{preset.name}</span>
                   </button>
                 )),
               ];
+              // 新上传的参考图排在最前，上传入口仍靠近列表起点。
+              items.splice(activeReferences.filter((item) => item.file).length, 0, uploadItem);
               // 第一行优先填满可视宽度，装不下时两行均分后横向滚动。
               const perLine = Math.max(
                 presetLineCapacity || 1,
@@ -848,20 +861,13 @@ export function App() {
                 ));
             })()}
           </div>
-        )}
       </div>
 
       {referencePreview && (
         <div className="referenceChip">
           <img src={referencePreview} alt="Reference" />
-          <span>
-            {referenceUploading
-              ? "Uploading…"
-              : referencePath
-                ? "Reference ready"
-                : "Not uploaded"}
-          </span>
-          <button className="chipClose" onClick={handleClearReference}>
+          <span>Reference ready</span>
+          <button className="chipClose" onClick={handleClearReference} disabled={busy}>
             ×
           </button>
         </div>
