@@ -8,7 +8,6 @@ import { weightsBase64, weightsManifest } from "./FramegenWeights.generated";
 
 export interface FrameInterpolationProcessing {
   capture(video: HTMLVideoElement): void;
-  presentCurrent(): void;
   presentPrevious(): void;
   interpolate(): Promise<void>;
   presentInterpolated(): void;
@@ -157,10 +156,6 @@ export class FrameInterpolationManager implements FrameInterpolationProcessing {
 
   presentPrevious(): void {
     this.present(this.textures[1 - this.current]!);
-  }
-
-  presentCurrent(): void {
-    this.present(this.textures[this.current]!);
   }
 
   async interpolate(): Promise<void> {
