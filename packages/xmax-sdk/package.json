@@ -40,7 +40,9 @@
     "react": ">=17"
   },
   "peerDependenciesMeta": {
-    "react": { "optional": true }
+    "react": {
+      "optional": true
+    }
   },
   "dependencies": {
     "framegen": "1.4.0",
