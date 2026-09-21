@@ -16,6 +16,12 @@ export interface RemoteVideoStatistics extends VideoStatistics {
   readonly userID: string;
   /** 本端 SDK 到 TRTC 云端的往返延迟，单位 ms；不是与远端用户之间的 RTT。 */
   readonly rttMs?: number;
+  /** 本端 SDK 到 TRTC 云端的上行丢包率，单位 %，不是结果流的发送端丢包率。 */
+  readonly uplinkLossPercent?: number;
+  /** TRTC 云端到本端 SDK 的下行丢包率，单位 %。 */
+  readonly downlinkLossPercent?: number;
+  /** 当前远端视频流的播放缓冲延迟，单位 ms。 */
+  readonly jitterBufferDelayMs?: number;
   /** TRTC 媒体端到端延迟估算值，单位 ms；不代表完整 AI 处理链路耗时。 */
   readonly endToEndDelayMs?: number;
 }

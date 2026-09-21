@@ -496,7 +496,7 @@ export class RtcManager implements RtcManaging {
               return [];
             }
             // 当前 TRTC 类型声明漏了这个可选运行时字段，缺失时不以缓冲延迟替代。
-            const playback = video as typeof video & { point2pointDelay?: number };
+            const playback = video as typeof video & { point2pointDelay?: number; jitterBufferDelay?: number };
             return [Object.freeze({
               userID: remote.userId,
               width: valid(video.width, 1),
@@ -504,6 +504,9 @@ export class RtcManager implements RtcManaging {
               frameRate: valid(video.frameRate, 0),
               bitrateKbps: valid(video.bitrate, 0),
               rttMs: valid(stats.rtt, 0),
+              uplinkLossPercent: stats.upLoss <= 100 ? valid(stats.upLoss, 0) : undefined,
+              downlinkLossPercent: stats.downLoss <= 100 ? valid(stats.downLoss, 0) : undefined,
+              jitterBufferDelayMs: valid(playback.jitterBufferDelay, 0),
               endToEndDelayMs: valid(playback.point2pointDelay, 0),
             })];
           }),

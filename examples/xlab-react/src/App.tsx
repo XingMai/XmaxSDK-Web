@@ -723,6 +723,7 @@ export function App() {
               <div><dt>本地分辨率</dt><dd>{formatVideoResolution(localVideoStatistics)}</dd></div>
               <div><dt>本地帧率</dt><dd>{formatVideoMetric(localVideoStatistics?.frameRate, "fps")}</dd></div>
               <div><dt>本地码率</dt><dd>{formatVideoMetric(localVideoStatistics?.bitrateKbps, "kbps")}</dd></div>
+              <div title="本端 SDK → TRTC 云端的上行丢包率，不是本地预览丢包率"><dt>上行丢包率</dt><dd>{formatVideoMetric(remoteVideoStatistics?.uplinkLossPercent, "%")}</dd></div>
             </dl>
           </div>
         </div>
@@ -738,6 +739,8 @@ export function App() {
             <div><dt>码率</dt><dd>{formatVideoMetric(remoteVideoStatistics?.bitrateKbps, "kbps")}</dd></div>
             <div><dt>RTT（云端）</dt><dd>{formatVideoMetric(remoteVideoStatistics?.rttMs, "ms")}</dd></div>
             <div><dt>E2E（RTC 估算）</dt><dd>{formatVideoMetric(remoteVideoStatistics?.endToEndDelayMs, "ms")}</dd></div>
+            <div><dt>下行丢包率</dt><dd>{formatVideoMetric(remoteVideoStatistics?.downlinkLossPercent, "%")}</dd></div>
+            <div><dt>播放缓冲延迟</dt><dd>{formatVideoMetric(remoteVideoStatistics?.jitterBufferDelayMs, "ms")}</dd></div>
           </dl>
           <span className="watermark">✦ Xmax</span>
           {!remoteStream && (

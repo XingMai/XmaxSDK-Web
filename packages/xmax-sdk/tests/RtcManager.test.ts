@@ -212,6 +212,7 @@ describe("RtcManager", () => {
     await manager.joinRoom(joinConfig);
     engine.emit("statistics", {
       rtt: 20,
+      upLoss: 1.5, downLoss: 0,
       localStatistics: { video: [{ videoType: "big", width: 640, height: 480, frameRate: 30, bitrate: 500 }] },
       remoteStatistics: [
         { userId: "audio-only", audio: { point2pointDelay: 999 }, video: [] },
@@ -225,6 +226,7 @@ describe("RtcManager", () => {
     expect(listener).toHaveBeenLastCalledWith([{
       userID: "bot-1", width: 1920, height: 1024, frameRate: 26,
       bitrateKbps: 6399.74, rttMs: 20, endToEndDelayMs: 87,
+      uplinkLossPercent: 1.5, downlinkLossPercent: 0, jitterBufferDelayMs: 42,
     }]);
     expect(Object.isFrozen(listener.mock.calls[0]![0])).toBe(true);
     expect(Object.isFrozen(listener.mock.calls[0]![0][0])).toBe(true);
@@ -238,12 +240,39 @@ describe("RtcManager", () => {
     expect(listener).toHaveBeenLastCalledWith([{
       userID: "bot-1", width: 1920, height: 1024, frameRate: 0,
       bitrateKbps: 0, rttMs: undefined, endToEndDelayMs: undefined,
+      uplinkLossPercent: undefined, downlinkLossPercent: undefined, jitterBufferDelayMs: 87,
     }]);
     engine.emit("statistics", { rtt: 10, remoteStatistics: [] });
     expect(listener).toHaveBeenLastCalledWith([]);
     await manager.leaveRoom();
     engine.emit("statistics", { remoteStatistics: [] });
     expect(listener).toHaveBeenCalledTimes(3);
+    await manager.destroy();
+  });
+
+  it.each([
+    [0, 0, 0, 0, 0, 0],
+    [100, 2.5, 254, 100, 2.5, 254],
+    [-1, 101, -1, undefined, undefined, undefined],
+    [NaN, Infinity, NaN, undefined, undefined, undefined],
+    [undefined, undefined, undefined, undefined, undefined, undefined],
+  ])("normalizes loss and buffer statistics (%s, %s, %s)", async (upLoss, downLoss, buffer, up, down, delay) => {
+    const { manager, engine } = makeManager();
+    const listener = vi.fn();
+    manager.setEventListener({
+      onRemoteVideoPublished: () => {}, onCustomMessageReceived: () => {},
+      onRemoteVideoStatistics: listener,
+    });
+    await manager.initialize();
+    await manager.joinRoom(joinConfig);
+    engine.emit("statistics", {
+      upLoss, downLoss,
+      remoteStatistics: [{ userId: "bot", video: [{ videoType: "big", jitterBufferDelay: buffer }] }],
+    });
+    expect(listener).toHaveBeenLastCalledWith([expect.objectContaining({
+      uplinkLossPercent: up, downlinkLossPercent: down, jitterBufferDelayMs: delay,
+      endToEndDelayMs: undefined,
+    })]);
     await manager.destroy();
   });
 

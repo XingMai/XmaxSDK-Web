@@ -75,13 +75,17 @@ Demo 将分辨率、帧率和码率显示在 Local 左上角，位于启动耗�
 await realtime.setRemoteVideoStatisticsListener((statistics) => {
   // statistics: RemoteVideoStatistics | undefined
   // userID / width / height / frameRate / bitrateKbps / rttMs / endToEndDelayMs
+  // uplinkLossPercent / downlinkLossPercent / jitterBufferDelayMs
   // React: setRemoteVideoStatistics(statistics)
 });
 ```
 
 SDK 按当前已接受的生成结果流用户标识筛选远端主视频统计，不取第一路远端流，
-也不使用本地、音频、小流或屏幕共享指标。Demo 在 Result 左上角显示五项统计。
+视频指标不使用本地、音频、小流或屏幕共享数据；网络指标取本端到云端的连接统计。
+Demo 将上行丢包率放在左侧 Local 统计面板，其余指标显示在 Result 左上角。
 `rttMs` 为本端 SDK 与 TRTC 云端的往返延迟，不是与生成机器人之间的 RTT；
+`uplinkLossPercent` / `downlinkLossPercent` 为本端与 TRTC 云端之间的上行/下行丢包百分比（0–100，不再乘以 100），
+`jitterBufferDelayMs` 为当前结果视频流的播放缓冲延迟，和下行丢包率一起显示在 Result 统计面板。
 `endToEndDelayMs` 来自该远端视频的 `point2pointDelay`，是 RTC 媒体延迟估算，
 不代表包含 AI 推理的完整链路耗时。缺失时保持 undefined，不以播放缓冲延迟替代。
 
