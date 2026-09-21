@@ -9,7 +9,7 @@ export interface StylePreset {
   /** 列表缩略图 URL。 */
   thumbnail: string;
 
-  /** 上传给生成服务的参考图 URL。 */
+  /** 直接作为 reference_path 提交生成的参考图 URL，无需上传。 */
   reference: string;
 }
 

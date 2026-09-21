@@ -380,28 +380,42 @@ button:disabled {
   padding: 3px 8px;
 }
 
-.launchTiming {
+.localStatistics,
+.stage > .videoStatistics {
   position: absolute;
   top: 12px;
   left: 14px;
+  pointer-events: none;
+}
+
+.localStatistics {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.launchTiming,
+.videoStatistics {
   margin: 0;
-  padding: 10px 12px;
+  padding: 8px 10px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 10px;
   background: rgba(0, 0, 0, 0.6);
   color: rgba(255, 255, 255, 0.9);
-  font-size: 12px;
-  line-height: 1.6;
+  font-size: 11px;
+  line-height: 1.5;
   pointer-events: none;
 }
 
-.launchTiming > div {
+.launchTiming > div,
+.videoStatistics > div {
   display: flex;
   justify-content: space-between;
-  gap: 20px;
+  gap: 16px;
 }
 
-.launchTiming dd {
+.launchTiming dd,
+.videoStatistics dd {
   margin: 0;
   min-width: 64px;
   text-align: right;
@@ -414,12 +428,6 @@ button:disabled {
   padding-top: 5px;
   border-top: 1px solid rgba(255, 255, 255, 0.18);
   font-weight: 600;
-}
-
-.localVideoStatisticsStart {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.18);
 }
 
 .watermark {
@@ -496,30 +504,6 @@ button:disabled {
   background: var(--accent-hover);
 }
 
-.referenceChip {
-  margin: 12px auto 0;
-  max-width: 640px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 13px;
-  color: var(--text-secondary);
-}
-
-.referenceChip img {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  object-fit: cover;
-}
-
-.chipClose {
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 16px;
-}
-
 /* ── 模式页签与参考图预设 ───────────────────── */
 
 .modeSection {
@@ -560,6 +544,7 @@ button:disabled {
 }
 
 .presetRow {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -621,6 +606,51 @@ button:disabled {
 .presetItem.active span {
   color: var(--accent);
   font-weight: 600;
+}
+
+.presetItem .presetThumbnail {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  margin: 0 auto;
+  overflow: visible;
+}
+
+.presetItem .presetUploadOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 10px;
+}
+
+.presetItem .presetSpinner {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: presetSpin 0.8s linear infinite;
+}
+
+.presetItem .presetUploadError {
+  background: rgba(120, 20, 20, 0.65);
+}
+
+@keyframes presetSpin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .presetItem .presetSpinner { animation: none; }
 }
 
 .uploadItem .uploadCircle {

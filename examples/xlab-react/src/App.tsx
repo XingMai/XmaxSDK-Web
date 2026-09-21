@@ -20,6 +20,7 @@ import { XmaxVideo } from "@xmax/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { EXAMPLE_MODES, type ExampleModeKey } from "./presets";
 import { ReferenceLibrary, type ReferenceItem } from "./ReferenceLibrary";
+import { ReferenceList } from "./ReferenceList";
 
 const API_KEY_STORAGE = "xmax.xlab.apiKey";
 const PROMPT_STORAGE = "xmax.xlab.prompt";
@@ -142,20 +143,12 @@ export function App() {
 
   const clientRef = useRef(client);
   clientRef.current = client;
-  const [references] = useState(() => new ReferenceLibrary(async (item, onProgress) => {
-    // 内置预设首次使用也上传 COS，成功地址缓存在条目中，后续点击直接复用。
-    let data: Blob;
-    if (item.file) {
-      data = item.file;
-    } else {
-      const response = await fetch(item.source_url!);
-      if (!response.ok) throw new Error(`Failed to load preset image (${response.status})`);
-      data = await response.blob();
-    }
+  const [references] = useState(() => new ReferenceLibrary(async (file, onProgress) => {
+    // 仅上传用户选择的本地文件；预置图直接使用已有的 reference_path。
     const stored = await clientRef.current.createStorageService().uploadImage({
-      data,
-      fileName: item.file?.name ?? `${item.name.replace(/\s+/g, "-").toLowerCase()}.png`,
-      contentType: data.type || undefined,
+      data: file,
+      fileName: file.name,
+      contentType: file.type || undefined,
       onProgress,
     });
     return stored.url;
@@ -168,7 +161,6 @@ export function App() {
   const activeReferences = referenceItems.filter((item) => item.mode === activeModeKey);
   const selectedReference = activeReferences.find((item) => item.is_selected);
   const referencePath = selectedReference?.reference_path;
-  const referencePreview = selectedReference?.thumbnail;
   const referenceUploading = activeReferences.some((item) => item.upload_status === "uploading");
 
   useEffect(() => {
@@ -283,7 +275,7 @@ export function App() {
       row.removeEventListener("pointercancel", handlePointerEnd);
       row.removeEventListener("click", handleClickCapture, true);
     };
-  }, [sessionActive, activeModeKey]);
+  }, [sessionActive, activeModeKey, activeReferences.length]);
   const isConnected =
     stateText === RealtimeConnectionState.connected ||
     stateText === RealtimeConnectionState.generating;
@@ -444,11 +436,6 @@ export function App() {
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : String(error));
     }
-  }
-
-  /** 清除当前参考图。 */
-  function handleClearReference() {
-    references.clearSelection();
   }
 
   function handleModeChange(mode: ExampleModeKey) {
@@ -801,77 +788,15 @@ export function App() {
             </button>
           </div>
         )}
-          <div className="presetRow" ref={presetRowRef}>
-            {(() => {
-              const uploadItem = (
-                <button
-                  key="__upload__"
-                  className="presetItem uploadItem"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={busy || !apiKey}
-                  title={apiKey ? "Upload your own reference image" : "Uploading a reference image requires an API Key"}
-                >
-                  <span className="uploadCircle">＋</span>
-                  <span>Upload</span>
-                </button>
-              );
-              const items = [
-                ...activeReferences.map((preset) => (
-                  <button
-                    key={preset.id}
-                    className={
-                      preset.is_selected ? "presetItem active" : "presetItem"
-                    }
-                    onClick={() => void handleSelectReference(preset)}
-                    disabled={busy || !apiKey || preset.upload_status === "uploading"}
-                    aria-pressed={preset.is_selected}
-                    aria-busy={preset.upload_status === "uploading"}
-                    title={preset.error ? `${preset.error} — Click to retry` : preset.name}
-                  >
-                    <span className="presetThumbnail">
-                      <img src={preset.thumbnail} alt={preset.name} loading="lazy" draggable={false} />
-                      {preset.upload_status === "uploading" && (
-                        <span className="presetUploadOverlay" role="status">
-                          <span className="presetSpinner" />
-                          {preset.upload_progress ? `${preset.upload_progress}%` : "Uploading…"}
-                        </span>
-                      )}
-                      {preset.upload_status === "error" && (
-                        <span className="presetUploadOverlay presetUploadError">Retry</span>
-                      )}
-                    </span>
-                    <span>{preset.name}</span>
-                  </button>
-                )),
-              ];
-              // 新上传的参考图排在最前，上传入口仍靠近列表起点。
-              items.splice(activeReferences.filter((item) => item.file).length, 0, uploadItem);
-              // 第一行优先填满可视宽度，装不下时两行均分后横向滚动。
-              const perLine = Math.max(
-                presetLineCapacity || 1,
-                Math.ceil(items.length / 2),
-              );
-              const lines = [items.slice(0, perLine), items.slice(perLine)];
-              return lines
-                .filter((line) => line.length > 0)
-                .map((line, lineIndex) => (
-                  <div className="presetLine" key={lineIndex}>
-                    {line}
-                  </div>
-                ));
-            })()}
-          </div>
+        <ReferenceList
+          items={activeReferences}
+          rowRef={presetRowRef}
+          lineCapacity={presetLineCapacity}
+          disabled={busy || !apiKey}
+          onUpload={() => fileInputRef.current?.click()}
+          onSelect={(item) => void handleSelectReference(item)}
+        />
       </div>
-
-      {referencePreview && (
-        <div className="referenceChip">
-          <img src={referencePreview} alt="Reference" />
-          <span>Reference ready</span>
-          <button className="chipClose" onClick={handleClearReference} disabled={busy}>
-            ×
-          </button>
-        </div>
-      )}
 
       {errorText && <div className="error">{errorText}</div>}
     </div>
