@@ -262,16 +262,20 @@ export function App() {
   /**
    * 一键完成开启摄像头到开始生成的完整流程。
    *
-   * 未填写 API Key 时只开启本地预览。
+   * 先校验 API Key，再打开摄像头并创建会话，全部成功后才切换到生成页面。
    */
   async function handleStart() {
+    if (!apiKey) {
+      setErrorText("API Key is required");
+      return;
+    }
     setBusy(true);
     setErrorText("");
+    const realtime = client.createRealtimeManager(
+      new RealtimeConfiguration({ model }),
+    );
+    realtimeRef.current = realtime;
     try {
-      const realtime = client.createRealtimeManager(
-        new RealtimeConfiguration({ model }),
-      );
-      realtimeRef.current = realtime;
       await realtime.setLaunchTimingListener((timing) => {
         if (realtimeRef.current === realtime) {
           setLaunchTiming(timing);
@@ -283,16 +287,18 @@ export function App() {
         position: CameraPosition.front,
         useMicrophone,
       });
-      setLocalStream(stream);
-      if (!apiKey) {
-        return;
-      }
       const remote = await realtime.startGeneration({
         localStream: stream,
         context: new RealtimeContext({ prompt: submitPrompt, referencePath }),
       });
+      setLocalStream(stream);
       setRemoteStream(remote);
     } catch (error) {
+      // 任一步骤失败时释放本次会话，停留在初始界面。
+      if (realtimeRef.current === realtime) {
+        realtimeRef.current = undefined;
+      }
+      void realtime.close();
       setErrorText(error instanceof Error ? error.message : String(error));
     } finally {
       setBusy(false);
