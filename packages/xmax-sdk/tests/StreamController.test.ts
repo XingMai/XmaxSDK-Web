@@ -155,6 +155,25 @@ function emitRemoteVideo(
 }
 
 describe("StreamController", () => {
+  it("forwards network statistics after publishing without a generated stream and supports unsubscribe", async () => {
+    const { controller, rtc } = makeStream();
+    const listener = vi.fn();
+    const stats = { uplinkQuality: 1 as const, downlinkQuality: 0 as const, uplinkRttMs: 20 };
+    controller.setNetworkStatisticsListener(listener);
+    rtc.eventListener?.onNetworkStatistics?.(stats);
+    expect(listener).not.toHaveBeenCalled();
+    await controller.connect(connection, false, noopEnsureActive);
+    rtc.eventListener?.onNetworkStatistics?.(stats);
+    expect(listener).toHaveBeenLastCalledWith(stats);
+    controller.setNetworkStatisticsListener();
+    rtc.eventListener?.onNetworkStatistics?.(stats);
+    expect(listener).toHaveBeenCalledOnce();
+    controller.setNetworkStatisticsListener(listener);
+    await controller.disconnect();
+    rtc.eventListener?.onNetworkStatistics?.(stats);
+    expect(listener).toHaveBeenCalledOnce();
+  });
+
   it("selects the actual generated stream's metrics, not the first remote user or configured bot", async () => {
     const { controller, rtc } = makeStream();
     const listener = vi.fn();

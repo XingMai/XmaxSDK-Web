@@ -1,4 +1,5 @@
 import type { CameraPosition } from "../../Foundation/Media/Camera/CameraPosition";
+import type { NetworkStatisticsListener } from "../../Foundation/RTC/NetworkStatistics";
 import type { RealtimeContext } from "../../Service/Realtime/RealtimeContext";
 import type { RealtimeMediaStream } from "../../Service/Realtime/RealtimeMediaStream";
 import type {
@@ -37,6 +38,12 @@ export interface XmaxRealtimeManaging {
    * @param listener 实时状态回调；传入 `undefined` 时清除监听器。
    */
   setStateListener(listener?: RealtimeStateListener): Promise<void>;
+
+  /**
+   * 监听 TRTC 上下行网络质量和 RTT；立即回放最新快照，断开后回调 undefined。
+   * 独立于日志和远端生成流；传入 undefined 取消监听，监听器异常不影响主流程。
+   */
+  setNetworkStatisticsListener(listener?: NetworkStatisticsListener): Promise<void>;
 
   /**
    * 监听启动耗时；立即回放当前快照，每完成一个阶段再次回调。

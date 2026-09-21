@@ -1,4 +1,5 @@
 import type { RemoteVideoStatistics, VideoStatisticsListener } from "./VideoStatistics";
+import type { NetworkStatisticsListener } from "./NetworkStatistics";
 
 /**
  * 接收 RTC 媒体和数据信令事件。
@@ -7,6 +8,9 @@ import type { RemoteVideoStatistics, VideoStatisticsListener } from "./VideoStat
  * 不使用 SEI。
  */
 export interface RtcEventListener {
+  /** 本端上下行网络质量和 RTT，独立于性能日志开关。 */
+  onNetworkStatistics?: NetworkStatisticsListener;
+
   /** 本地主视频流运行统计；独立于性能日志开关。 */
   onLocalVideoStatistics?: VideoStatisticsListener;
 

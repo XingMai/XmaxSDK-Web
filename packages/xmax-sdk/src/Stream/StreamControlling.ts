@@ -1,4 +1,5 @@
 import type { RemoteStream } from "../Foundation/RTC/RemoteStream";
+import type { NetworkStatisticsListener } from "../Foundation/RTC/NetworkStatistics";
 import type { RemoteVideoStatisticsListener, VideoStatisticsListener } from "../Foundation/RTC/VideoStatistics";
 import type { RealtimeContext } from "../Service/Realtime/RealtimeContext";
 import type { RealtimePoint } from "../Service/Realtime/RealtimePoint";
@@ -38,6 +39,9 @@ export interface StreamGenerationOptions {
  * 定义传输层向 Core 暴露的统一能力。
  */
 export interface StreamControlling {
+  /** 监听本端上下行网络统计，传入 undefined 取消。 */
+  setNetworkStatisticsListener(listener?: NetworkStatisticsListener): void;
+
   /** 当前是否存在正在启动或已经运行的生成任务。 */
   readonly hasGenerationTask: boolean;
 

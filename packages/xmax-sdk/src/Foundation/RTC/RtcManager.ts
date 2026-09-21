@@ -8,6 +8,7 @@ import {
   type RtcEngineLease,
 } from "./RtcEngineManager";
 import type { RtcEventListener } from "./RtcEventListener";
+import type { NetworkQualityLevel } from "./NetworkStatistics";
 import type { RoomJoinConfiguration } from "./RoomJoinConfiguration";
 import type { RtcCameraCaptureOptions, RtcManaging } from "./RtcManaging";
 import { RtcStatsLogger } from "./RtcStatsLogger";
@@ -516,6 +517,17 @@ export class RtcManager implements RtcManaging {
     const onNetworkQuality = (stats: NetworkQuality) => {
       if (this.isInRoom && this.lease?.engine === engine) {
         RtcStatsLogger.logNetworkQuality(stats);
+        const quality = (value: number) =>
+          Number.isInteger(value) && value >= 0 && value <= 6
+            ? value as NetworkQualityLevel : undefined;
+        const rtt = (value: number) =>
+          Number.isFinite(value) && value >= 0 ? value : undefined;
+        this.eventListener?.onNetworkStatistics?.(Object.freeze({
+          uplinkQuality: quality(stats.uplinkNetworkQuality),
+          downlinkQuality: quality(stats.downlinkNetworkQuality),
+          uplinkRttMs: rtt(stats.uplinkRTT),
+          downlinkRttMs: rtt(stats.downlinkRTT),
+        }));
       }
     };
     source.on(RTC_EVENT.statistics, onStatistics);

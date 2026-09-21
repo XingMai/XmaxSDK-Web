@@ -10,6 +10,7 @@ export type { FrameInterpolationConfiguration } from "./Core/Realtime/RealtimeCo
 export type { XmaxRealtimeManaging } from "./Core/Realtime/XmaxRealtimeManaging";
 
 // Foundation
+export type { NetworkQualityLevel, NetworkStatistics, NetworkStatisticsListener } from "./Foundation/RTC/NetworkStatistics";
 export { XmaxError, XmaxErrorCode } from "./Foundation/Errors/XmaxError";
 export type { XmaxErrorListener } from "./Foundation/Errors/XmaxError";
 export { XmaxLogger, XmaxLoggerOption } from "./Foundation/Logging/XmaxLogger";

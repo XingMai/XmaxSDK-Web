@@ -201,6 +201,63 @@ describe("RtcManager performance logging", () => {
 });
 
 describe("RtcManager", () => {
+  it("maps directional network quality and RTT without requiring logs or remote video", async () => {
+    const { manager, engine } = makeManager();
+    const listener = vi.fn();
+    XmaxLogger.configure(XmaxLoggerOption.none);
+    manager.setEventListener({
+      onRemoteVideoPublished: () => {}, onCustomMessageReceived: () => {},
+      onNetworkStatistics: listener,
+    });
+    await manager.initialize();
+    const stats = { uplinkNetworkQuality: 1, downlinkNetworkQuality: 4, uplinkRTT: 21, downlinkRTT: 85 };
+    engine.emit("network-quality", stats);
+    expect(listener).not.toHaveBeenCalled();
+    await manager.joinRoom(joinConfig);
+    engine.emit("network-quality", stats);
+    expect(listener).toHaveBeenLastCalledWith({ uplinkQuality: 1, downlinkQuality: 4, uplinkRttMs: 21, downlinkRttMs: 85 });
+    expect(Object.isFrozen(listener.mock.calls[0]![0])).toBe(true);
+    for (const level of [0, 1, 2, 3, 4, 5, 6]) {
+      engine.emit("network-quality", { ...stats, uplinkNetworkQuality: level, downlinkNetworkQuality: level });
+      expect(listener.mock.calls.at(-1)![0]).toMatchObject({ uplinkQuality: level, downlinkQuality: level });
+    }
+    listener.mockClear();
+    await manager.leaveRoom();
+    engine.emit("network-quality", stats);
+    expect(listener).not.toHaveBeenCalled();
+    await manager.joinRoom(joinConfig);
+    engine.emit("network-quality", stats);
+    expect(listener).toHaveBeenCalledOnce();
+    await manager.destroy();
+    listener.mockClear();
+    engine.emit("network-quality", stats);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("normalizes missing or invalid network metrics while retaining zero RTT", async () => {
+    const { manager, engine } = makeManager();
+    const listener = vi.fn();
+    manager.setEventListener({
+      onRemoteVideoPublished: () => {}, onCustomMessageReceived: () => {},
+      onNetworkStatistics: listener,
+    });
+    await manager.initialize();
+    await manager.joinRoom(joinConfig);
+    for (const invalid of [undefined, -1, 7, 1.5, NaN, Infinity]) {
+      engine.emit("network-quality", {
+        uplinkNetworkQuality: invalid, downlinkNetworkQuality: invalid,
+        uplinkRTT: NaN, downlinkRTT: -1,
+      });
+      expect(listener).toHaveBeenLastCalledWith({
+        uplinkQuality: undefined, downlinkQuality: undefined,
+        uplinkRttMs: undefined, downlinkRttMs: undefined,
+      });
+    }
+    engine.emit("network-quality", { uplinkRTT: 0, downlinkRTT: Infinity });
+    expect(listener.mock.calls.at(-1)![0]).toMatchObject({ uplinkRttMs: 0, downlinkRttMs: undefined });
+    await manager.destroy();
+  });
+
   it("maps remote main-video statistics with cloud RTT and optional video E2E", async () => {
     const { manager, engine } = makeManager();
     const listener = vi.fn();

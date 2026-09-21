@@ -3,6 +3,7 @@ import { XmaxLogger } from "../Foundation/Logging/XmaxLogger";
 import { RemoteStream } from "../Foundation/RTC/RemoteStream";
 import type { RtcManaging } from "../Foundation/RTC/RtcManaging";
 import type { RemoteVideoStatisticsListener, VideoStatisticsListener } from "../Foundation/RTC/VideoStatistics";
+import type { NetworkStatisticsListener } from "../Foundation/RTC/NetworkStatistics";
 import type { RealtimePoint } from "../Service/Realtime/RealtimePoint";
 import type { RealtimeSessionConnection } from "../Service/Realtime/RealtimeSessionConnection";
 import type { RealtimeVideoFormat } from "../Service/Realtime/RealtimeVideoFormat";
@@ -88,6 +89,7 @@ export class StreamController implements StreamControlling {
   private readonly errorListener: XmaxErrorListener;
   private readonly remoteStreamListener: RemoteStreamListener;
   private localVideoStatisticsListener?: VideoStatisticsListener;
+  private networkStatisticsListener?: NetworkStatisticsListener;
   private remoteVideoStatisticsListener?: RemoteVideoStatisticsListener;
 
   // 生成配置
@@ -123,6 +125,11 @@ export class StreamController implements StreamControlling {
 
     // RTC 事件监听权归传输层：房间消息交给房间控制器组包分发。
     this.rtcManager.setEventListener({
+      onNetworkStatistics: (statistics) => {
+        if (this.state.localVideoPublished) {
+          this.networkStatisticsListener?.(statistics);
+        }
+      },
       onRemoteVideoStatistics: (statistics) => {
         const userID = this.state.activeRemoteStream?.userID;
         this.remoteVideoStatisticsListener?.(
@@ -151,6 +158,11 @@ export class StreamController implements StreamControlling {
   /** 设置本地主视频流统计监听器，不改变 RTC 事件监听权。 */
   setLocalVideoStatisticsListener(listener?: VideoStatisticsListener): void {
     this.localVideoStatisticsListener = listener;
+  }
+
+  /** 网络统计不按远端用户过滤，连接发布完成后即可回调。 */
+  setNetworkStatisticsListener(listener?: NetworkStatisticsListener): void {
+    this.networkStatisticsListener = listener;
   }
 
   /** 监听当前实际生成结果流的统计，不按会话下发的 botID 猜测结果流身份。 */

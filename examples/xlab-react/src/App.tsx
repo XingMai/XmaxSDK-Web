@@ -12,11 +12,13 @@ import {
   type RealtimeMediaStream,
   type RealtimeLaunchTiming,
   type VideoStatistics,
+  type NetworkStatistics,
   type RemoteVideoStatistics,
   type RealtimeState,
   type XmaxRealtimeManaging,
 } from "@xmax/sdk";
 import { XmaxVideo } from "@xmax/react";
+import { formatNetworkQuality } from "./formatNetworkQuality";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { EXAMPLE_MODES, type ExampleModeKey } from "./presets";
 import { ReferenceLibrary, type ReferenceItem } from "./ReferenceLibrary";
@@ -73,6 +75,7 @@ export function App() {
   const [launchTiming, setLaunchTiming] = useState<RealtimeLaunchTiming>({});
   const [localVideoStatistics, setLocalVideoStatistics] = useState<VideoStatistics>();
   const [remoteVideoStatistics, setRemoteVideoStatistics] = useState<RemoteVideoStatistics>();
+  const [networkStatistics, setNetworkStatistics] = useState<NetworkStatistics>();
   const [errorText, setErrorText] = useState("");
   const [busy, setBusy] = useState(false);
   const [interpolationRequested, setInterpolationRequested] = useState(true);
@@ -357,6 +360,11 @@ export function App() {
           setRemoteVideoStatistics(statistics);
         }
       });
+      await realtime.setNetworkStatisticsListener((statistics) => {
+        if (realtimeRef.current === realtime) {
+          setNetworkStatistics(statistics);
+        }
+      });
       const stream = await realtime.createLocalCameraStream({
         videoFormat: CAMERA_VIDEO_FORMAT,
         position: CameraPosition.front,
@@ -498,6 +506,7 @@ export function App() {
     setRemoteStream(undefined);
     setLocalVideoStatistics(undefined);
     setRemoteVideoStatistics(undefined);
+    setNetworkStatistics(undefined);
     setStateText(RealtimeConnectionState.idle);
     setErrorText("");
     void realtime?.close();
@@ -790,7 +799,11 @@ export function App() {
               <div><dt>上行分辨率</dt><dd>{formatVideoResolution(localVideoStatistics)}</dd></div>
               <div><dt>上行帧率</dt><dd>{formatVideoMetric(localVideoStatistics?.frameRate, "fps")}</dd></div>
               <div><dt>上行码率</dt><dd>{formatVideoMetric(localVideoStatistics?.bitrateKbps, "kbps")}</dd></div>
+            </dl>
+            <dl className="videoStatistics" aria-label="上行网络与延迟统计">
               <div title="本端 SDK → TRTC 云端的上行丢包率，不是本地预览丢包率"><dt>上行丢包率</dt><dd>{formatVideoMetric(remoteVideoStatistics?.uplinkLossPercent, "%")}</dd></div>
+              <div><dt>上行网络质量</dt><dd>{formatNetworkQuality(networkStatistics?.uplinkQuality)}</dd></div>
+              <div title="本端上行连接到 TRTC 云端的往返延迟，不是单程耗时"><dt>上行 RTT</dt><dd>{formatVideoMetric(networkStatistics?.uplinkRttMs, "ms")}</dd></div>
             </dl>
           </div>
         </div>
@@ -809,11 +822,12 @@ export function App() {
               <div><dt>下行分辨率</dt><dd>{formatVideoResolution(remoteVideoStatistics)}</dd></div>
               <div><dt>下行帧率</dt><dd>{formatVideoMetric(remoteVideoStatistics?.frameRate, "fps")}</dd></div>
               <div><dt>下行码率</dt><dd>{formatVideoMetric(remoteVideoStatistics?.bitrateKbps, "kbps")}</dd></div>
-              <div><dt>下行丢包率</dt><dd>{formatVideoMetric(remoteVideoStatistics?.downlinkLossPercent, "%")}</dd></div>
             </dl>
-            <dl className="videoStatistics" aria-label="生成结果延迟统计">
+            <dl className="videoStatistics" aria-label="下行网络与延迟统计">
               <div><dt>播放缓冲延迟</dt><dd>{formatVideoMetric(remoteVideoStatistics?.jitterBufferDelayMs, "ms")}</dd></div>
-              <div><dt>RTT（云端）</dt><dd>{formatVideoMetric(remoteVideoStatistics?.rttMs, "ms")}</dd></div>
+              <div><dt>下行丢包率</dt><dd>{formatVideoMetric(remoteVideoStatistics?.downlinkLossPercent, "%")}</dd></div>
+              <div title="本端所有下行连接的平均网络质量"><dt>下行网络质量</dt><dd>{formatNetworkQuality(networkStatistics?.downlinkQuality)}</dd></div>
+              <div title="本端所有下行连接到 TRTC 云端的平均往返延迟，不是单程耗时"><dt>下行 RTT</dt><dd>{formatVideoMetric(networkStatistics?.downlinkRttMs, "ms")}</dd></div>
               <div><dt>E2E（RTC 估算）</dt><dd>{formatVideoMetric(remoteVideoStatistics?.endToEndDelayMs, "ms")}</dd></div>
             </dl>
           </div>

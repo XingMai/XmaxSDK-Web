@@ -3,6 +3,7 @@ import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
 import { CameraPosition } from "../../Foundation/Media/Camera/CameraPosition";
 import { RtcManager } from "../../Foundation/RTC/RtcManager";
 import type { RtcManaging } from "../../Foundation/RTC/RtcManaging";
+import type { NetworkStatistics, NetworkStatisticsListener } from "../../Foundation/RTC/NetworkStatistics";
 import type { RemoteVideoStatistics, RemoteVideoStatisticsListener, VideoStatistics, VideoStatisticsListener } from "../../Foundation/RTC/VideoStatistics";
 import { CameraController } from "../../Media/Camera/CameraController";
 import type { CameraControlling } from "../../Media/Camera/CameraControlling";
@@ -67,6 +68,8 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   private remoteVideoStatistics?: RemoteVideoStatistics;
   private remoteVideoStatisticsListener?: RemoteVideoStatisticsListener;
   private acceptsVideoStatistics = false;
+  private networkStatistics?: NetworkStatistics;
+  private networkStatisticsListener?: NetworkStatisticsListener;
 
   // 实时业务管理组件；状态所有权分别归连接和生成管理器。
   private readonly connectionManager: XmaxRealtimeConnectionManager;
@@ -144,6 +147,12 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       if (this.acceptsVideoStatistics) {
         this.localVideoStatistics = statistics ? Object.freeze({ ...statistics }) : undefined;
         this.notifyLocalVideoStatistics();
+      }
+    });
+    this.streamController.setNetworkStatisticsListener((statistics) => {
+      if (this.acceptsVideoStatistics) {
+        this.networkStatistics = statistics ? Object.freeze({ ...statistics }) : undefined;
+        this.notifyNetworkStatistics();
       }
     });
     this.streamController.setRemoteVideoStatisticsListener((statistics) => {
@@ -274,6 +283,20 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     }
   }
 
+  /** 网络统计立即回放最新快照，无数据或断开后为 undefined。 */
+  async setNetworkStatisticsListener(listener?: NetworkStatisticsListener): Promise<void> {
+    this.networkStatisticsListener = listener;
+    this.notifyNetworkStatistics();
+  }
+
+  private notifyNetworkStatistics(): void {
+    try {
+      void Promise.resolve(this.networkStatisticsListener?.(this.networkStatistics)).catch(() => {});
+    } catch {
+      // 统计观察者不得打断生成或资源清理。
+    }
+  }
+
   private clearRemoteVideoStatistics(): void {
     const hadStatistics = this.remoteVideoStatistics !== undefined;
     this.remoteVideoStatistics = undefined;
@@ -292,6 +315,9 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
 
   private clearVideoStatistics(): void {
     this.acceptsVideoStatistics = false;
+    const hadNetworkStatistics = this.networkStatistics !== undefined;
+    this.networkStatistics = undefined;
+    if (hadNetworkStatistics) this.notifyNetworkStatistics();
     this.clearRemoteVideoStatistics();
     const hadStatistics = this.localVideoStatistics !== undefined;
     this.localVideoStatistics = undefined;

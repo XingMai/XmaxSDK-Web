@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { NetworkStatisticsListener } from "../src/Foundation/RTC/NetworkStatistics";
 import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import { CameraPosition } from "../src/Foundation/Media/Camera/CameraPosition";
 import type { CameraControlling, CameraPreviewReadyHandler } from "../src/Media/Camera/CameraControlling";
@@ -121,6 +122,12 @@ class CameraControllingStub implements CameraControlling {
 
 /** 传输层桩：记录全部调用，生成确认由测试手动控制。 */
 class StreamControllingStub implements StreamControlling {
+  networkStatisticsListener?: NetworkStatisticsListener;
+
+  setNetworkStatisticsListener(listener?: NetworkStatisticsListener): void {
+    this.networkStatisticsListener = listener;
+  }
+
   remoteVideoStatisticsListener?: RemoteVideoStatisticsListener;
 
   setRemoteVideoStatisticsListener(listener?: RemoteVideoStatisticsListener): void {
@@ -405,6 +412,55 @@ describe("XmaxRealtimeManager frame interpolation", () => {
     expect(s.manager.currentState.connectionState).toBe(RealtimeConnectionState.generating);
     expect(s.manager.isFrameInterpolationEnabled).toBe(false);
     await s.manager.close();
+  });
+});
+
+describe("XmaxRealtimeManager network statistics", () => {
+  it("replays immutable snapshots and clears on disconnect without accepting late updates", async () => {
+    const { manager, camera, stream } = makeManager();
+    const listener = vi.fn();
+    const stats = { uplinkQuality: 1 as const, downlinkQuality: 2 as const, uplinkRttMs: 20, downlinkRttMs: 40 };
+    await manager.setNetworkStatisticsListener(listener);
+    expect(listener).toHaveBeenLastCalledWith(undefined);
+    stream.networkStatisticsListener?.(stats);
+    expect(listener).toHaveBeenCalledOnce();
+    const localStream = makeLocalStream(camera);
+    await manager.connect(localStream);
+    stream.networkStatisticsListener?.(stats);
+    expect(listener).toHaveBeenLastCalledWith(stats);
+    expect(listener.mock.calls.at(-1)![0]).not.toBe(stats);
+    expect(Object.isFrozen(listener.mock.calls.at(-1)![0])).toBe(true);
+    const replay = vi.fn();
+    await manager.setNetworkStatisticsListener(replay);
+    expect(replay).toHaveBeenLastCalledWith(stats);
+    stream.networkStatisticsListener?.(undefined);
+    expect(replay).toHaveBeenLastCalledWith(undefined);
+    stream.networkStatisticsListener?.(stats);
+    const disconnecting = manager.disconnect();
+    stream.networkStatisticsListener?.(stats);
+    await disconnecting;
+    expect(replay).toHaveBeenLastCalledWith(undefined);
+    expect(replay).toHaveBeenCalledTimes(4);
+    await manager.connect(localStream);
+    await manager.setNetworkStatisticsListener(replay);
+    expect(replay).toHaveBeenLastCalledWith(undefined);
+    stream.networkStatisticsListener?.(stats);
+    expect(replay).toHaveBeenLastCalledWith(stats);
+    await manager.close();
+    expect(replay).toHaveBeenLastCalledWith(undefined);
+  });
+
+  it.each([false, true])("isolates network observer failures and supports unsubscribe (async: %s)", async (asyncListener) => {
+    const { manager, camera, stream } = makeManager();
+    const fail = vi.fn(() => { throw new Error("observer failed"); });
+    await manager.setNetworkStatisticsListener(asyncListener ? async () => fail() : fail);
+    await manager.connect(makeLocalStream(camera));
+    expect(() => stream.networkStatisticsListener?.({ uplinkQuality: 1 })).not.toThrow();
+    expect(fail).toHaveBeenCalledTimes(2);
+    await manager.setNetworkStatisticsListener();
+    stream.networkStatisticsListener?.({ uplinkQuality: 2 });
+    await manager.close();
+    expect(fail).toHaveBeenCalledTimes(2);
   });
 });
 
