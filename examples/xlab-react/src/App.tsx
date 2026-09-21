@@ -550,9 +550,13 @@ export function App() {
     </footer>
   );
 
-  if (!sessionActive) {
-    return (
-      <div className="page">
+  return (
+    <div className="pageStack">
+      <div
+        className={sessionActive ? "pageView" : "pageView active"}
+        aria-hidden={sessionActive}
+      >
+        <div className="page">
         <header className="topbar">
           <div className="brand">
             <img className="brandLogo" src="/xmax-wordmark.png" alt="Xmax" />
@@ -687,11 +691,13 @@ export function App() {
           {errorText && <div className="error">{errorText}</div>}
         </main>
         {footer}
+        </div>
       </div>
-    );
-  }
 
-  return (
+      <div
+        className={sessionActive ? "pageView active" : "pageView"}
+        aria-hidden={!sessionActive}
+      >
     <div className="page">
       <header className="topbar">
         <div className="brand">
@@ -732,15 +738,19 @@ export function App() {
           </div>
         </div>
         <div className="stage">
-          <XmaxVideo
-            track={remoteStream?.videoTrack}
-            style={{ width: "100%", height: "100%" }}
-          />
+          {remoteStream && (
+            <div className="remoteVideo" key={remoteStream.id}>
+              <XmaxVideo
+                track={remoteStream.videoTrack}
+                style={{ width: "100%", height: "100%" }}
+              />
+            </div>
+          )}
           <span className="stageLabel">Result</span>
           <dl className="videoStatistics" aria-label="生成结果视频统计">
-            <div><dt>分辨率</dt><dd>{formatVideoResolution(remoteVideoStatistics)}</dd></div>
-            <div><dt>帧率</dt><dd>{formatVideoMetric(remoteVideoStatistics?.frameRate, "fps")}</dd></div>
-            <div><dt>码率</dt><dd>{formatVideoMetric(remoteVideoStatistics?.bitrateKbps, "kbps")}</dd></div>
+            <div><dt>下行分辨率</dt><dd>{formatVideoResolution(remoteVideoStatistics)}</dd></div>
+            <div><dt>下行帧率</dt><dd>{formatVideoMetric(remoteVideoStatistics?.frameRate, "fps")}</dd></div>
+            <div><dt>下行码率</dt><dd>{formatVideoMetric(remoteVideoStatistics?.bitrateKbps, "kbps")}</dd></div>
             <div><dt>下行丢包率</dt><dd>{formatVideoMetric(remoteVideoStatistics?.downlinkLossPercent, "%")}</dd></div>
             <div><dt>播放缓冲延迟</dt><dd>{formatVideoMetric(remoteVideoStatistics?.jitterBufferDelayMs, "ms")}</dd></div>
             <div><dt>RTT（云端）</dt><dd>{formatVideoMetric(remoteVideoStatistics?.rttMs, "ms")}</dd></div>
@@ -847,6 +857,8 @@ export function App() {
       </div>
 
       {errorText && <div className="error">{errorText}</div>}
+    </div>
+      </div>
     </div>
   );
 }

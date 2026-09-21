@@ -16,7 +16,7 @@ export function ReferenceList({ items, rowRef, lineCapacity, disabled, onUpload,
   const perLine = Math.max(lineCapacity || 1, Math.ceil(entries.length / 2));
   const lines = [entries.slice(0, perLine), entries.slice(perLine)];
   return (
-      <div className="presetRow" ref={rowRef}>
+      <div className={disabled ? "presetRow disabled" : "presetRow"} ref={rowRef}>
         {lines.filter((line) => line.length > 0).map((line, index) => (
           <div className="presetLine" key={index}>
             {line.map((item) => item ? (
