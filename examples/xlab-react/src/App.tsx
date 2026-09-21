@@ -727,10 +727,10 @@ export function App() {
               className="presetItem uploadItem"
               onClick={() => fileInputRef.current?.click()}
               disabled={referenceUploading || !apiKey}
-              title={apiKey ? "上传自己的参考图" : "Uploading a reference image requires an API Key"}
+              title={apiKey ? "Upload your own reference image" : "Uploading a reference image requires an API Key"}
             >
               <span className="uploadCircle">{referenceUploading ? "…" : "＋"}</span>
-              <span>上传参考图</span>
+              <span>Upload</span>
             </button>
             {activeMode.presets.map((preset) => (
               <button
