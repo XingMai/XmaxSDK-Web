@@ -17,6 +17,10 @@ export { VideoContentMode } from "./Foundation/Media/Video/VideoContentMode";
 export { XmaxEnvironment, apiBaseURL } from "./Foundation/Runtime/XmaxEnvironment";
 
 // Service / Realtime
+export type {
+  RealtimeLaunchTiming,
+  RealtimeLaunchTimingListener,
+} from "./Service/Realtime/RealtimeLaunchTiming";
 export { RealtimeContext } from "./Service/Realtime/RealtimeContext";
 export type { RealtimeContextInit } from "./Service/Realtime/RealtimeContext";
 export { RealtimeMediaStream } from "./Service/Realtime/RealtimeMediaStream";

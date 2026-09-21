@@ -7,6 +7,7 @@ import type {
 } from "../../Service/Realtime/RealtimeState";
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import type { RealtimeConfiguration } from "./RealtimeConfiguration";
+import type { RealtimeLaunchTimingListener } from "../../Service/Realtime/RealtimeLaunchTiming";
 
 /**
  * 定义 SDK 对接入方提供的实时媒体与生成控制能力。
@@ -29,6 +30,14 @@ export interface XmaxRealtimeManaging {
    * @param listener 实时状态回调；传入 `undefined` 时清除监听器。
    */
   setStateListener(listener?: RealtimeStateListener): Promise<void>;
+
+  /**
+   * 监听启动耗时；立即回放当前快照，每完成一个阶段再次回调。
+   * 新一轮打开摄像头时重置；失败或终止后冻结，更新生成条件不重置。
+   * 首帧统计需要将远端轨道绑定到 SDK 视频视图，且不会阻塞 startGeneration。
+   * 传入 undefined 清除监听器；监听器异常不影响生成流程。
+   */
+  setLaunchTimingListener(listener?: RealtimeLaunchTimingListener): Promise<void>;
 
   /**
    * 设置本地媒体预览音量。

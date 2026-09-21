@@ -32,6 +32,8 @@ export class XmaxVideoView {
   private mirrored = false;
   private hasNotifiedFrameDisplay = false;
   private onPlaying?: () => void;
+  private videoFrameCallbackID?: number;
+  private frameNotificationSequence = 0;
 
   /**
    * 创建单轨视频视图。
@@ -105,10 +107,14 @@ export class XmaxVideoView {
   /** 挂载到容器元素。 */
   attach(to: HTMLElement): void {
     to.appendChild(this.element);
+    if (this.videoElement.srcObject && !this.hasNotifiedFrameDisplay) {
+      this.armFrameDisplayNotification();
+    }
   }
 
   /** 从容器元素移除。 */
   detach(): void {
+    this.cancelFrameDisplayNotification();
     this.element.remove();
   }
 
@@ -117,6 +123,8 @@ export class XmaxVideoView {
     if (this.videoElement.srcObject === stream) {
       return;
     }
+    this.cancelFrameDisplayNotification();
+    this.hasNotifiedFrameDisplay = false;
     this.videoElement.srcObject = stream;
     if (stream) {
       this.armFrameDisplayNotification();
@@ -145,28 +153,50 @@ export class XmaxVideoView {
     if (track) {
       VideoRenderRegistry.binding(track)?.detachHandler(this);
     }
+    this.cancelFrameDisplayNotification();
+    this.videoElement.srcObject = null;
+  }
+
+  /** 首帧提交合成器时通知；旧浏览器回退到 playing 近似判断。 */
+  private armFrameDisplayNotification(): void {
+    this.cancelFrameDisplayNotification();
+    const sequence = this.frameNotificationSequence;
+    const track = this.currentTrack;
+    const binding = track ? VideoRenderRegistry.binding(track) : undefined;
+    const notify = () => {
+      if (sequence !== this.frameNotificationSequence || this.hasNotifiedFrameDisplay) {
+        return;
+      }
+      this.hasNotifiedFrameDisplay = true;
+      this.cancelFrameDisplayNotification();
+      binding?.frameDisplayHandler?.();
+      this.frameDisplayHandler?.();
+    };
+
+    if (typeof this.videoElement.requestVideoFrameCallback === "function") {
+      this.videoFrameCallbackID = this.videoElement.requestVideoFrameCallback(notify);
+      return;
+    }
+    this.onPlaying = notify;
+    this.videoElement.addEventListener("playing", this.onPlaying, {
+      once: true,
+    });
+    if (!this.videoElement.paused && this.videoElement.readyState >= 2) {
+      queueMicrotask(notify);
+    }
+  }
+
+  /** 换流、解绑或卸载时取消观察，防止迟到的首帧归入下一条流。 */
+  private cancelFrameDisplayNotification(): void {
+    this.frameNotificationSequence += 1;
+    if (this.videoFrameCallbackID !== undefined) {
+      this.videoElement.cancelVideoFrameCallback(this.videoFrameCallbackID);
+      this.videoFrameCallbackID = undefined;
+    }
     if (this.onPlaying) {
       this.videoElement.removeEventListener("playing", this.onPlaying);
       this.onPlaying = undefined;
     }
-    this.videoElement.srcObject = null;
-  }
-
-  /** 武装首帧显示通知：video 进入 playing 时触发一次回调。 */
-  private armFrameDisplayNotification(): void {
-    if (this.onPlaying) {
-      this.videoElement.removeEventListener("playing", this.onPlaying);
-    }
-    this.onPlaying = () => {
-      if (this.hasNotifiedFrameDisplay) {
-        return;
-      }
-      this.hasNotifiedFrameDisplay = true;
-      this.frameDisplayHandler?.();
-    };
-    this.videoElement.addEventListener("playing", this.onPlaying, {
-      once: true,
-    });
   }
 
   /** 应用显示模式与镜像样式。 */

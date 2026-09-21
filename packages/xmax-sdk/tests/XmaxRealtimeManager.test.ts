@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import { CameraPosition } from "../src/Foundation/Media/Camera/CameraPosition";
 import type { CameraControlling, CameraPreviewReadyHandler } from "../src/Media/Camera/CameraControlling";
@@ -17,6 +17,8 @@ import { RealtimeConnectionState } from "../src/Service/Realtime/RealtimeState";
 import { RealtimeVideoFormat } from "../src/Service/Realtime/RealtimeVideoFormat";
 import { RealtimeVideoTrack } from "../src/Service/Realtime/RealtimeVideoTrack";
 import { StreamID } from "../src/Service/Realtime/StreamID";
+import type { RealtimeLaunchTiming } from "../src/Service/Realtime/RealtimeLaunchTiming";
+import { VideoRenderRegistry } from "../src/Service/Realtime/VideoRenderBinding";
 import type {
   StreamControlling,
   StreamGenerationOptions,
@@ -260,6 +262,128 @@ function makeLocalStream(camera: CameraControllingStub): RealtimeMediaStream {
 }
 
 const testContext = new RealtimeContext({ prompt: "a red cube" });
+
+describe("XmaxRealtimeManager launch timing", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  const cameraOptions = {
+    videoFormat: testVideoFormat,
+    position: CameraPosition.front,
+    useMicrophone: false,
+  };
+
+  it("分阶段回调：连接包含会话、编码和进房发布，首帧独立于生成返回", async () => {
+    let now = 100;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const { manager, camera, session, stream } = makeManager();
+    const snapshots: RealtimeLaunchTiming[] = [];
+    await manager.setLaunchTimingListener((timing) => snapshots.push(timing));
+    expect(snapshots).toEqual([{}]);
+
+    const createCamera = camera.createLocalCameraStream.bind(camera);
+    vi.spyOn(camera, "createLocalCameraStream").mockImplementation(async () => {
+      now += 250;
+      return createCamera();
+    });
+    vi.spyOn(session, "createSession").mockImplementation(async () => {
+      now += 120;
+      return session.session;
+    });
+    vi.spyOn(stream, "setVideoEncoderConfig").mockImplementation(async () => { now += 30; });
+    vi.spyOn(stream, "connect").mockImplementation(async () => { now += 350; });
+
+    const localStream = await manager.createLocalCameraStream(cameraOptions);
+    const pending = manager.startGeneration({ localStream, context: testContext });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+    stream.confirmationDeferreds[0]!.resolve();
+    const remote = await pending;
+
+    // 即使没有挂载视图，生成仍能返回；此时不能伪报首帧和总耗时。
+    expect(snapshots).toEqual([{}, {}, { cameraMs: 250 }, { cameraMs: 250, connectionMs: 500 }]);
+    const onFrame = VideoRenderRegistry.binding(remote.videoTrack!)!.frameDisplayHandler!;
+    now = 1250;
+    onFrame();
+    expect(snapshots.at(-1)).toEqual({ cameraMs: 250, connectionMs: 500, firstFrameMs: 400, totalMs: 1150 });
+    expect(Object.isFrozen(snapshots.at(-1))).toBe(true);
+
+    now = 1500;
+    onFrame();
+    await manager.startGeneration({ localStream, context: new RealtimeContext({ prompt: "updated" }) });
+    expect(snapshots).toHaveLength(5);
+    expect(stream.beginCalls).toHaveLength(1);
+    const replay = vi.fn();
+    await manager.setLaunchTimingListener(replay);
+    expect(replay).toHaveBeenCalledWith(snapshots.at(-1));
+    await manager.setLaunchTimingListener();
+    await manager.close();
+    expect(replay).toHaveBeenCalledTimes(1);
+  });
+
+  it("停止后保留部分统计，重启清空，旧轨道的迟到首帧无效", async () => {
+    const { manager, stream } = makeManager();
+    const listener = vi.fn();
+    await manager.setLaunchTimingListener(listener);
+    const localStream = await manager.createLocalCameraStream(cameraOptions);
+    const pending = manager.startGeneration({ localStream, context: testContext });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+    stream.confirmationDeferreds[0]!.resolve();
+    const remote = await pending;
+    const oldFrame = VideoRenderRegistry.binding(remote.videoTrack!)!.frameDisplayHandler!;
+    const partial = listener.mock.calls.at(-1)![0];
+    await manager.close();
+    oldFrame();
+    expect(listener.mock.calls.at(-1)![0]).toBe(partial);
+    expect(partial.firstFrameMs).toBeUndefined();
+
+    listener.mockClear();
+    await manager.createLocalCameraStream(cameraOptions);
+    expect(listener.mock.calls[0]![0]).toEqual({});
+    oldFrame();
+    expect(listener).toHaveBeenCalledTimes(2);
+    expect(listener.mock.calls[1]![0]).toEqual({ cameraMs: expect.any(Number) });
+    await manager.close();
+  });
+
+  it("进房失败时不提交连接和总耗时", async () => {
+    const { manager, stream } = makeManager();
+    const listener = vi.fn();
+    await manager.setLaunchTimingListener(listener);
+    const localStream = await manager.createLocalCameraStream(cameraOptions);
+    stream.failConnect = new XmaxError(XmaxErrorCode.rtcError, "join failed");
+    await expect(manager.startGeneration({ localStream, context: testContext })).rejects.toThrow("join failed");
+    expect(listener.mock.calls.at(-1)![0]).toEqual({ cameraMs: expect.any(Number) });
+    await manager.close();
+  });
+
+  it("生成取消后不提交迟到的首帧", async () => {
+    const { manager, stream } = makeManager();
+    const listener = vi.fn();
+    await manager.setLaunchTimingListener(listener);
+    const localStream = await manager.createLocalCameraStream(cameraOptions);
+    const remote = await manager.connect(localStream);
+    const onFrame = VideoRenderRegistry.binding(remote.videoTrack!)!.frameDisplayHandler!;
+    const pending = manager.startGeneration({ localStream, context: testContext });
+    const rejected = expect(pending).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+    const stopping = manager.disconnect();
+    onFrame();
+    stream.confirmationDeferreds[0]!.resolve();
+    await stopping;
+    await rejected;
+    expect(listener.mock.calls.at(-1)![0]).toEqual({ cameraMs: expect.any(Number), connectionMs: expect.any(Number) });
+    await manager.close();
+  });
+
+  it.each([false, true])("监听器抛错不影响相机和连接（异步：%s）", async (asyncListener) => {
+    const { manager } = makeManager();
+    const fail = () => { throw new Error("observer failed"); };
+    await manager.setLaunchTimingListener(asyncListener ? async () => fail() : fail);
+    const localStream = await manager.createLocalCameraStream(cameraOptions);
+    await manager.connect(localStream);
+    expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.connected);
+    await manager.close();
+  });
+});
 
 describe("XmaxRealtimeManager connect", () => {
   it("建立连接：创建会话、进房发布、启动心跳并进入 connected", async () => {

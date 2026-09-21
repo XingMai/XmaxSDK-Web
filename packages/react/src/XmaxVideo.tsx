@@ -45,6 +45,7 @@ export function XmaxVideo(props: XmaxVideoProps) {
     viewRef.current = view;
     return () => {
       viewRef.current = undefined;
+      view.track = undefined;
       view.detach();
     };
   }, []);

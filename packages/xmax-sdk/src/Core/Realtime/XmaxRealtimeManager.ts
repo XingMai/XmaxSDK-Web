@@ -35,6 +35,8 @@ import {
   type RealtimeOperationToken,
 } from "./RealtimeCoordinator";
 import { RealtimeErrorHandler } from "./RealtimeErrorHandler";
+import { RealtimeLaunchTimer } from "./RealtimeLaunchTimer";
+import type { RealtimeLaunchTimingListener } from "../../Service/Realtime/RealtimeLaunchTiming";
 import type { XmaxRealtimeManaging } from "./XmaxRealtimeManaging";
 
 /** 等待远端生成流首帧的时限（毫秒）；超时仅记录日志，不影响生成流程。 */
@@ -54,6 +56,8 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   private readonly coordinator: RealtimeCoordinator;
   private readonly errorHandler: RealtimeErrorHandler;
   private readonly cameraController: CameraControlling;
+  private readonly launchTimer = new RealtimeLaunchTimer();
+  private remoteFrameDisplayHandler?: () => void;
 
   // 服务层组件
   private readonly sessionService?: RealtimeSessionServicing;
@@ -146,6 +150,11 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     await this.coordinator.setStateListener(listener);
   }
 
+  /** 监听启动耗时；设置后立即回放，传 undefined 取消监听。 */
+  async setLaunchTimingListener(listener?: RealtimeLaunchTimingListener): Promise<void> {
+    this.launchTimer.setListener(listener);
+  }
+
   /**
    * 设置本地媒体预览音量。
    *
@@ -196,8 +205,18 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
           }),
           token,
         );
-        const stream = await this.cameraController.createLocalCameraStream(options);
         token.ensureCurrent();
+        const completeCamera = this.launchTimer.startCamera();
+        let stream: RealtimeMediaStream;
+        try {
+          token.ensureCurrent();
+          stream = await this.cameraController.createLocalCameraStream(options);
+        } catch (error) {
+          this.launchTimer.cancel();
+          throw error;
+        }
+        token.ensureCurrent();
+        completeCamera();
         // 收到有效帧且预览视图绑定后进入 ready。
         this.cameraController.setPreviewReadyHandler((isCurrent) => {
           void this.coordinator.localPreviewDidBecomeReady(isCurrent);
@@ -213,6 +232,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       RealtimeOperationKind.media,
       undefined,
       async (token) => {
+        this.launchTimer.cancel();
         await this.cameraController.stopLocalCameraStream();
         token.ensureCurrent();
         await this.coordinator.commit(
@@ -351,6 +371,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
 
   /** 断开实时连接并保留当前本地媒体预览。 */
   async disconnect(): Promise<void> {
+    this.launchTimer.cancel();
     await this.coordinator.disconnect();
   }
 
@@ -359,6 +380,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    * 关闭期间重复调用会等待同一个释放任务；关闭完成后仍可重新创建本地流。
    */
   async close(): Promise<void> {
+    this.launchTimer.cancel();
     await this.coordinator.terminate(RealtimeTerminationScope.all);
   }
 
@@ -390,6 +412,8 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     );
 
     // 会话创建成功后立即登记，供失败清理时关闭会话。
+    token.ensureCurrent();
+    const completeConnection = this.launchTimer.startConnection();
     const session = await sessionService.createSession(this.options.model);
     this.activeSession = session;
     const connection = session.connection;
@@ -414,6 +438,8 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     await streamController.connect(connection, this.cameraController.useMicrophone, () => {
       token.ensureCurrent();
     });
+    token.ensureCurrent();
+    completeConnection();
     token.ensureCurrent();
 
     sessionService.startHeartbeat(session.id, {
@@ -461,6 +487,12 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
 
     const taskID = XmaxRealtimeManager.createTaskID();
     try {
+      const completeFirstFrame = this.launchTimer.startFirstFrame();
+      this.remoteFrameDisplayHandler = () => {
+        if (!token.signal.aborted) {
+          completeFirstFrame();
+        }
+      };
       const confirmation = streamController.beginGeneration({
         taskID,
         videoFormat,
@@ -582,6 +614,11 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   /** 为远端轨道注册渲染绑定：attach 时挂流占位，媒体轨到达后送入画面。 */
   private registerRemoteBinding(track: RealtimeVideoTrack): void {
     VideoRenderRegistry.register(track, {
+      frameDisplayHandler: () => {
+        if (this.activeRemoteTrack === track) {
+          this.remoteFrameDisplayHandler?.();
+        }
+      },
       attachHandler: (view) => {
         view.isMirrored =
           this.cameraController.currentTrack?.position === CameraPosition.front;
@@ -679,6 +716,8 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     scope: RealtimeTerminationScope,
     taskID: string,
   ): Promise<RealtimeCleanupResult> {
+    this.launchTimer.cancel();
+    this.remoteFrameDisplayHandler = undefined;
     const sessionID = this.activeSession?.id;
 
     this.sessionService?.stopHeartbeat();

@@ -45,6 +45,8 @@ export function XmaxRealtimeVideo(props: XmaxRealtimeVideoProps) {
     viewRef.current = view;
     return () => {
       viewRef.current = undefined;
+      view.localTrack = undefined;
+      view.remoteTrack = undefined;
       view.detach();
     };
   }, []);

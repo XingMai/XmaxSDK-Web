@@ -112,10 +112,14 @@ export class XmaxRealtimeVideoView {
   /** 挂载到容器元素。 */
   attach(to: HTMLElement): void {
     to.appendChild(this.element);
+    this.localVideoView.attach(this.element);
+    this.remoteVideoView.attach(this.element);
   }
 
   /** 从容器元素移除。 */
   detach(): void {
+    this.localVideoView.detach();
+    this.remoteVideoView.detach();
     this.element.remove();
   }
 

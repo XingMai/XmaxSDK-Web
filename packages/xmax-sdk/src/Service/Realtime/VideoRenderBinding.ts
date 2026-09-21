@@ -19,6 +19,9 @@ export interface VideoRenderTarget {
  * 轨道与渲染视图之间的绑定行为。
  */
 export interface VideoRenderBinding {
+  /** 视图首帧呈现时通知轨道拥有者，独立于视图自身的渐入回调。 */
+  frameDisplayHandler?: () => void;
+
   /** 视图绑定轨道时调用；负责把画面接入视图。 */
   attachHandler: (target: VideoRenderTarget, contentMode: VideoContentMode) => void;
 
