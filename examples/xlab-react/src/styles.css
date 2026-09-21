@@ -418,8 +418,8 @@ button:disabled {
 /* ── 生成条件 ──────────────────────────── */
 
 .promptBar {
-  margin: 28px auto 0;
-  max-width: 640px;
+  margin: 4px auto 0;
+  max-width: 880px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -493,10 +493,42 @@ button:disabled {
   font-size: 16px;
 }
 
-/* ── 参考图预设 ─────────────────────────── */
+/* ── 模式页签与参考图预设 ───────────────────── */
 
-.examplesSection {
+.modeSection {
   margin-top: 28px;
+}
+
+.modeTabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.modeTab {
+  height: 32px;
+  padding: 0 16px;
+  border: 1px solid #e2e5ea;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.modeTab:not(:disabled):hover {
+  border-color: #c9ced6;
+  color: var(--text);
+}
+
+.modeTab.active {
+  border-color: var(--text);
+  background: var(--text);
+  color: #fff;
 }
 
 .presetRow {
@@ -557,6 +589,29 @@ button:disabled {
 .presetItem.active span {
   color: var(--accent);
   font-weight: 600;
+}
+
+.uploadItem .uploadCircle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  margin: 0 auto;
+  border-radius: 50%;
+  border: 2px dashed #cbd2dc;
+  background: #fafbfc;
+  color: var(--text-secondary);
+  font-size: 24px;
+  font-weight: 400;
+  transition:
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.uploadItem:not(:disabled):hover .uploadCircle {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .presetItem:not(:disabled):hover img {

@@ -16,7 +16,7 @@ import {
 } from "@xmax/sdk";
 import { XmaxVideo } from "@xmax/react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { EXAMPLE_PRESETS, type StylePreset } from "./presets";
+import { EXAMPLE_MODES, type ExampleModeKey, type StylePreset } from "./presets";
 
 const API_KEY_STORAGE = "xmax.xlab.apiKey";
 const PROMPT_STORAGE = "xmax.xlab.prompt";
@@ -53,6 +53,7 @@ export function App() {
       "Turn the scene into a cyberpunk style",
   );
   const [selectedPreset, setSelectedPreset] = useState<string | undefined>();
+  const [activeModeKey, setActiveModeKey] = useState<ExampleModeKey>("charx");
   const [referencePreview, setReferencePreview] = useState<string | undefined>();
   const [referencePath, setReferencePath] = useState<string | undefined>();
   const [referenceUploading, setReferenceUploading] = useState(false);
@@ -143,6 +144,12 @@ export function App() {
 
   const sessionActive = localStream !== undefined;
 
+  /** 当前页签模式与提交生成时使用的文本条件。 */
+  const activeMode =
+    EXAMPLE_MODES.find((mode) => mode.key === activeModeKey) ??
+    EXAMPLE_MODES[0]!;
+  const submitPrompt = activeMode.key === "free" ? prompt : activeMode.prompt;
+
   // 预设列表滚动：纵向滚轮映射为横向滚动，左键按住可拖拽滚动。
   useEffect(() => {
     const row = presetRowRef.current;
@@ -212,7 +219,7 @@ export function App() {
       row.removeEventListener("pointercancel", handlePointerEnd);
       row.removeEventListener("click", handleClickCapture, true);
     };
-  }, [sessionActive]);
+  }, [sessionActive, activeModeKey]);
   const isConnected =
     stateText === RealtimeConnectionState.connected ||
     stateText === RealtimeConnectionState.generating;
@@ -264,7 +271,7 @@ export function App() {
       }
       const remote = await realtime.startGeneration({
         localStream: stream,
-        context: new RealtimeContext({ prompt, referencePath }),
+        context: new RealtimeContext({ prompt: submitPrompt, referencePath }),
       });
       setRemoteStream(remote);
     } catch (error) {
@@ -285,7 +292,7 @@ export function App() {
     try {
       const remote = await realtime.startGeneration({
         localStream,
-        context: new RealtimeContext({ prompt, referencePath }),
+        context: new RealtimeContext({ prompt: submitPrompt, referencePath }),
       });
       setRemoteStream(remote);
     } catch (error) {
@@ -336,7 +343,7 @@ export function App() {
     }
     const remote = await realtime.startGeneration({
       localStream,
-      context: new RealtimeContext({ prompt, referencePath: reference }),
+      context: new RealtimeContext({ prompt: submitPrompt, referencePath: reference }),
     });
     setRemoteStream(remote);
   }
@@ -661,18 +668,21 @@ export function App() {
         </div>
       </div>
 
-      <div className="promptBar">
-        <input
-          type="text"
-          placeholder="Restyle to animated movie"
-          value={prompt}
-          onChange={(event) => setPrompt(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              void handleSubmitPrompt();
-            }
-          }}
-        />
+      <div className="modeSection">
+        <div className="modeTabs">
+          {EXAMPLE_MODES.map((mode) => (
+            <button
+              key={mode.key}
+              className={
+                mode.key === activeModeKey ? "modeTab active" : "modeTab"
+              }
+              onClick={() => setActiveModeKey(mode.key)}
+            >
+              {mode.label}
+            </button>
+          ))}
+        </div>
+
         <input
           ref={fileInputRef}
           type="file"
@@ -680,22 +690,63 @@ export function App() {
           style={{ display: "none" }}
           onChange={handleReferenceChange}
         />
-        <button
-          className="uploadButton"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={referenceUploading || !apiKey}
-          title={apiKey ? "" : "Uploading a reference image requires an API Key"}
-        >
-          ⤒ Upload image
-        </button>
-        <button
-          className="submitButton"
-          onClick={handleSubmitPrompt}
-          disabled={busy || !apiKey || referenceUploading}
-          title={apiKey ? "" : "Generation requires an API Key"}
-        >
-          ➜
-        </button>
+
+        {activeMode.key === "free" ? (
+          <div className="promptBar">
+            <input
+              type="text"
+              placeholder="Describe how you want the video to change"
+              value={prompt}
+              onChange={(event) => setPrompt(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  void handleSubmitPrompt();
+                }
+              }}
+            />
+            <button
+              className="uploadButton"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={referenceUploading || !apiKey}
+              title={apiKey ? "" : "Uploading a reference image requires an API Key"}
+            >
+              ⤒ Upload image
+            </button>
+            <button
+              className="submitButton"
+              onClick={handleSubmitPrompt}
+              disabled={busy || !apiKey || referenceUploading}
+              title={apiKey ? "" : "Generation requires an API Key"}
+            >
+              ➜
+            </button>
+          </div>
+        ) : (
+          <div className="presetRow" ref={presetRowRef}>
+            <button
+              className="presetItem uploadItem"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={referenceUploading || !apiKey}
+              title={apiKey ? "上传自己的参考图" : "Uploading a reference image requires an API Key"}
+            >
+              <span className="uploadCircle">{referenceUploading ? "…" : "＋"}</span>
+              <span>上传参考图</span>
+            </button>
+            {activeMode.presets.map((preset) => (
+              <button
+                key={preset.name}
+                className={
+                  selectedPreset === preset.name ? "presetItem active" : "presetItem"
+                }
+                onClick={() => void handleSelectPreset(preset)}
+                disabled={referenceUploading}
+              >
+                <img src={preset.thumbnail} alt={preset.name} loading="lazy" />
+                <span>{preset.name}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {referencePreview && (
@@ -713,24 +764,6 @@ export function App() {
           </button>
         </div>
       )}
-
-      <div className="examplesSection">
-        <div className="presetRow" ref={presetRowRef}>
-          {EXAMPLE_PRESETS.map((preset) => (
-            <button
-              key={preset.name}
-              className={
-                selectedPreset === preset.name ? "presetItem active" : "presetItem"
-              }
-              onClick={() => void handleSelectPreset(preset)}
-              disabled={referenceUploading}
-            >
-              <img src={preset.thumbnail} alt={preset.name} loading="lazy" />
-              <span>{preset.name}</span>
-            </button>
-          ))}
-        </div>
-      </div>
 
       {errorText && <div className="error">{errorText}</div>}
     </div>
