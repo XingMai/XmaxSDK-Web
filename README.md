@@ -3,7 +3,6 @@
 </p>
 
 <p align="center">
-  <a href="https://developer.mozilla.org/en-US/docs/Web/API/WebRTC_API"><img src="https://img.shields.io/badge/Web-WebRTC-007AFF" alt="WebRTC"></a>
   <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript"><img src="https://img.shields.io/badge/JavaScript-ES2020-F7DF1E" alt="JavaScript ES2020"></a>
   <a href="https://platform.xmaxai.com/"><img src="https://img.shields.io/badge/Realtime-AI-FF9500" alt="Realtime AI"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-4C9A2A" alt="MIT License"></a>
@@ -400,8 +399,6 @@ this through `setStateListener`.
 A complete example application featuring React is available in
 [`examples/xlab-react`](./examples/xlab-react).
 It demonstrates real-time generation using live camera feeds and reference images.
-
-<p align="center"><img src="./docs/images/xlab/home.jpg" alt="X-Lab home" width="20%" /><img src="./docs/images/xlab/features.jpg" alt="X-Lab SDK features" width="20%" /><img src="./docs/images/xlab/storage.jpg" alt="X-Lab storage service" width="20%" /><img src="./docs/images/xlab/realtime-generation.jpg" alt="X-Lab realtime generation" width="20%" /><img src="./docs/images/xlab/trajectory-generation.jpg" alt="X-Lab trajectory generation" width="20%" /></p>
 
 <br>
 
