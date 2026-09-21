@@ -258,6 +258,8 @@ export class RtcManager implements RtcManaging {
         userSig: configuration.userSig,
         strRoomId: configuration.roomID,
         privateMapKey: configuration.privateMapKey,
+        // 由传输层先设置音量再显式订阅，避免首帧前按 TRTC 默认音量播放。
+        autoReceiveAudio: false,
       });
       this.isInRoom = true;
     } catch (error) {

@@ -411,8 +411,24 @@ describe("RtcManager", () => {
         userSig: "sig-v1",
         strRoomId: "100000001",
         privateMapKey: "pmk-v1",
+        autoReceiveAudio: false,
       },
     ]);
+  });
+
+  it("disables automatic remote audio on every room entry, including rejoining", async () => {
+    const { manager, engine } = makeManager();
+    await manager.initialize();
+    await manager.joinRoom(joinConfig);
+    await manager.leaveRoom();
+    await manager.joinRoom(joinConfig);
+
+    expect(engine.enterRoomCalls).toHaveLength(2);
+    for (const options of engine.enterRoomCalls) {
+      expect(options).toMatchObject({ autoReceiveAudio: false });
+    }
+    expect(engine.muteRemoteAudioCalls).toEqual([]);
+    await manager.destroy();
   });
 
   it("rejects joinRoom with a non-numeric sdkAppID", async () => {

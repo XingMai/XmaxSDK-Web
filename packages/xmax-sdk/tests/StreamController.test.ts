@@ -405,8 +405,11 @@ describe("StreamController", () => {
     expect(controller.hasGenerationTask).toBe(false);
   });
 
-  it("activates remote audio only after the stream is confirmed", async () => {
+  it.each([0, 0.4, 1])("applies volume %s before explicitly activating confirmed remote audio", async (volume) => {
     const { controller, rtc } = makeStream();
+    const setVolume = vi.spyOn(rtc, "setRemoteAudioVolume");
+    const subscribeAudio = vi.spyOn(rtc, "subscribeRemoteAudio");
+    controller.setRemoteAudioVolume(volume);
     await controller.connect(connection, false, noopEnsureActive);
 
     await expect(controller.activateRemoteAudio()).rejects.toMatchObject({
@@ -421,11 +424,18 @@ describe("StreamController", () => {
     emitRemoteVideo(rtc, "bot001", true);
     await confirmation;
 
-    controller.setRemoteAudioVolume(0.4);
+    expect(subscribeAudio).not.toHaveBeenCalled();
     await controller.activateRemoteAudio();
-    expect(rtc.volumeCalls).toContainEqual([40, "bot001"]);
+    expect(rtc.volumeCalls).toContainEqual([volume * 100, "bot001"]);
     expect(rtc.subscribeRemoteAudioCalls).toEqual([["bot001", true]]);
-    expect(controller.remoteAudioVolume).toBeCloseTo(0.4);
+    expect(setVolume.mock.invocationCallOrder[0]).toBeLessThan(subscribeAudio.mock.invocationCallOrder[0]!);
+    expect(controller.remoteAudioVolume).toBeCloseTo(volume);
+
+    // 静音订阅后仍可以通过滑杆恢复音量，无需重新订阅。
+    controller.setRemoteAudioVolume(0.65);
+    expect(rtc.volumeCalls.at(-1)).toEqual([65, "bot001"]);
+    expect(subscribeAudio).toHaveBeenCalledOnce();
+    await controller.disconnect();
   });
 
   it("clears the remote stream when the bot unpublishes", async () => {
