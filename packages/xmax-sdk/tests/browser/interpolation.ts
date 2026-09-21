@@ -1,7 +1,32 @@
 import { RealtimeVideoTrack, XmaxVideoView } from "../../src/index";
+import { RemoteVideoFramePipeline } from "../../src/Render/Video/RemoteVideoFramePipeline";
+import { FrameInterpolationManager } from "../../src/Foundation/Media/Video/FrameInterpolationManager";
+
+// Test-page-only instrumentation; no new SDK API or production per-frame logging.
+const presentation = { frames: 0, midpoints: 0, regressions: 0 };
+const lastPresented = new WeakMap<object, number>();
+const prototype = RemoteVideoFramePipeline.prototype as unknown as {
+  present(time: number, draw: () => void): void;
+};
+const originalPresent = prototype.present;
+prototype.present = function (time, draw) {
+  originalPresent.call(this, time, () => {
+    const last = lastPresented.get(this);
+    if (last !== undefined && time < last) presentation.regressions++;
+    draw();
+    lastPresented.set(this, time);
+    presentation.frames++;
+  });
+};
+const originalMidpoint = FrameInterpolationManager.prototype.presentInterpolated;
+FrameInterpolationManager.prototype.presentInterpolated = function () {
+  originalMidpoint.call(this);
+  presentation.midpoints++;
+};
 
 const input = document.createElement("canvas");
 const query = new URLSearchParams(location.search);
+const jitter = query.get('jitter') === '1';
 input.width = Number(query.get("width")) || 320;
 input.height = Number(query.get("height")) || 180;
 const context = input.getContext("2d")!;
@@ -22,8 +47,17 @@ function draw() {
   context.fillText(`input ${++phase}`, 12, 164);
 }
 draw();
-const timer = setInterval(draw, 40);
-const stream = input.captureStream(25);
+const stream = input.captureStream(jitter ? 0 : 25);
+const inputTrack = stream.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack;
+const intervals = jitter ? [40, 40, 20, 60, 40, 80, 40, 40] : [40];
+let tick = 0;
+let timer: ReturnType<typeof setTimeout>;
+function nextInput() {
+  draw();
+  if (jitter) inputTrack.requestFrame();
+  timer = setTimeout(nextInput, intervals[tick++ % intervals.length]);
+}
+timer = setTimeout(nextInput, 40);
 const source = document.createElement("video");
 source.autoplay = true;
 source.muted = true;
@@ -38,10 +72,11 @@ const track = new RealtimeVideoTrack({ id: "interpolation-browser-check" });
 track.mediaStreamTrack = stream.getVideoTracks()[0];
 view.track = track;
 
-const state = { requested: true, active: false, activations: 0, errors: [] as string[], attached: true };
+const state = { requested: true, active: false, activations: 0, errors: [] as string[], attached: true, jitter };
 function status() {
-  document.getElementById("status")!.textContent = JSON.stringify(state, null, 2);
+  document.getElementById("status")!.textContent = JSON.stringify({ ...state, presentation }, null, 2);
 }
+const statusTimer = setInterval(status, 1000);
 function setEnabled(enabled: boolean) {
   state.requested = enabled;
   view.setFrameInterpolation(enabled ? {
@@ -63,7 +98,7 @@ document.getElementById("detach")!.onclick = toggleMount;
 
 const check = {
   state, setEnabled, toggleMount,
-  stop: () => { view.track = undefined; view.detach(); clearInterval(timer); stream.getTracks().forEach((t) => t.stop()); },
+  stop: () => { view.track = undefined; view.detach(); clearTimeout(timer); clearInterval(statusTimer); stream.getTracks().forEach((t) => t.stop()); },
 };
 Object.assign(window, { interpolationCheck: check });
 window.addEventListener("pagehide", check.stop, { once: true });

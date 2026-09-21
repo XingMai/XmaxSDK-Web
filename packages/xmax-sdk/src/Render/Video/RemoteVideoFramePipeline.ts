@@ -10,21 +10,22 @@ export interface RemoteFrameInterpolationOptions {
 
 type ProcessorFactory = typeof FrameInterpolationManager.create;
 
-/** 有界的两帧显示队列。忙时丢弃输入；迟到帧不补播，断流及时退回 video。 */
+/** 接管后原帧/插帧共用画布和单调时间线；忙时丢输入，迟到插帧不补播。 */
 export class RemoteVideoFramePipeline {
   private processor?: FrameInterpolationProcessing;
   private readonly abort = new AbortController();
   private callback?: number;
-  private midpointTimer?: ReturnType<typeof setTimeout>;
-  private stallTimer?: ReturnType<typeof setTimeout>;
+  private readonly presentationTimers = new Set<ReturnType<typeof setTimeout>>();
+  private readonly animations = new Set<number>();
+  private gpuTimer?: ReturnType<typeof setTimeout>;
   private initializationTimer?: ReturnType<typeof setTimeout>;
-  private animation?: number;
   private loading = false;
   private busy = false;
   private stopped = false;
   private pair = 0;
   private previousTime?: number;
   private previousPresented?: number;
+  private displayedTime?: number;
   private slowPairs = 0;
   private active = false;
 
@@ -70,50 +71,81 @@ export class RemoteVideoFramePipeline {
       if (!this.loading) void this.initialize();
       return;
     }
-    if (this.busy) return;
-    const interval = this.previousTime === undefined ? 0 : (metadata.mediaTime - this.previousTime) * 1000;
+    const time = metadata.mediaTime;
+    // 不把重复或倒序输入放进两帧纹理缓存；换流会创建新的管线/时间线。
+    if (!Number.isFinite(time) || (this.previousTime !== undefined && time <= this.previousTime)) return;
+    if (this.busy) {
+      // 输入已前进，旧中间帧失效。保持画布所有权，至多显示已捕获的端点原帧。
+      // 不覆盖仍被 GPU 使用的输入纹理，也不取消独立的 GPU 超时保护。
+      this.pair++;
+      this.clearPresentation();
+      if (this.previousTime !== undefined) this.present(this.previousTime, () => this.processor!.presentCurrent());
+      return;
+    }
+    const previous = this.previousTime;
+    const interval = previous === undefined ? 0 : (time - previous) * 1000;
     const consecutive = this.previousPresented === undefined || metadata.presentedFrames === this.previousPresented + 1;
     this.clearPresentation();
     const pair = ++this.pair;
     this.processor.capture(this.video);
-    this.previousTime = metadata.mediaTime;
+    this.previousTime = time;
     this.previousPresented = metadata.presentedFrames;
-    // 不对时间倒退、跳帧、长停顿或超出输出预算的输入做插值。
-    if (!consecutive || interval <= 0 || interval > 250 || interval < 2000 / this.options.targetFrameRate - 1) {
-      this.setActive(false);
-      this.canvas.style.visibility = "hidden";
+    // 首次接管/恢复直接接当前原帧，不从原视频已经走过的位置倒放上一帧。
+    // 跳帧或预算不足只跳过插值，不能露出底层更靠前的原视频。
+    if (previous === undefined || !consecutive || interval > 250 || interval < 2000 / this.options.targetFrameRate - 1) {
+      this.present(time, () => this.processor!.presentCurrent());
       return;
     }
     const startedAt = performance.now();
-    this.processor.presentPrevious();
-    this.canvas.style.visibility = "visible";
+    const anchor = Number.isFinite(metadata.expectedDisplayTime) ? metadata.expectedDisplayTime : startedAt;
+    const currentDue = anchor + interval;
+    if (currentDue <= startedAt) {
+      this.present(time, () => this.processor!.presentCurrent());
+      return;
+    }
+    this.present(previous, () => this.processor!.presentPrevious());
+    // 即使后续断流，也要推进到最后一张原帧，而不是停在旧中间帧或切回 video。
+    this.schedule(currentDue, Infinity, pair, () => this.present(time, () => this.processor!.presentCurrent()));
     this.busy = true;
-    this.stallTimer = setTimeout(() => {
-      if (this.busy) this.fail(new Error("Interpolation GPU submission timed out"));
-      else this.resetPair();
-    }, Math.max(100, interval * 3));
+    this.gpuTimer = setTimeout(() => this.fail(new Error("Interpolation GPU submission timed out")), Math.max(100, interval * 3));
     void this.processor.interpolate().then(() => {
       if (this.stopped) return;
       this.busy = false;
-      if (pair !== this.pair) return;
+      clearTimeout(this.gpuTimer);
+      this.gpuTimer = undefined;
       const elapsed = performance.now() - startedAt;
       this.slowPairs = elapsed > interval / 2 ? this.slowPairs + 1 : 0;
       if (this.slowPairs >= 5) {
         this.fail(new Error("Interpolation exceeded the GPU frame budget for 5 consecutive pairs"));
         return;
       }
-      if (elapsed >= interval) return;
-      this.midpointTimer = setTimeout(() => {
-        this.animation = requestAnimationFrame(() => {
-          this.animation = undefined;
-          if (this.stopped || pair !== this.pair || performance.now() - startedAt >= interval) return;
-          try {
-            this.processor!.presentInterpolated();
-            this.setActive(true);
-          } catch (error) { this.fail(error); }
-        });
-      }, Math.max(0, interval / 2 - elapsed));
+      if (pair !== this.pair || performance.now() >= currentDue) return;
+      this.schedule(anchor + interval / 2, currentDue, pair,
+        () => this.present((previous + time) / 2, () => this.processor!.presentInterpolated()));
     }).catch((error) => { if (!this.stopped) this.fail(error); });
+  }
+
+  /** 所有显示入口共用时间戳门禁，不能显示已越过的原帧或中间帧。 */
+  private present(time: number, draw: () => void): void {
+    if (this.displayedTime !== undefined && time <= this.displayedTime) return;
+    draw();
+    this.displayedTime = time;
+    this.canvas.style.visibility = "visible";
+    this.setActive(true);
+  }
+
+  private schedule(at: number, deadline: number, pair: number, draw: () => void): void {
+    const timer = setTimeout(() => {
+      this.presentationTimers.delete(timer);
+      if (this.stopped || pair !== this.pair || performance.now() >= deadline) return;
+      const animation = requestAnimationFrame(() => {
+        this.animations.delete(animation);
+        if (this.stopped || pair !== this.pair || performance.now() >= deadline) return;
+        try { draw(); } catch (error) { this.fail(error); }
+      });
+      this.animations.add(animation);
+    }, Math.max(0, at - performance.now()));
+    this.presentationTimers.add(timer);
   }
 
   private async initialize(): Promise<void> {
@@ -143,10 +175,10 @@ export class RemoteVideoFramePipeline {
   }
 
   private clearPresentation(): void {
-    clearTimeout(this.midpointTimer);
-    clearTimeout(this.stallTimer);
-    if (this.animation !== undefined) cancelAnimationFrame(this.animation);
-    this.animation = undefined;
+    this.presentationTimers.forEach((timer) => clearTimeout(timer));
+    this.presentationTimers.clear();
+    this.animations.forEach((animation) => cancelAnimationFrame(animation));
+    this.animations.clear();
   }
 
   private resetPair(): void {
@@ -154,6 +186,7 @@ export class RemoteVideoFramePipeline {
     this.clearPresentation();
     this.previousTime = undefined;
     this.previousPresented = undefined;
+    this.displayedTime = undefined;
     this.canvas.style.visibility = "hidden";
     this.setActive(false);
   }
@@ -171,6 +204,7 @@ export class RemoteVideoFramePipeline {
     if (this.callback !== undefined) this.video.cancelVideoFrameCallback(this.callback);
     this.callback = undefined;
     clearTimeout(this.initializationTimer);
+    clearTimeout(this.gpuTimer);
     this.resetPair();
     this.processor?.destroy();
     this.processor = undefined;
