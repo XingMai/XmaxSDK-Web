@@ -20,6 +20,8 @@ import { StreamID } from "../src/Service/Realtime/StreamID";
 import type { RealtimeLaunchTiming } from "../src/Service/Realtime/RealtimeLaunchTiming";
 import type { RemoteVideoStatisticsListener, VideoStatisticsListener } from "../src/Foundation/RTC/VideoStatistics";
 import { VideoRenderRegistry } from "../src/Service/Realtime/VideoRenderBinding";
+import type { RemoteFrameInterpolationOptions } from "../src/Render/Video/RemoteVideoFramePipeline";
+import { VideoContentMode } from "../src/Foundation/Media/Video/VideoContentMode";
 import type {
   StreamControlling,
   StreamGenerationOptions,
@@ -187,7 +189,7 @@ class StreamControllingStub implements StreamControlling {
     this.updateCalls.push(options);
   }
 
-  changeTargetSize(): void {}
+  changeTargetSize = vi.fn();
 
   async stopGeneration(taskID: string): Promise<void> {
     this.stopGenerationCalls.push(taskID);
@@ -253,7 +255,7 @@ class RealtimeSessionServicingStub implements RealtimeSessionServicing {
 }
 
 /** 组装 Manager 与各层桩。 */
-function makeManager() {
+function makeManager(supportsFrameInterpolation?: () => Promise<boolean>) {
   const camera = new CameraControllingStub();
   const stream = new StreamControllingStub();
   const session = new RealtimeSessionServicingStub();
@@ -263,6 +265,7 @@ function makeManager() {
       cameraController: camera,
       streamController: stream,
       sessionService: session,
+      supportsFrameInterpolation,
     },
   );
   return { manager, camera, stream, session };
@@ -275,6 +278,135 @@ function makeLocalStream(camera: CameraControllingStub): RealtimeMediaStream {
 }
 
 const testContext = new RealtimeContext({ prompt: "a red cube" });
+
+describe("XmaxRealtimeManager frame interpolation", () => {
+  async function generating(supports: () => Promise<boolean> = async () => true) {
+    const s = makeManager(supports);
+    const localStream = makeLocalStream(s.camera);
+    const remote = await s.manager.connect(localStream);
+    const pending = s.manager.startGeneration({ localStream, context: testContext });
+    await vi.waitFor(() => expect(s.stream.beginCalls).toHaveLength(1));
+    s.stream.confirmationDeferreds[0]!.resolve();
+    await pending;
+    let rendering: RemoteFrameInterpolationOptions | undefined;
+    const view = {
+      isMirrored: false, setMediaStream: vi.fn(),
+      setFrameInterpolation: (options?: RemoteFrameInterpolationOptions) => { rendering = options; },
+    };
+    const binding = VideoRenderRegistry.binding(remote.videoTrack!)!;
+    binding.attachHandler(view, VideoContentMode.fill);
+    return { ...s, localStream, view, binding, rendering: () => rendering };
+  }
+
+  it("preserves original resolution and toggles locally without sending size signals or restarting generation", async () => {
+    const s = await generating();
+    expect(s.stream.beginCalls[0]!.videoFormat).toBe(testVideoFormat);
+    expect(s.stream.beginCalls[0]!.targetSize).toBeUndefined();
+    expect(s.rendering()!.size).toEqual({ width: 1280, height: 720 });
+    expect(s.manager.isFrameInterpolationEnabled).toBe(true);
+    const taskID = s.manager.currentState.taskID;
+    await s.manager.setFrameInterpolationEnabled(false);
+    expect(s.rendering()).toBeUndefined();
+    expect(s.stream.changeTargetSize).not.toHaveBeenCalled();
+    expect(s.manager.isFrameInterpolationEnabled).toBe(false);
+    await s.manager.setFrameInterpolationEnabled(true);
+    expect(s.manager.isFrameInterpolationEnabled).toBe(true);
+    expect(s.rendering()!.size).toEqual({ width: 1280, height: 720 });
+    expect(s.stream.changeTargetSize).not.toHaveBeenCalled();
+    expect(s.stream.beginCalls).toHaveLength(1);
+    expect(s.manager.currentState.taskID).toBe(taskID);
+    await s.manager.close();
+    expect(s.view.setMediaStream).toHaveBeenLastCalledWith(null);
+    expect(s.rendering()).toBeUndefined();
+  });
+
+  it("keeps the feature enabled through view remounts without observing frame activity", async () => {
+    const s = await generating();
+    expect(s.rendering()!.onActiveChange).toBeUndefined();
+    expect(s.manager.isFrameInterpolationEnabled).toBe(true);
+    s.binding.detachHandler(s.view);
+    expect(s.manager.isFrameInterpolationEnabled).toBe(true);
+    s.binding.attachHandler(s.view, VideoContentMode.fill);
+    expect(s.manager.isFrameInterpolationEnabled).toBe(true);
+    await s.manager.close();
+    expect(s.manager.isFrameInterpolationEnabled).toBe(true);
+  });
+
+  it("keeps the running task and render configuration intact when a capability check fails", async () => {
+    let supported = true;
+    const s = await generating(async () => supported);
+    const initial = s.rendering()!;
+    supported = false;
+    await expect(s.manager.setFrameInterpolationEnabled(true)).rejects.toMatchObject({ code: XmaxErrorCode.frameInterpolationUnsupported });
+    expect(s.rendering()).toBe(initial);
+    expect(s.manager.isFrameInterpolationEnabled).toBe(true);
+    expect(s.stream.disconnectCalls).toBe(0);
+    expect(s.stream.changeTargetSize).not.toHaveBeenCalled();
+    expect(s.manager.currentState.connectionState).toBe(RealtimeConnectionState.generating);
+    await s.manager.close();
+  });
+
+  it("defaults to raw video on unsupported devices; explicit enable fails without interrupting generation", async () => {
+    const s = await generating(async () => false);
+    expect(s.manager.isFrameInterpolationEnabled).toBe(false);
+    expect(s.stream.beginCalls[0]!.targetSize).toBeUndefined();
+    expect(s.rendering()).toBeUndefined();
+    await expect(s.manager.setFrameInterpolationEnabled(true)).rejects.toMatchObject({ code: XmaxErrorCode.frameInterpolationUnsupported });
+    expect(s.manager.isFrameInterpolationEnabled).toBe(false);
+    expect(s.stream.changeTargetSize).not.toHaveBeenCalled();
+    expect(s.stream.disconnectCalls).toBe(0);
+    await s.manager.close();
+  });
+
+  it("falls back locally on render failure without changing the return size, and ignores stale failures", async () => {
+    const s = await generating();
+    const initial = s.rendering()!;
+    initial.onFailure(new Error("GPU lost"));
+    expect(s.manager.isFrameInterpolationEnabled).toBe(false);
+    expect(s.rendering()).toBeUndefined();
+    expect(s.stream.changeTargetSize).not.toHaveBeenCalled();
+    initial.onFailure(new Error("late"));
+    expect(s.stream.changeTargetSize).not.toHaveBeenCalled();
+    await s.manager.startGeneration({ localStream: s.localStream, context: testContext });
+    expect(s.stream.updateCalls[0]!.targetSize).toBeUndefined();
+    expect(s.stream.disconnectCalls).toBe(0);
+    await s.manager.close();
+  });
+
+  it("does not publish a late capability result after a close", async () => {
+    const pendingSupport = makeDeferred<boolean>();
+    const s = makeManager(() => pendingSupport.promise);
+    makeLocalStream(s.camera);
+    const enabling = s.manager.setFrameInterpolationEnabled(true);
+    const rejected = expect(enabling).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
+    const closing = s.manager.close();
+    pendingSupport.resolve(true);
+    await Promise.all([closing, rejected]);
+    expect(s.manager.isFrameInterpolationEnabled).toBe(true); // cancelled operation preserves the feature setting
+    expect(s.stream.changeTargetSize).not.toHaveBeenCalled();
+  });
+
+  it("does not change the return size when a GPU failure happens before generation confirmation", async () => {
+    const s = makeManager(async () => true);
+    const localStream = makeLocalStream(s.camera);
+    const remote = await s.manager.connect(localStream);
+    let rendering: RemoteFrameInterpolationOptions | undefined;
+    VideoRenderRegistry.binding(remote.videoTrack!)!.attachHandler({
+      isMirrored: false, setMediaStream: vi.fn(),
+      setFrameInterpolation: (options) => { rendering = options; },
+    }, VideoContentMode.fill);
+    const pending = s.manager.startGeneration({ localStream, context: testContext });
+    await vi.waitFor(() => expect(s.stream.beginCalls).toHaveLength(1));
+    rendering!.onFailure(new Error("initial GPU failure"));
+    expect(s.stream.changeTargetSize).not.toHaveBeenCalled();
+    s.stream.confirmationDeferreds[0]!.resolve();
+    await pending;
+    expect(s.stream.changeTargetSize).not.toHaveBeenCalled();
+    expect(s.manager.currentState.connectionState).toBe(RealtimeConnectionState.generating);
+    expect(s.manager.isFrameInterpolationEnabled).toBe(false);
+    await s.manager.close();
+  });
+});
 
 describe("XmaxRealtimeManager remote video statistics", () => {
   it("replays snapshots and clears missing or stopped result metrics without accepting late updates", async () => {
@@ -819,7 +951,7 @@ describe("XmaxRealtimeManager 断连与关闭", () => {
   });
 
   it("生成后断开：由生成管理器停止任务，再清理连接并保留预览", async () => {
-    const { manager, camera, stream, session } = makeManager();
+    const { manager, camera, stream, session } = makeManager(async () => false);
     const localStream = makeLocalStream(camera);
     const pending = manager.startGeneration({ localStream, context: testContext });
     await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
@@ -839,7 +971,7 @@ describe("XmaxRealtimeManager 断连与关闭", () => {
   });
 
   it("等待远端轨就绪时断开：立即取消等待，只停止一次任务", async () => {
-    const { manager, camera, stream } = makeManager();
+    const { manager, camera, stream } = makeManager(async () => false);
     const localStream = makeLocalStream(camera);
     const remote = await manager.connect(localStream);
     const mediaTrack = Object.assign(new EventTarget(), { muted: true }) as MediaStreamTrack;

@@ -6,6 +6,8 @@ import type { RtcManaging } from "../../Foundation/RTC/RtcManaging";
 import type { RemoteVideoStatistics, RemoteVideoStatisticsListener, VideoStatistics, VideoStatisticsListener } from "../../Foundation/RTC/VideoStatistics";
 import { CameraController } from "../../Media/Camera/CameraController";
 import type { CameraControlling } from "../../Media/Camera/CameraControlling";
+import { frameInterpolationAdapter } from "../../Foundation/Media/Video/FrameInterpolationSupport";
+import type { ModelSize } from "../../Service/Realtime/RealtimeModel";
 import { MediaService } from "../../Service/Media/MediaService";
 import type { ApiServicing } from "../../Service/Network/ApiServicing";
 import type { RealtimeContext } from "../../Service/Realtime/RealtimeContext";
@@ -48,6 +50,12 @@ const REMOTE_FIRST_FRAME_TIMEOUT_MS = 5_000;
 export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   // 业务配置
   readonly options: RealtimeConfiguration;
+  private readonly mediaService: MediaService;
+  private readonly supportsInterpolation: (size?: ModelSize) => Promise<boolean>;
+  private interpolationRequested: boolean;
+  private interpolationSize?: ModelSize;
+  private interpolationRevision = 0;
+
   // 业务组件
   private readonly coordinator: RealtimeCoordinator;
   private readonly errorHandler: RealtimeErrorHandler;
@@ -82,8 +90,13 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     streamController?: StreamControlling;
     cameraController?: CameraControlling;
     rtcManager?: RtcManaging;
+    supportsFrameInterpolation?: (size?: ModelSize) => Promise<boolean>;
   }) {
     this.options = options;
+    this.mediaService = new MediaService(options.model);
+    this.interpolationRequested = options.isFrameInterpolationEnabled;
+    this.supportsInterpolation = dependencies?.supportsFrameInterpolation ??
+      (async (size) => (await frameInterpolationAdapter(size)) !== null);
     this.errorHandler = new RealtimeErrorHandler();
 
     const rtcManager = dependencies?.rtcManager ?? new RtcManager();
@@ -117,6 +130,10 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       remoteAudioVolume: () => this.storedRemoteAudioVolume,
       onHeartbeatFailure: (sessionID, error) => { void this.handleHeartbeatFailure(sessionID, error); },
       onFrameDisplayed: () => this.remoteFrameDisplayHandler?.(),
+      onRenderAttached: () => this.applyRemoteInterpolation(),
+      onRenderDetached: () => {
+        this.interpolationRevision++;
+      },
     });
     this.generationManager = new XmaxRealtimeGenerationManager(this.streamController);
     this.coordinator = new RealtimeCoordinator({
@@ -140,6 +157,77 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   /** 当前实时连接与生成状态。 */
   get currentState(): RealtimeState {
     return this.coordinator.currentState;
+  }
+
+  get isFrameInterpolationEnabled(): boolean {
+    return this.interpolationRequested;
+  }
+
+  async setFrameInterpolationEnabled(enabled: boolean): Promise<void> {
+    await this.coordinator.run(RealtimeOperationKind.configuration, undefined, async (token) => {
+      const format = this.cameraController.currentTrack?.videoFormat;
+      const size = format && enabled ? this.mediaService.resolveFrameInterpolationSize(format) : undefined;
+      if (enabled && !await this.checkInterpolationSupport(size, token)) {
+        token.ensureCurrent();
+        throw new XmaxError(XmaxErrorCode.frameInterpolationUnsupported, "Frame interpolation is unavailable on this device or for this size");
+      }
+      token.ensureCurrent();
+      // 插帧仅影响本地渲染；能力检查失败时保留已有配置，不调整回传尺寸。
+      this.interpolationRequested = enabled;
+      this.interpolationSize = size;
+      this.applyRemoteInterpolation();
+    });
+  }
+
+  private async prepareFrameInterpolation(format: ModelSize, token: RealtimeOperationToken): Promise<void> {
+    let size: ModelSize | undefined;
+    if (this.interpolationRequested) {
+      try {
+        const candidate = this.mediaService.resolveFrameInterpolationSize(format);
+        if (await this.checkInterpolationSupport(candidate, token)) size = candidate;
+      } catch (error) {
+        XmaxLogger.render.warning(() => `插帧不可用 (Frame Interpolation Unavailable)\n└─ ${XmaxError.from(error).message}`);
+      }
+    }
+    token.ensureCurrent();
+    // 能力检测确认不可用时关闭功能；短暂缺帧不改变开关状态。
+    if (this.interpolationRequested && !size) this.interpolationRequested = false;
+    this.interpolationSize = size;
+    this.applyRemoteInterpolation();
+  }
+
+  private checkInterpolationSupport(size: ModelSize | undefined, token: RealtimeOperationToken): Promise<boolean> {
+    return new Promise((resolve, reject) => {
+      const finish = (supported: boolean) => { cleanup(); resolve(supported); };
+      const abort = () => { cleanup(); reject(RealtimeCoordinator.cancelledError()); };
+      const timer = setTimeout(() => finish(false), 5_000);
+      const cleanup = () => {
+        clearTimeout(timer);
+        token.signal.removeEventListener("abort", abort);
+      };
+      token.signal.addEventListener("abort", abort, { once: true });
+      if (token.signal.aborted) { abort(); return; }
+      void this.supportsInterpolation(size).then(finish, () => finish(false));
+    });
+  }
+
+  private applyRemoteInterpolation(): void {
+    const revision = ++this.interpolationRevision;
+    const size = this.interpolationSize;
+    this.connectionManager.setFrameInterpolation(size ? {
+      size,
+      targetFrameRate: this.options.frameInterpolation.targetFrameRate,
+      onFailure: (error) => {
+        if (revision === this.interpolationRevision) this.handleInterpolationFailure(error);
+      },
+    } : undefined);
+  }
+
+  private handleInterpolationFailure(error: unknown): void {
+    this.interpolationRequested = false;
+    this.interpolationSize = undefined;
+    this.applyRemoteInterpolation();
+    XmaxLogger.render.warning(() => `插帧已降级 (Frame Interpolation Disabled)\n└─ ${XmaxError.from(error).message}`);
   }
 
   /** 当前本地媒体预览音量，取值范围为 `0...1`。 */
@@ -469,13 +557,14 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     return remote;
   }
 
-  /** 编排首帧计时和生成状态，任务与确认由生成管理器负责。 */
+  /** 编排插帧、首帧计时和生成状态，任务与确认由生成管理器负责。 */
   private async performStartGeneration(
     token: RealtimeOperationToken,
     videoFormat: NonNullable<RealtimeVideoTrack["videoFormat"]>,
     context: RealtimeContext,
   ): Promise<RealtimeMediaStream> {
     token.setFailureScope(RealtimeTerminationScope.connection);
+    await this.prepareFrameInterpolation(videoFormat, token);
     const completeFirstFrame = this.launchTimer.startFirstFrame();
     this.remoteFrameDisplayHandler = () => {
       if (!token.signal.aborted) completeFirstFrame();
@@ -521,6 +610,8 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     this.launchTimer.cancel();
     this.remoteFrameDisplayHandler = undefined;
     this.clearVideoStatistics();
+    this.interpolationSize = undefined;
+    this.applyRemoteInterpolation();
     this.connectionManager.clearRemoteMedia();
     this.connectionManager.stopHeartbeat();
     await this.generationManager.reset(taskID);

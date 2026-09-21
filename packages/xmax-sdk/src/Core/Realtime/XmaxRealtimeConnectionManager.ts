@@ -1,5 +1,6 @@
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
+import type { RemoteFrameInterpolationOptions } from "../../Render/Video/RemoteVideoFramePipeline";
 import { RealtimeMediaStream } from "../../Service/Realtime/RealtimeMediaStream";
 import type { RealtimeModel } from "../../Service/Realtime/RealtimeModel";
 import { RealtimeSession } from "../../Service/Realtime/RealtimeSession";
@@ -18,6 +19,7 @@ export class XmaxRealtimeConnectionManager {
   private activeRemoteTrack?: RealtimeVideoTrack;
   private remoteBinding?: {
     target: VideoRenderTarget;
+    setFrameInterpolation: (options?: RemoteFrameInterpolationOptions) => void;
     setMediaStream: (stream: MediaStream | null) => void;
     setMirrored: (mirrored: boolean) => void;
   };
@@ -31,6 +33,8 @@ export class XmaxRealtimeConnectionManager {
     remoteAudioVolume: () => number;
     onHeartbeatFailure: (sessionID: string, error: XmaxError) => void;
     onFrameDisplayed: () => void;
+    onRenderAttached: () => void;
+    onRenderDetached: () => void;
   }) {}
 
   get currentSessionID(): string | undefined { return this.activeSession?.id; }
@@ -101,6 +105,10 @@ export class XmaxRealtimeConnectionManager {
     return new RealtimeMediaStream({ id: StreamID.remote, videoTrack: remoteTrack });
   }
 
+  setFrameInterpolation(options?: RemoteFrameInterpolationOptions): void {
+    this.remoteBinding?.setFrameInterpolation(options);
+  }
+
   clearRemoteMedia(): void { this.remoteBinding?.setMediaStream(null); }
   stopHeartbeat(): void { this.dependencies.sessionService?.stopHeartbeat(); }
 
@@ -161,9 +169,11 @@ export class XmaxRealtimeConnectionManager {
         }
       },
       attachHandler: (view) => {
+        this.remoteBinding?.setFrameInterpolation(undefined);
         view.isMirrored = this.dependencies.isMirrored();
         this.remoteBinding = {
           target: view,
+          setFrameInterpolation: (options) => view.setFrameInterpolation?.(options),
           setMediaStream: (stream) => {
             view.setMediaStream(stream);
           },
@@ -171,13 +181,16 @@ export class XmaxRealtimeConnectionManager {
             view.isMirrored = mirrored;
           },
         };
+        this.dependencies.onRenderAttached();
         const mediaTrack = track.mediaStreamTrack;
         view.setMediaStream(mediaTrack ? new MediaStream([mediaTrack]) : null);
       },
       detachHandler: (view) => {
         if (this.remoteBinding?.target === view) {
+          this.dependencies.onRenderDetached();
           this.remoteBinding = undefined;
         }
+        view.setFrameInterpolation?.(undefined);
         view.setMediaStream(null);
       },
     });

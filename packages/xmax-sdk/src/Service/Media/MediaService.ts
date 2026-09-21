@@ -8,10 +8,11 @@ import {
 } from "../Realtime/RealtimeModel";
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import type { MediaServicing } from "./MediaServicing";
+import { frameInterpolationAdapter } from "../../Foundation/Media/Video/FrameInterpolationSupport";
 
 /**
  * 提供模型输入尺寸和平台媒体能力相关的业务规则。
- * 当前仅包含 resolveModelInputSize。
+ * 模型输入尺寸与远端插帧能力。
  */
 export class MediaService implements MediaServicing {
   // 模型约束
@@ -24,6 +25,20 @@ export class MediaService implements MediaServicing {
    */
   constructor(model: RealtimeModel = RealtimeModel.x2_fast_1080p) {
     this.model = model;
+  }
+
+  /** Web 插帧保留原始尺寸；/16 对齐由 GPU 内部补边处理，不缩小回传视频。 */
+  resolveFrameInterpolationSize(size: ModelSize): ModelSize {
+    const { width, height } = size;
+    if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width <= 0 || height <= 0) {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Video dimensions must be positive integers");
+    }
+    return { width, height };
+  }
+
+  /** WebGPU 适配器探测是异步的；实际性能和运行状态由渲染管线判断。 */
+  async supportsFrameInterpolation(size: ModelSize): Promise<boolean> {
+    return (await frameInterpolationAdapter(size)) !== null;
   }
 
   resolveModelInputSize(size: ModelSize): ModelSize {

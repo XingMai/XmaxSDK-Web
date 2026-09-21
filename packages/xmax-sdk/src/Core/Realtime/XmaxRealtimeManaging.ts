@@ -20,6 +20,12 @@ export interface XmaxRealtimeManaging {
   /** 当前实时连接与生成状态。 */
   readonly currentState: RealtimeState;
 
+  /** 插帧功能开关；不随首帧等待、跳帧或视图挂载变化，不支持或故障降级时关闭。 */
+  readonly isFrameInterpolationEnabled: boolean;
+
+  /** 切换客户端插帧，不改变回传分辨率或重启任务。不支持时抛错且保留配置。 */
+  setFrameInterpolationEnabled(enabled: boolean): Promise<void>;
+
   /** 当前本地媒体预览音量，取值范围为 `0...1`。 */
   readonly localAudioVolume: number;
 

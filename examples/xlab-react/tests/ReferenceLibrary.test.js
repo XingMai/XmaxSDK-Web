@@ -41,12 +41,34 @@ describe("ReferenceLibrary", () => {
     await library.select(library.snapshot.find((item) => item.mode === "clothx").id, async () => {});
     const generate = vi.fn(async () => {});
     await library.selectInitialReference(generate);
-    expect(library.snapshot.filter((item) => item.is_selected).map((item) => item.id)).toEqual([firstPresetID]);
+    // 选中态按模式各自维护，断言角色替换模式内只有第一张预置图被选中。
+    expect(library.snapshot.filter((item) => item.mode === "charx" && item.is_selected).map((item) => item.id)).toEqual([firstPresetID]);
     expect(generate).toHaveBeenCalledOnce();
     // 之后仍可正常点击该模式中的其他条目，不会每次点击都重置默认图。
     const next = library.snapshot.find((item) => item.mode === "charx" && !item.file && item.id !== firstPresetID);
     await library.select(next.id, generate);
-    expect(library.snapshot.find((item) => item.is_selected).id).toBe(next.id);
+    expect(library.snapshot.find((item) => item.mode === "charx" && item.is_selected).id).toBe(next.id);
+  });
+
+  it("remembers the selection of each mode across tab switches", async () => {
+    const library = new ReferenceLibrary(async () => "https://cos.example/local");
+    const apply = vi.fn(async () => {});
+    const charxA = library.snapshot.find((item) => item.mode === "charx");
+    const charxB = library.snapshot.find((item) => item.mode === "charx" && item.id !== charxA.id);
+    const clothA = library.snapshot.find((item) => item.mode === "clothx");
+    await library.select(charxA.id, apply);
+    library.setMode("clothx");
+    await library.select(clothA.id, apply);
+    // 切回角色替换，A 的选中态恢复，且不影响虚拟试衣的记住项。
+    library.setMode("charx");
+    expect(library.snapshot.find((item) => item.id === charxA.id).is_selected).toBe(true);
+    expect(library.selectedFor("clothx")).toBe(clothA.id);
+    // 同模式内改选 B 后，记住项更新为 B。
+    await library.select(charxB.id, apply);
+    library.setMode("clothx");
+    library.setMode("charx");
+    expect(library.snapshot.find((item) => item.id === charxB.id).is_selected).toBe(true);
+    expect(library.snapshot.find((item) => item.id === charxA.id).is_selected).toBe(false);
   });
 
   it("gives each preset its own stable identity, prompt, path and selection state", () => {
@@ -273,5 +295,30 @@ describe("ReferenceLibrary.remove", () => {
     await pending;
     expect(apply).not.toHaveBeenCalled();
     expect(library.snapshot.some((item) => item.file)).toBe(false);
+  });
+});
+
+describe("ReferenceLibrary.clearOtherModes", () => {
+  it("clears remembered selections of other modes but keeps the given mode's", async () => {
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:preview");
+    const library = new ReferenceLibrary(async () => "https://cos.example/local.png");
+    const apply = vi.fn(async () => {});
+    const charxA = library.snapshot.find((item) => item.mode === "charx");
+    await library.select(charxA.id, apply);
+    library.setMode("clothx");
+    const clothA = library.snapshot.find((item) => item.mode === "clothx");
+    await library.select(clothA.id, apply);
+    library.setMode("free");
+    await library.addFile(localFile(), "free prompt", apply);
+    const freeId = library.snapshot[0].id;
+
+    library.clearOtherModes("free");
+
+    expect(library.selectedFor("charx")).toBeUndefined();
+    expect(library.selectedFor("clothx")).toBeUndefined();
+    expect(library.selectedFor("free")).toBe(freeId);
+    expect(library.snapshot.find((item) => item.id === charxA.id).is_selected).toBe(false);
+    expect(library.snapshot.find((item) => item.id === clothA.id).is_selected).toBe(false);
+    expect(library.snapshot.find((item) => item.id === freeId).is_selected).toBe(true);
   });
 });

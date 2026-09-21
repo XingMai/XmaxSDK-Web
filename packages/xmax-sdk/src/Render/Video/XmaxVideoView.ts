@@ -2,6 +2,7 @@ import { VideoContentMode } from "../../Foundation/Media/Video/VideoContentMode"
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
 import type { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
 import { VideoRenderRegistry } from "../../Service/Realtime/VideoRenderBinding";
+import { RemoteVideoFramePipeline, type RemoteFrameInterpolationOptions } from "./RemoteVideoFramePipeline";
 
 const OBJECT_FIT: Record<VideoContentMode, "contain" | "cover"> = {
   [VideoContentMode.fit]: "contain",
@@ -34,6 +35,10 @@ export class XmaxVideoView {
   private onPlaying?: () => void;
   private videoFrameCallbackID?: number;
   private frameNotificationSequence = 0;
+  private interpolationOptions?: RemoteFrameInterpolationOptions;
+  private interpolationPipeline?: RemoteVideoFramePipeline;
+  private interpolationCanvas?: HTMLCanvasElement;
+  private detached = false;
 
   /**
    * 创建单轨视频视图。
@@ -106,7 +111,15 @@ export class XmaxVideoView {
 
   /** 挂载到容器元素。 */
   attach(to: HTMLElement): void {
+    this.detached = false;
     to.appendChild(this.element);
+    // 浏览器可能在移出 DOM 时暂停 MediaStream video；重新挂载要恢复解码回调。
+    if (this.videoElement.srcObject && this.videoElement.paused && typeof this.videoElement.play === "function") {
+      void this.videoElement.play().catch((error) => {
+        XmaxLogger.render.warning(() => `恢复视频播放失败 (Failed to Resume Video Playback)\n└─ ${String(error)}`);
+      });
+    }
+    this.startInterpolation();
     if (this.videoElement.srcObject && !this.hasNotifiedFrameDisplay) {
       this.armFrameDisplayNotification();
     }
@@ -114,6 +127,8 @@ export class XmaxVideoView {
 
   /** 从容器元素移除。 */
   detach(): void {
+    this.detached = true;
+    this.stopInterpolation();
     this.cancelFrameDisplayNotification();
     this.element.remove();
   }
@@ -123,12 +138,45 @@ export class XmaxVideoView {
     if (this.videoElement.srcObject === stream) {
       return;
     }
+    this.stopInterpolation();
     this.cancelFrameDisplayNotification();
     this.hasNotifiedFrameDisplay = false;
     this.videoElement.srcObject = stream;
     if (stream) {
       this.armFrameDisplayNotification();
+      this.startInterpolation();
     }
+  }
+
+  /** 由远端绑定注入配置；本地预览不走此管线。 @internal */
+  setFrameInterpolation(options?: RemoteFrameInterpolationOptions): void {
+    if (options === this.interpolationOptions) return;
+    this.stopInterpolation();
+    this.interpolationOptions = options;
+    this.startInterpolation();
+  }
+
+  private startInterpolation(): void {
+    if (this.detached || this.interpolationPipeline || !this.interpolationOptions || !this.videoElement.srcObject) return;
+    const canvas = document.createElement("canvas");
+    Object.assign(canvas.style, {
+      position: "absolute", inset: "0", width: "100%", height: "100%",
+      pointerEvents: "none", visibility: "hidden", backgroundColor: "black",
+    });
+    this.interpolationCanvas = canvas;
+    this.applyContentMode();
+    this.element.appendChild(canvas);
+    const pipeline = new RemoteVideoFramePipeline(this.videoElement, canvas, this.interpolationOptions);
+    this.interpolationPipeline = pipeline;
+    pipeline.start();
+  }
+
+  private stopInterpolation(): void {
+    const pipeline = this.interpolationPipeline;
+    this.interpolationPipeline = undefined;
+    pipeline?.stop();
+    this.interpolationCanvas?.remove();
+    this.interpolationCanvas = undefined;
   }
 
   /** 接入轨道画面：优先走注册的渲染绑定，否则按媒体轨直接渲染。 */
@@ -153,6 +201,7 @@ export class XmaxVideoView {
     if (track) {
       VideoRenderRegistry.binding(track)?.detachHandler(this);
     }
+    this.setFrameInterpolation(undefined);
     this.cancelFrameDisplayNotification();
     this.videoElement.srcObject = null;
   }
@@ -203,5 +252,9 @@ export class XmaxVideoView {
   private applyContentMode(): void {
     this.videoElement.style.objectFit = OBJECT_FIT[this.contentMode];
     this.videoElement.style.transform = this.mirrored ? "scaleX(-1)" : "";
+    if (this.interpolationCanvas) {
+      this.interpolationCanvas.style.objectFit = OBJECT_FIT[this.contentMode];
+      this.interpolationCanvas.style.transform = this.mirrored ? "scaleX(-1)" : "";
+    }
   }
 }

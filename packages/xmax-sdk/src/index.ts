@@ -6,6 +6,7 @@ export type { XmaxConfigurationInit } from "./Core/XmaxConfiguration";
 // Core / Realtime
 export { RealtimeConfiguration } from "./Core/Realtime/RealtimeConfiguration";
 export type { RealtimeConfigurationInit } from "./Core/Realtime/RealtimeConfiguration";
+export type { FrameInterpolationConfiguration } from "./Core/Realtime/RealtimeConfiguration";
 export type { XmaxRealtimeManaging } from "./Core/Realtime/XmaxRealtimeManaging";
 
 // Foundation

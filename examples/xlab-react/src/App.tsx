@@ -24,7 +24,6 @@ import { ReferenceList } from "./ReferenceList";
 import { compressReferenceImage } from "./compressReferenceImage";
 
 const API_KEY_STORAGE = "xmax.xlab.apiKey";
-const PROMPT_STORAGE = "xmax.xlab.prompt";
 
 /** 相机采集格式：横屏 1920×1024（x2.0 受像素上限约束会自动等比缩小）。 */
 const CAMERA_VIDEO_FORMAT = new RealtimeVideoFormat({
@@ -62,11 +61,7 @@ export function App() {
   const [wechatOpen, setWechatOpen] = useState(false);
   const [keyEditorOpen, setKeyEditorOpen] = useState(false);
   const [useMicrophone, setUseMicrophone] = useState(true);
-  const [prompt, setPrompt] = useState(
-    () =>
-      localStorage.getItem(PROMPT_STORAGE) ??
-      "Turn the scene into a cyberpunk style",
-  );
+  const [prompt, setPrompt] = useState("");
   const [activeModeKey, setActiveModeKey] = useState<ExampleModeKey>("charx");
   const [presetLineCapacity, setPresetLineCapacity] = useState(0);
   const [localStream, setLocalStream] = useState<RealtimeMediaStream | undefined>();
@@ -80,6 +75,8 @@ export function App() {
   const [remoteVideoStatistics, setRemoteVideoStatistics] = useState<RemoteVideoStatistics>();
   const [errorText, setErrorText] = useState("");
   const [busy, setBusy] = useState(false);
+  const [interpolationRequested, setInterpolationRequested] = useState(true);
+  const [interpolationSwitching, setInterpolationSwitching] = useState(false);
 
   const realtimeRef = useRef<XmaxRealtimeManaging | undefined>(undefined);
   const generationBusyRef = useRef(false);
@@ -130,6 +127,18 @@ export function App() {
     return () => clearInterval(timer);
   }, [localStream]);
 
+  // 同步功能开关及真正的故障降级，不跟随逐帧插值状态变化。
+  useEffect(() => {
+    if (!localStream) return;
+    const update = () => {
+      const realtime = realtimeRef.current;
+      if (realtime) setInterpolationRequested(realtime.isFrameInterpolationEnabled);
+    };
+    update();
+    const timer = setInterval(update, 250);
+    return () => clearInterval(timer);
+  }, [localStream]);
+
   const client = useMemo(
     () =>
       new XmaxClient(
@@ -170,10 +179,6 @@ export function App() {
   useEffect(() => {
     localStorage.setItem(API_KEY_STORAGE, apiKey);
   }, [apiKey]);
-
-  useEffect(() => {
-    localStorage.setItem(PROMPT_STORAGE, prompt);
-  }, [prompt]);
 
   // 卸载时释放实时生命周期。
   useEffect(() => {
@@ -257,6 +262,8 @@ export function App() {
 
     // 测量可视宽度能容纳的预设个数，用于决定第一行填多少再换行。
     const measureCapacity = () => {
+      // 页面隐藏（display: none）时宽度为 0，跳过测量以免覆盖正确容量。
+      if (row.clientWidth === 0) return;
       const item = row.querySelector<HTMLElement>(".presetItem");
       if (!item) {
         return;
@@ -321,14 +328,14 @@ export function App() {
   async function handleStart() {
     if (generationBusyRef.current) return;
     if (!apiKey) {
-      setErrorText("API Key is required");
+      setErrorText("API Key is required — click the key button in the top-right corner to enter it");
       return;
     }
     generationBusyRef.current = true;
     setBusy(true);
     setErrorText("");
     const realtime = client.createRealtimeManager(
-      new RealtimeConfiguration({ model }),
+      new RealtimeConfiguration({ model, frameInterpolation: { enabled: interpolationRequested } }),
     );
     realtimeRef.current = realtime;
     // 会话建立成功后是否已切换到生成页面。
@@ -385,9 +392,35 @@ export function App() {
     }
   }
 
+  async function handleToggleInterpolation() {
+    const realtime = realtimeRef.current;
+    if (!realtime || generationBusyRef.current) return;
+    const enabled = !realtime.isFrameInterpolationEnabled;
+    generationBusyRef.current = true;
+    setBusy(true);
+    setInterpolationSwitching(true);
+    setErrorText("");
+    try {
+      await realtime.setFrameInterpolationEnabled(enabled);
+      if (realtimeRef.current === realtime) {
+        setInterpolationRequested(realtime.isFrameInterpolationEnabled);
+      }
+    } catch (error) {
+      if (realtimeRef.current === realtime) {
+        setErrorText(error instanceof Error ? error.message : String(error));
+      }
+    } finally {
+      generationBusyRef.current = false;
+      setBusy(false);
+      setInterpolationSwitching(false);
+    }
+  }
+
   /** 提交生成条件：未生成时开始生成，生成中更新条件。 */
   async function handleSubmitPrompt() {
     if (referenceUploading) return;
+    // 自由输入的生成条件与其他模式的参考图无关，清掉它们记住的选中态。
+    references.clearOtherModes("free");
     await submitContext(new RealtimeContext({ prompt: submitPrompt, referencePath }));
   }
 
@@ -450,6 +483,7 @@ export function App() {
   }
 
   function handleModeChange(mode: ExampleModeKey) {
+    // 只恢复该模式记住的选中态显示，不自动重新生成。
     references.setMode(mode);
     setActiveModeKey(mode);
     setErrorText("");
@@ -605,7 +639,7 @@ export function App() {
         </header>
 
         <main className="hero">
-          <h1>Experience Live AI with Xmax</h1>
+          <h1>Reimagining Live Video with Xmax</h1>
           <div className="heroStage">
             <div className="heroActions">
               <button
@@ -688,6 +722,9 @@ export function App() {
               .
             </p>
           </div>
+          <p className="copyright">
+            Copyright © 2026 XMAX.AI PTE.LTD. All rights reserved.
+          </p>
           {errorText && <div className="error">{errorText}</div>}
         </main>
         {footer}
@@ -704,6 +741,26 @@ export function App() {
           <img className="brandLogo" src="/xmax-wordmark.png" alt="Xmax" />
         </div>
         <div className="sessionControls">
+          <button
+            type="button"
+            className={`interpolationPill${interpolationRequested ? " active" : ""}`}
+            onClick={handleToggleInterpolation}
+            disabled={busy || !realtimeRef.current}
+            aria-label="Frame interpolation"
+            aria-pressed={interpolationRequested}
+            aria-busy={interpolationSwitching}
+            title={
+              !realtimeRef.current ? "会话开始后可切换插帧" :
+              interpolationSwitching ? "正在切换插帧…" :
+              interpolationRequested ? "2× 插帧已开启，点击关闭" :
+              "插帧已关闭，点击开启"
+            }
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M13.7 2.3a.75.75 0 0 0-1.3-.5L4.2 13a.75.75 0 0 0 .6 1.2h5.6l-.9 7.5a.75.75 0 0 0 1.3.5L19.8 11a.75.75 0 0 0-.6-1.2h-6.3l.8-7.5Z" />
+            </svg>
+            <span>2x</span>
+          </button>
           <span className="sessionTimer">{formatElapsed(elapsedSeconds)}</span>
           <button
             className="stopButton"
@@ -747,15 +804,19 @@ export function App() {
             </div>
           )}
           <span className="stageLabel">Result</span>
-          <dl className="videoStatistics" aria-label="生成结果视频统计">
-            <div><dt>下行分辨率</dt><dd>{formatVideoResolution(remoteVideoStatistics)}</dd></div>
-            <div><dt>下行帧率</dt><dd>{formatVideoMetric(remoteVideoStatistics?.frameRate, "fps")}</dd></div>
-            <div><dt>下行码率</dt><dd>{formatVideoMetric(remoteVideoStatistics?.bitrateKbps, "kbps")}</dd></div>
-            <div><dt>下行丢包率</dt><dd>{formatVideoMetric(remoteVideoStatistics?.downlinkLossPercent, "%")}</dd></div>
-            <div><dt>播放缓冲延迟</dt><dd>{formatVideoMetric(remoteVideoStatistics?.jitterBufferDelayMs, "ms")}</dd></div>
-            <div><dt>RTT（云端）</dt><dd>{formatVideoMetric(remoteVideoStatistics?.rttMs, "ms")}</dd></div>
-            <div><dt>E2E（RTC 估算）</dt><dd>{formatVideoMetric(remoteVideoStatistics?.endToEndDelayMs, "ms")}</dd></div>
-          </dl>
+          <div className="remoteStatistics">
+            <dl className="videoStatistics" aria-label="下行视频统计">
+              <div><dt>下行分辨率</dt><dd>{formatVideoResolution(remoteVideoStatistics)}</dd></div>
+              <div><dt>下行帧率</dt><dd>{formatVideoMetric(remoteVideoStatistics?.frameRate, "fps")}</dd></div>
+              <div><dt>下行码率</dt><dd>{formatVideoMetric(remoteVideoStatistics?.bitrateKbps, "kbps")}</dd></div>
+              <div><dt>下行丢包率</dt><dd>{formatVideoMetric(remoteVideoStatistics?.downlinkLossPercent, "%")}</dd></div>
+            </dl>
+            <dl className="videoStatistics" aria-label="生成结果延迟统计">
+              <div><dt>播放缓冲延迟</dt><dd>{formatVideoMetric(remoteVideoStatistics?.jitterBufferDelayMs, "ms")}</dd></div>
+              <div><dt>RTT（云端）</dt><dd>{formatVideoMetric(remoteVideoStatistics?.rttMs, "ms")}</dd></div>
+              <div><dt>E2E（RTC 估算）</dt><dd>{formatVideoMetric(remoteVideoStatistics?.endToEndDelayMs, "ms")}</dd></div>
+            </dl>
+          </div>
           <span className="watermark">✦ Xmax</span>
           {!remoteStream && (
             <span className="stageHint">
@@ -793,55 +854,59 @@ export function App() {
 
         {activeMode.key === "free" && (
           <div className="promptBar">
-            <input
-              type="text"
+            <textarea
+              rows={3}
+              aria-label="Describe how you want the video to change"
               placeholder="Describe how you want the video to change"
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  void handleSubmitPrompt();
-                }
-              }}
             />
-            {uploadedReference ? (
-              <span
-                className="uploadedThumb"
-                title={uploadedReference.error ?? uploadedReference.name}
-              >
-                <img src={uploadedReference.thumbnail} alt={uploadedReference.name} />
-                {uploadedReference.upload_status === "uploading" && (
-                  <span className="uploadedThumbOverlay">
-                    <span className="presetSpinner" />
-                  </span>
-                )}
-                <button
-                  className="uploadedRemove"
-                  onClick={() => references.remove(uploadedReference.id)}
-                  disabled={busy}
-                  title="Remove reference"
+            <div className="promptActions">
+              {uploadedReference ? (
+                <span
+                  className="uploadedThumb"
+                  title={uploadedReference.error ?? uploadedReference.name}
                 >
-                  ×
+                  <img src={uploadedReference.thumbnail} alt={uploadedReference.name} />
+                  {uploadedReference.upload_status === "uploading" && (
+                    <span className="uploadedThumbOverlay">
+                      <span className="presetSpinner" />
+                    </span>
+                  )}
+                  <button
+                    className="uploadedRemove"
+                    onClick={() => references.remove(uploadedReference.id)}
+                    disabled={busy}
+                    title="Remove reference"
+                  >
+                    ×
+                  </button>
+                </span>
+              ) : (
+                <button
+                  className="uploadButton"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={busy || !apiKey}
+                  title="Upload your own reference image"
+                  aria-label="Upload reference image"
+                >
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                    <path d="M12 4v16M4 12h16" />
+                  </svg>
                 </button>
-              </span>
-            ) : (
+              )}
               <button
-                className="uploadButton"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={busy || !apiKey}
-                title="Upload your own reference image"
+                className="submitButton"
+                onClick={handleSubmitPrompt}
+                disabled={busy || !apiKey || referenceUploading}
+                title={apiKey ? "" : "Generation requires an API Key"}
+                aria-label="Submit prompt"
               >
-                +
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M4 12h16m-6-6 6 6-6 6" />
+                </svg>
               </button>
-            )}
-            <button
-              className="submitButton"
-              onClick={handleSubmitPrompt}
-              disabled={busy || !apiKey || referenceUploading}
-              title={apiKey ? "" : "Generation requires an API Key"}
-            >
-              ➜
-            </button>
+            </div>
           </div>
         )}
         {activeMode.key !== "free" && (

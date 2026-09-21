@@ -196,6 +196,7 @@ describe("XmaxRealtimeConnectionManager", () => {
     const view = { isMirrored: false, setMediaStream: vi.fn(), setFrameInterpolation: vi.fn() };
     binding.attachHandler(view, VideoContentMode.fit);
     expect(view.isMirrored).toBe(true);
+    expect(events.onRenderAttached).toHaveBeenCalledOnce();
     binding.frameDisplayHandler?.();
     expect(events.onFrameDisplayed).toHaveBeenCalledOnce();
     await manager.disconnect();

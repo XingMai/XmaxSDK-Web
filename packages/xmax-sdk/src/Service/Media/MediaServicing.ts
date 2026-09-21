@@ -2,9 +2,11 @@ import type { ModelSize } from "../Realtime/RealtimeModel";
 
 /**
  * 定义媒体输入规则与平台媒体能力查询能力。
- * 当前仅包含尺寸规则。
  */
 export interface MediaServicing {
+  /** 校验并保留原始尺寸；Web 插帧不降低回传分辨率。 */
+  resolveFrameInterpolationSize(size: ModelSize): ModelSize;
+  supportsFrameInterpolation(size: ModelSize): Promise<boolean>;
   /**
    * 按模型输入规则解析目标尺寸。
    *

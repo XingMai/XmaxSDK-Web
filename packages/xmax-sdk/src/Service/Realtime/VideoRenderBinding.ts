@@ -1,5 +1,6 @@
 import type { VideoContentMode } from "../../Foundation/Media/Video/VideoContentMode";
 import type { RealtimeVideoTrack } from "./RealtimeVideoTrack";
+import type { RemoteFrameInterpolationOptions } from "../../Render/Video/RemoteVideoFramePipeline";
 
 /**
  * 轨道渲染目标。
@@ -13,6 +14,8 @@ export interface VideoRenderTarget {
 
   /** 设置渲染用的媒体流；传 null 清空画面。 */
   setMediaStream: (stream: MediaStream | null) => void;
+  /** SDK 视频视图实现；自定义只显示原流的目标可以不实现。 */
+  setFrameInterpolation?: (options?: RemoteFrameInterpolationOptions) => void;
 }
 
 /**

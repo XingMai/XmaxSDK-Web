@@ -79,10 +79,16 @@ importers:
       cos-js-sdk-v5:
         specifier: ^1.10.1
         version: 1.10.1
+      framegen:
+        specifier: 1.4.0
+        version: 1.4.0
       trtc-sdk-v5:
         specifier: ^5.6.0
         version: 5.20.0
     devDependencies:
+      '@webgpu/types':
+        specifier: ^0.1.64
+        version: 0.1.74
       tsup:
         specifier: ^8.3.5
         version: 8.5.1(postcss@8.5.28)(typescript@5.6.3)
@@ -689,6 +695,9 @@ packages:
   '@vitest/utils@2.1.9':
     resolution: {integrity: sha512-v0psaMSkNJ3A2NMrUEHFRzJtDPFn+/VWZ5WxImB21T9fjucJRmS7xCS3ppEnARb9y11OAzaD+P2Ps+b+BGX5iQ==}
 
+  '@webgpu/types@0.1.74':
+    resolution: {integrity: sha512-lgiI4hbuLcI9unnm2cL/tvCaQU45dp0xcLWJh5uB/9MBGvIA4F8XIk7nSiBeg+K4xWGYwgZKn80LmERI5CxoTA==}
+
   acorn@8.18.0:
     resolution: {integrity: sha512-lGq+9yr1/GuAWaVYIHRjvvySG5/4VfKIvC8EWxStPdcDh/Ka7FG3twP6v4d5BkravUilhIAsG4Qj83t02LWUPQ==}
     engines: {node: '>=0.4.0'}
@@ -811,6 +820,10 @@ packages:
 
   fix-dts-default-cjs-exports@1.0.1:
     resolution: {integrity: sha512-pVIECanWFC61Hzl2+oOCtoJ3F17kglZC/6N94eRWycFgBH35hHx0Li604ZIzhseh97mf2p0cv7vVrOZGoqhlEg==}
+
+  framegen@1.4.0:
+    resolution: {integrity: sha512-NqK6nckQMqW6l29mKlNzVlbwH89YLPi7wqiPbrmLSm3p9LMqWEnURTjubNQ8k8F4ogz2OWpygT5MSTmxtvojQQ==}
+    engines: {node: '>=18'}
 
   fsevents@2.3.3:
     resolution: {integrity: sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==}
@@ -1591,6 +1604,8 @@ snapshots:
       loupe: 3.2.1
       tinyrainbow: 1.2.0
 
+  '@webgpu/types@0.1.74': {}
+
   acorn@8.18.0: {}
 
   any-promise@1.3.0: {}
@@ -1730,6 +1745,8 @@ snapshots:
       magic-string: 0.30.21
       mlly: 1.8.2
       rollup: 4.63.3
+
+  framegen@1.4.0: {}
 
   fsevents@2.3.3:
     optional: true

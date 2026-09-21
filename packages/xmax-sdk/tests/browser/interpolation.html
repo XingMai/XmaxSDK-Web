@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<title>Xmax 插帧 GPU 验证</title>
+<style>
+  body { background: #171a21; color: #e7eaf0; font: 16px system-ui; padding: 24px; }
+  .views { display: flex; gap: 24px; } .view { width: 480px; height: 270px; }
+  video { width: 100%; height: 100%; } button { margin: 20px 12px 20px 0; padding: 8px 16px; }
+  pre { white-space: pre-wrap; }
+</style>
+<h1>远端渲染插帧验证</h1>
+<p>使用本地合成 MediaStream 模拟 25fps 输入，无需摄像头、API Key 或 RTC 会话。</p>
+<div class="views"><section><h2>原始输入</h2><div class="view" id="source"></div></section>
+<section><h2>SDK 输出</h2><div class="view" id="result"></div></section></div>
+<button id="toggle">切换插帧</button><button id="detach">卸载 / 重新挂载</button>
+<pre id="status"></pre>
+<script type="module" src="./interpolation.ts"></script>
+</html>

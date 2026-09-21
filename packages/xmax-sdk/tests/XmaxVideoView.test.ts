@@ -14,6 +14,7 @@ class VideoStub extends ElementStub {
   srcObject: MediaStream | null = null;
   paused = true;
   readyState = 0;
+  play = vi.fn(async () => { this.paused = false; });
   private sequence = 0;
   readonly callbacks = new Map<number, () => void>();
 
@@ -95,6 +96,7 @@ describe("XmaxVideoView first frame", () => {
     oldFrame();
     expect(onBindingFrame).not.toHaveBeenCalled();
     view.attach(new ElementStub() as unknown as HTMLElement);
+    expect(video.play).toHaveBeenCalledTimes(1);
     video.nextFrame();
     expect(onBindingFrame).toHaveBeenCalledTimes(1);
   });
