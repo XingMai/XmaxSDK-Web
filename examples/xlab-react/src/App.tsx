@@ -10,6 +10,7 @@ import {
   XmaxEnvironment,
   XmaxLoggerOption,
   type RealtimeMediaStream,
+  type RealtimeLaunchTiming,
   type RealtimeState,
   type XmaxRealtimeManaging,
 } from "@xmax/sdk";
@@ -32,6 +33,10 @@ function formatElapsed(totalSeconds: number): string {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function formatLaunchTiming(milliseconds?: number): string {
+  return milliseconds === undefined ? "—" : `${Math.round(milliseconds)} ms`;
 }
 
 export function App() {
@@ -57,6 +62,7 @@ export function App() {
     RealtimeConnectionState.idle,
   );
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [launchTiming, setLaunchTiming] = useState<RealtimeLaunchTiming>({});
   const [errorText, setErrorText] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -64,6 +70,7 @@ export function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const wechatRef = useRef<HTMLDivElement>(null);
   const keyFieldRef = useRef<HTMLDivElement>(null);
+  const presetRowRef = useRef<HTMLDivElement>(null);
 
   // 点击微信图标外部时收起二维码弹层。
   useEffect(() => {
@@ -135,6 +142,77 @@ export function App() {
   }, []);
 
   const sessionActive = localStream !== undefined;
+
+  // 预设列表滚动：纵向滚轮映射为横向滚动，左键按住可拖拽滚动。
+  useEffect(() => {
+    const row = presetRowRef.current;
+    if (!row) {
+      return;
+    }
+
+    const handleWheel = (event: WheelEvent) => {
+      if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
+        event.preventDefault();
+        row.scrollLeft += event.deltaY;
+      }
+    };
+
+    let dragging = false;
+    let moved = false;
+    let startX = 0;
+    let startScrollLeft = 0;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.button !== 0) {
+        return;
+      }
+      dragging = true;
+      moved = false;
+      startX = event.clientX;
+      startScrollLeft = row.scrollLeft;
+      row.setPointerCapture(event.pointerId);
+    };
+    const handlePointerMove = (event: PointerEvent) => {
+      if (!dragging) {
+        return;
+      }
+      const deltaX = event.clientX - startX;
+      if (Math.abs(deltaX) > 4) {
+        moved = true;
+        row.classList.add("dragging");
+      }
+      row.scrollLeft = startScrollLeft - deltaX;
+    };
+    const handlePointerEnd = (event: PointerEvent) => {
+      dragging = false;
+      row.classList.remove("dragging");
+      if (row.hasPointerCapture(event.pointerId)) {
+        row.releasePointerCapture(event.pointerId);
+      }
+    };
+    const handleClickCapture = (event: MouseEvent) => {
+      if (moved) {
+        event.preventDefault();
+        event.stopPropagation();
+        moved = false;
+      }
+    };
+
+    row.addEventListener("wheel", handleWheel, { passive: false });
+    row.addEventListener("pointerdown", handlePointerDown);
+    row.addEventListener("pointermove", handlePointerMove);
+    row.addEventListener("pointerup", handlePointerEnd);
+    row.addEventListener("pointercancel", handlePointerEnd);
+    row.addEventListener("click", handleClickCapture, true);
+    return () => {
+      row.removeEventListener("wheel", handleWheel);
+      row.removeEventListener("pointerdown", handlePointerDown);
+      row.removeEventListener("pointermove", handlePointerMove);
+      row.removeEventListener("pointerup", handlePointerEnd);
+      row.removeEventListener("pointercancel", handlePointerEnd);
+      row.removeEventListener("click", handleClickCapture, true);
+    };
+  }, [sessionActive]);
   const isConnected =
     stateText === RealtimeConnectionState.connected ||
     stateText === RealtimeConnectionState.generating;
@@ -169,6 +247,11 @@ export function App() {
         new RealtimeConfiguration({ model }),
       );
       realtimeRef.current = realtime;
+      await realtime.setLaunchTimingListener((timing) => {
+        if (realtimeRef.current === realtime) {
+          setLaunchTiming(timing);
+        }
+      });
       await attachStateListener(realtime);
       const stream = await realtime.createLocalCameraStream({
         videoFormat: CAMERA_VIDEO_FORMAT,
@@ -556,6 +639,12 @@ export function App() {
             style={{ width: "100%", height: "100%" }}
           />
           <span className="stageLabel">Local</span>
+          <dl className="launchTiming" aria-label="启动耗时统计">
+            <div><dt>打开摄像头</dt><dd>{formatLaunchTiming(launchTiming.cameraMs)}</dd></div>
+            <div><dt>建立连接</dt><dd>{formatLaunchTiming(launchTiming.connectionMs)}</dd></div>
+            <div><dt>首帧到达</dt><dd>{formatLaunchTiming(launchTiming.firstFrameMs)}</dd></div>
+            <div className="launchTimingTotal"><dt>完整启动耗时</dt><dd>{formatLaunchTiming(launchTiming.totalMs)}</dd></div>
+          </dl>
         </div>
         <div className="stage">
           <XmaxVideo
@@ -626,7 +715,7 @@ export function App() {
       )}
 
       <div className="examplesSection">
-        <div className="presetRow">
+        <div className="presetRow" ref={presetRowRef}>
           {EXAMPLE_PRESETS.map((preset) => (
             <button
               key={preset.name}

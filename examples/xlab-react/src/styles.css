@@ -359,6 +359,42 @@ button:disabled {
   padding: 3px 8px;
 }
 
+.launchTiming {
+  position: absolute;
+  top: 12px;
+  left: 14px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.6);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 12px;
+  line-height: 1.6;
+  pointer-events: none;
+}
+
+.launchTiming > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.launchTiming dd {
+  margin: 0;
+  min-width: 64px;
+  text-align: right;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.launchTimingTotal {
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+  font-weight: 600;
+}
+
 .watermark {
   position: absolute;
   top: 12px;
@@ -464,14 +500,29 @@ button:disabled {
 }
 
 .presetRow {
-  display: flex;
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(2, auto);
+  justify-content: start;
   gap: 14px;
   overflow-x: auto;
   padding-bottom: 8px;
+  scrollbar-width: none;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.presetRow::-webkit-scrollbar {
+  display: none;
+}
+
+.presetRow.dragging {
+  cursor: grabbing;
+  scroll-behavior: auto;
 }
 
 .presetItem {
-  flex-shrink: 0;
   width: 76px;
   border: none;
   background: transparent;
@@ -486,6 +537,7 @@ button:disabled {
   object-fit: cover;
   border: 2px solid transparent;
   transition: border-color 0.15s ease;
+  pointer-events: none;
 }
 
 .presetItem span {
