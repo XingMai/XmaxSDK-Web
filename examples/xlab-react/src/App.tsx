@@ -54,6 +54,7 @@ export function App() {
   );
   const [selectedPreset, setSelectedPreset] = useState<string | undefined>();
   const [activeModeKey, setActiveModeKey] = useState<ExampleModeKey>("charx");
+  const [presetLineCapacity, setPresetLineCapacity] = useState(0);
   const [referencePreview, setReferencePreview] = useState<string | undefined>();
   const [referencePath, setReferencePath] = useState<string | undefined>();
   const [referenceUploading, setReferenceUploading] = useState(false);
@@ -211,7 +212,24 @@ export function App() {
     row.addEventListener("pointerup", handlePointerEnd);
     row.addEventListener("pointercancel", handlePointerEnd);
     row.addEventListener("click", handleClickCapture, true);
+
+    // 测量可视宽度能容纳的预设个数，用于决定第一行填多少再换行。
+    const measureCapacity = () => {
+      const item = row.querySelector<HTMLElement>(".presetItem");
+      if (!item) {
+        return;
+      }
+      const pitch = item.getBoundingClientRect().width + 14;
+      setPresetLineCapacity(
+        Math.max(1, Math.floor((row.clientWidth + 14) / pitch)),
+      );
+    };
+    const resizeObserver = new ResizeObserver(measureCapacity);
+    resizeObserver.observe(row);
+    measureCapacity();
+
     return () => {
+      resizeObserver.disconnect();
       row.removeEventListener("wheel", handleWheel);
       row.removeEventListener("pointerdown", handlePointerDown);
       row.removeEventListener("pointermove", handlePointerMove);
@@ -724,39 +742,47 @@ export function App() {
         ) : (
           <div className="presetRow" ref={presetRowRef}>
             {(() => {
-              const midpoint = Math.ceil(activeMode.presets.length / 2);
-              const lines = [
-                activeMode.presets.slice(0, midpoint),
-                activeMode.presets.slice(midpoint),
+              const uploadItem = (
+                <button
+                  key="__upload__"
+                  className="presetItem uploadItem"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={referenceUploading || !apiKey}
+                  title={apiKey ? "Upload your own reference image" : "Uploading a reference image requires an API Key"}
+                >
+                  <span className="uploadCircle">{referenceUploading ? "…" : "＋"}</span>
+                  <span>Upload</span>
+                </button>
+              );
+              const items = [
+                uploadItem,
+                ...activeMode.presets.map((preset) => (
+                  <button
+                    key={preset.name}
+                    className={
+                      selectedPreset === preset.name ? "presetItem active" : "presetItem"
+                    }
+                    onClick={() => void handleSelectPreset(preset)}
+                    disabled={referenceUploading}
+                  >
+                    <img src={preset.thumbnail} alt={preset.name} loading="lazy" />
+                    <span>{preset.name}</span>
+                  </button>
+                )),
               ];
-              return lines.map((line, lineIndex) => (
-                <div className="presetLine" key={lineIndex}>
-                  {lineIndex === 0 && (
-                    <button
-                      className="presetItem uploadItem"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={referenceUploading || !apiKey}
-                      title={apiKey ? "Upload your own reference image" : "Uploading a reference image requires an API Key"}
-                    >
-                      <span className="uploadCircle">{referenceUploading ? "…" : "＋"}</span>
-                      <span>Upload</span>
-                    </button>
-                  )}
-                  {line.map((preset) => (
-                    <button
-                      key={preset.name}
-                      className={
-                        selectedPreset === preset.name ? "presetItem active" : "presetItem"
-                      }
-                      onClick={() => void handleSelectPreset(preset)}
-                      disabled={referenceUploading}
-                    >
-                      <img src={preset.thumbnail} alt={preset.name} loading="lazy" />
-                      <span>{preset.name}</span>
-                    </button>
-                  ))}
-                </div>
-              ));
+              // 第一行优先填满可视宽度，装不下时两行均分后横向滚动。
+              const perLine = Math.max(
+                presetLineCapacity || 1,
+                Math.ceil(items.length / 2),
+              );
+              const lines = [items.slice(0, perLine), items.slice(perLine)];
+              return lines
+                .filter((line) => line.length > 0)
+                .map((line, lineIndex) => (
+                  <div className="presetLine" key={lineIndex}>
+                    {line}
+                  </div>
+                ));
             })()}
           </div>
         )}
