@@ -818,6 +818,49 @@ describe("XmaxRealtimeManager 断连与关闭", () => {
     );
   });
 
+  it("生成后断开：由生成管理器停止任务，再清理连接并保留预览", async () => {
+    const { manager, camera, stream, session } = makeManager();
+    const localStream = makeLocalStream(camera);
+    const pending = manager.startGeneration({ localStream, context: testContext });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+    stream.confirmationDeferreds[0]!.resolve();
+    await pending;
+    const taskID = manager.currentState.taskID;
+    const stop = vi.spyOn(stream, "stopGeneration");
+    const disconnect = vi.spyOn(stream, "disconnect");
+
+    await manager.disconnect();
+
+    expect(stream.stopGenerationCalls).toEqual([taskID]);
+    expect(stop.mock.invocationCallOrder[0]).toBeLessThan(disconnect.mock.invocationCallOrder[0]!);
+    expect(session.closedSessionIDs).toEqual(["session-1"]);
+    expect(camera.stopCalls).toBe(0);
+    expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.ready);
+  });
+
+  it("等待远端轨就绪时断开：立即取消等待，只停止一次任务", async () => {
+    const { manager, camera, stream } = makeManager();
+    const localStream = makeLocalStream(camera);
+    const remote = await manager.connect(localStream);
+    const mediaTrack = Object.assign(new EventTarget(), { muted: true }) as MediaStreamTrack;
+    remote.videoTrack!.mediaStreamTrack = mediaTrack;
+    const listen = vi.spyOn(mediaTrack, "addEventListener");
+    const remove = vi.spyOn(mediaTrack, "removeEventListener");
+    const pending = manager.startGeneration({ localStream, context: testContext });
+    const rejected = expect(pending).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+    stream.confirmationDeferreds[0]!.resolve();
+    await vi.waitFor(() => expect(listen).toHaveBeenCalledWith("unmute", expect.any(Function)));
+
+    await manager.disconnect();
+    await rejected;
+
+    expect(remove).toHaveBeenCalledWith("unmute", expect.any(Function));
+    expect(stream.stopGenerationCalls).toEqual([stream.beginCalls[0]!.taskID]);
+    expect(stream.activateAudioCalls).toBe(0);
+    expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.ready);
+  });
+
   it("关闭：释放连接并停止本地相机流", async () => {
     const { manager, camera, stream, session } = makeManager();
     const localStream = makeLocalStream(camera);
