@@ -95,12 +95,12 @@ describe("RealtimeSessionService", () => {
     api.postResponses = [sessionPayload()];
     const service = makeService(api);
 
-    const session = await service.createSession(RealtimeModel.x2_0);
+    const session = await service.createSession(RealtimeModel.x2_fast_1080p);
 
     expect(api.requests[0]).toMatchObject({
       method: ApiMethod.post,
       path: "/session",
-      body: { model: "x2.0" },
+      body: { model: "x2-fast-1080p" },
     });
     expect(session.id).toBe("ums-001");
     expect(session.userID).toBe("user-001");
@@ -120,7 +120,7 @@ describe("RealtimeSessionService", () => {
     api.postResponses = [sessionPayload({ modelExtra: JSON.stringify(trtcModelExtra) })];
     const service = makeService(api);
 
-    const session = await service.createSession(RealtimeModel.x2_0);
+    const session = await service.createSession(RealtimeModel.x2_fast_1080p);
     expect(session.connection?.sdkAppID).toBe("1600126360");
     expect(session.connection?.userSig).toBe("sig-v1");
   });
@@ -132,7 +132,7 @@ describe("RealtimeSessionService", () => {
     ];
     const service = makeService(api);
 
-    await expect(service.createSession(RealtimeModel.x2_0)).rejects.toMatchObject({
+    await expect(service.createSession(RealtimeModel.x2_fast_1080p)).rejects.toMatchObject({
       code: XmaxErrorCode.sessionError,
     });
   });
@@ -144,7 +144,7 @@ describe("RealtimeSessionService", () => {
     ];
     const service = makeService(api);
 
-    await expect(service.createSession(RealtimeModel.x2_0)).rejects.toMatchObject({
+    await expect(service.createSession(RealtimeModel.x2_fast_1080p)).rejects.toMatchObject({
       code: XmaxErrorCode.sessionError,
     });
   });

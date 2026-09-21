@@ -243,7 +243,7 @@ function makeManager() {
   const stream = new StreamControllingStub();
   const session = new RealtimeSessionServicingStub();
   const manager = new XmaxRealtimeManager(
-    new RealtimeConfiguration({ model: RealtimeModel.x2_0 }),
+    new RealtimeConfiguration({ model: RealtimeModel.x2_fast_1080p }),
     {
       cameraController: camera,
       streamController: stream,
@@ -323,7 +323,7 @@ describe("XmaxRealtimeManager connect", () => {
   it("未配置 API 服务时拒绝连接", async () => {
     const camera = new CameraControllingStub();
     const manager = new XmaxRealtimeManager(
-      new RealtimeConfiguration({ model: RealtimeModel.x2_0 }),
+      new RealtimeConfiguration({ model: RealtimeModel.x2_fast_1080p }),
       { cameraController: camera },
     );
     const localStream = makeLocalStream(camera);

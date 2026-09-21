@@ -169,7 +169,7 @@ function makeController() {
   const controller = new CameraController({
     permissionManager: permission,
     rtcManager: rtc,
-    mediaService: new MediaService(RealtimeModel.x2_0),
+    mediaService: new MediaService(RealtimeModel.x2_fast_1080p),
   });
   return { controller, rtc, permission };
 }
@@ -185,8 +185,8 @@ function attachPreview(track: { mediaStreamTrack?: MediaStreamTrack } & object) 
 }
 
 const defaultFormat = new RealtimeVideoFormat({
-  width: 832,
-  height: 1472,
+  width: 1024,
+  height: 1920,
   fps: 30,
 });
 
@@ -200,8 +200,8 @@ describe("CameraController", () => {
     });
 
     expect(stream.videoTrack?.id).toBe("video0");
-    expect(stream.videoTrack?.videoFormat?.width).toBe(832);
-    expect(stream.videoTrack?.videoFormat?.height).toBe(1472);
+    expect(stream.videoTrack?.videoFormat?.width).toBe(1024);
+    expect(stream.videoTrack?.videoFormat?.height).toBe(1920);
     expect(rtc.initializeCalls).toBe(1);
     expect(rtc.startCalls).toHaveLength(1);
     expect(controller.currentTrack).toBe(stream.videoTrack);

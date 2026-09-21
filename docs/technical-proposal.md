@@ -48,7 +48,7 @@ XmaxSDK/
 │           │       ├── RealtimeConfiguration.ts      # model（插帧字段保留但不实现）
 │           │       ├── RealtimeCoordinator.ts        # 操作准入/状态提交/分级清理（对齐 actor 语义）
 │           │       ├── RealtimeErrorHandler.ts
-│           │       ├── RealtimeModel.ts              # x2_0 …
+│           │       ├── RealtimeModel.ts              # x2-fast-1080p …
 │           │       └── RealtimeTiming.ts
 │           ├── Foundation/
 │           │   ├── Errors/XmaxError.ts               # code 枚举对齐

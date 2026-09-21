@@ -20,9 +20,9 @@ export class MediaService implements MediaServicing {
   /**
    * 创建媒体服务。
    *
-   * @param model 媒体输入规则使用的模型，默认为 `x2.0`。
+   * @param model 媒体输入规则使用的模型，默认为 `x2-fast-1080p`。
    */
-  constructor(model: RealtimeModel = RealtimeModel.x2_0) {
+  constructor(model: RealtimeModel = RealtimeModel.x2_fast_1080p) {
     this.model = model;
   }
 
