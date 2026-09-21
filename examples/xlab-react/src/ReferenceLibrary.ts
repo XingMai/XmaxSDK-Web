@@ -81,6 +81,19 @@ export class ReferenceLibrary {
     this.update(this.items.map((item) => ({ ...item, is_selected: false })));
   }
 
+  /** 删除一张本地上传的参考图；若它正被选中，选中状态随之清除。 */
+  remove(id: string): void {
+    const item = this.items.find((entry) => entry.id === id);
+    if (!item) return;
+    // 使进行中的自动应用失效，删除后不再触发生成。
+    this.intent += 1;
+    if (this.previews.has(item.thumbnail)) {
+      this.previews.delete(item.thumbnail);
+      URL.revokeObjectURL(item.thumbnail);
+    }
+    this.update(this.items.filter((entry) => entry.id !== id));
+  }
+
   /** 先插入首位展示本地预览，上传后复用预置图的选中、生成流程。 */
   async addFile(file: File, prompt: string, apply: ApplyReference): Promise<void> {
     if (!file.size || (file.type && !file.type.startsWith("image/"))) {

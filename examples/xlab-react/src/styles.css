@@ -477,16 +477,91 @@ button:disabled {
   outline: none;
 }
 
+/* 输入条内的上传按钮：与提交按钮同尺寸的圆形幽灵按钮。 */
 .uploadButton {
-  border: none;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 13px;
-  white-space: nowrap;
+  font-size: 22px;
+  font-weight: 300;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition:
+    color 0.2s ease,
+    border-color 0.2s ease,
+    background 0.2s ease;
 }
 
 .uploadButton:not(:disabled):hover {
-  color: var(--accent);
+  color: var(--text);
+  border-color: #c9ced6;
+  background: rgba(120, 120, 128, 0.08);
+}
+
+/* 输入条内已上传的参考图：原地替换上传按钮，右上角 × 删除。 */
+.uploadedThumb {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+}
+
+.uploadedThumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  object-fit: cover;
+}
+
+.uploadedThumbOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.uploadedThumbOverlay .presetSpinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: presetSpin 0.8s linear infinite;
+}
+
+.uploadedRemove {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.72);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0 1px;
+  transition: background 0.15s ease;
+}
+
+.uploadedRemove:not(:disabled):hover {
+  background: rgba(0, 0, 0, 0.9);
 }
 
 .submitButton {
@@ -507,40 +582,53 @@ button:disabled {
 /* ── 模式页签与参考图预设 ───────────────────── */
 
 .modeSection {
-  margin-top: 28px;
+  margin-top: 34px;
 }
 
 .modeTabs {
   display: flex;
   justify-content: center;
-  gap: 8px;
-  margin-bottom: 18px;
+  margin-bottom: 28px;
+}
+
+/* 分段控件容器：浅灰底托住所有页签。 */
+.modeTabsInner {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(120, 120, 128, 0.1);
 }
 
 .modeTab {
-  height: 32px;
-  padding: 0 16px;
-  border: 1px solid #e2e5ea;
+  height: 34px;
+  padding: 0 22px;
+  border: none;
   border-radius: 999px;
-  background: #fff;
+  background: transparent;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 500;
+  letter-spacing: 0.01em;
   transition:
-    color 0.15s ease,
-    border-color 0.15s ease,
-    background 0.15s ease;
+    color 0.22s ease,
+    background 0.22s ease,
+    box-shadow 0.22s ease;
 }
 
-.modeTab:not(:disabled):hover {
-  border-color: #c9ced6;
+.modeTab:not(:disabled):not(.active):hover {
   color: var(--text);
+  background: rgba(255, 255, 255, 0.65);
 }
 
+/* 选中页签：白色悬浮卡片，柔和投影。 */
 .modeTab.active {
-  border-color: var(--text);
-  background: var(--text);
-  color: #fff;
+  background: #fff;
+  color: var(--text);
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.1),
+    0 0.5px 1.5px rgba(0, 0, 0, 0.06);
 }
 
 .presetRow {

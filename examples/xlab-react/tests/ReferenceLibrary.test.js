@@ -248,3 +248,30 @@ describe("ReferenceLibrary", () => {
     expect(apply).toHaveBeenLastCalledWith(expect.objectContaining({ reference_path: "https://cos.example/local.png", prompt: "local prompt" }));
   });
 });
+
+describe("ReferenceLibrary.remove", () => {
+  it("removes an uploaded image and clears its selection", async () => {
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:preview");
+    const library = new ReferenceLibrary(async () => "https://cos.example/local.png");
+    await library.addFile(localFile(), "local prompt", async () => {});
+    const local = library.snapshot[0];
+    expect(local.is_selected).toBe(true);
+    library.remove(local.id);
+    expect(library.snapshot.find((item) => item.id === local.id)).toBeUndefined();
+    expect(library.snapshot.some((item) => item.is_selected)).toBe(false);
+  });
+
+  it("prevents a pending application from generating after the image is removed", async () => {
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:preview");
+    const gate = deferred();
+    const library = new ReferenceLibrary(() => gate.promise);
+    const apply = vi.fn(async () => {});
+    const pending = library.addFile(localFile(), "local prompt", apply);
+    await Promise.resolve();
+    library.remove(library.snapshot[0].id);
+    gate.resolve("https://cos.example/local.png");
+    await pending;
+    expect(apply).not.toHaveBeenCalled();
+    expect(library.snapshot.some((item) => item.file)).toBe(false);
+  });
+});

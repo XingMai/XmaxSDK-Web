@@ -21,6 +21,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { EXAMPLE_MODES, type ExampleModeKey } from "./presets";
 import { ReferenceLibrary, type ReferenceItem } from "./ReferenceLibrary";
 import { ReferenceList } from "./ReferenceList";
+import { compressReferenceImage } from "./compressReferenceImage";
 
 const API_KEY_STORAGE = "xmax.xlab.apiKey";
 const PROMPT_STORAGE = "xmax.xlab.prompt";
@@ -145,10 +146,11 @@ export function App() {
   clientRef.current = client;
   const [references] = useState(() => new ReferenceLibrary(async (file, onProgress) => {
     // 仅上传用户选择的本地文件；预置图直接使用已有的 reference_path。
+    const compressed = await compressReferenceImage(file);
     const stored = await clientRef.current.createStorageService().uploadImage({
-      data: file,
-      fileName: file.name,
-      contentType: file.type || undefined,
+      data: compressed,
+      fileName: compressed.name,
+      contentType: compressed.type,
       onProgress,
     });
     return stored.url;
@@ -162,6 +164,8 @@ export function App() {
   const selectedReference = activeReferences.find((item) => item.is_selected);
   const referencePath = selectedReference?.reference_path;
   const referenceUploading = activeReferences.some((item) => item.upload_status === "uploading");
+  // 自由模式输入条内展示的本地上传参考图，取最新一张。
+  const uploadedReference = activeReferences.find((item) => item.file);
 
   useEffect(() => {
     localStorage.setItem(API_KEY_STORAGE, apiKey);
@@ -719,10 +723,10 @@ export function App() {
               <div><dt>首帧到达</dt><dd>{formatLaunchTiming(launchTiming.firstFrameMs)}</dd></div>
               <div className="launchTimingTotal"><dt>完整启动耗时</dt><dd>{formatLaunchTiming(launchTiming.totalMs)}</dd></div>
             </dl>
-            <dl className="videoStatistics" aria-label="本地视频统计">
-              <div><dt>本地分辨率</dt><dd>{formatVideoResolution(localVideoStatistics)}</dd></div>
-              <div><dt>本地帧率</dt><dd>{formatVideoMetric(localVideoStatistics?.frameRate, "fps")}</dd></div>
-              <div><dt>本地码率</dt><dd>{formatVideoMetric(localVideoStatistics?.bitrateKbps, "kbps")}</dd></div>
+            <dl className="videoStatistics" aria-label="上行视频统计">
+              <div><dt>上行分辨率</dt><dd>{formatVideoResolution(localVideoStatistics)}</dd></div>
+              <div><dt>上行帧率</dt><dd>{formatVideoMetric(localVideoStatistics?.frameRate, "fps")}</dd></div>
+              <div><dt>上行码率</dt><dd>{formatVideoMetric(localVideoStatistics?.bitrateKbps, "kbps")}</dd></div>
               <div title="本端 SDK → TRTC 云端的上行丢包率，不是本地预览丢包率"><dt>上行丢包率</dt><dd>{formatVideoMetric(remoteVideoStatistics?.uplinkLossPercent, "%")}</dd></div>
             </dl>
           </div>
@@ -737,10 +741,10 @@ export function App() {
             <div><dt>分辨率</dt><dd>{formatVideoResolution(remoteVideoStatistics)}</dd></div>
             <div><dt>帧率</dt><dd>{formatVideoMetric(remoteVideoStatistics?.frameRate, "fps")}</dd></div>
             <div><dt>码率</dt><dd>{formatVideoMetric(remoteVideoStatistics?.bitrateKbps, "kbps")}</dd></div>
-            <div><dt>RTT（云端）</dt><dd>{formatVideoMetric(remoteVideoStatistics?.rttMs, "ms")}</dd></div>
-            <div><dt>E2E（RTC 估算）</dt><dd>{formatVideoMetric(remoteVideoStatistics?.endToEndDelayMs, "ms")}</dd></div>
             <div><dt>下行丢包率</dt><dd>{formatVideoMetric(remoteVideoStatistics?.downlinkLossPercent, "%")}</dd></div>
             <div><dt>播放缓冲延迟</dt><dd>{formatVideoMetric(remoteVideoStatistics?.jitterBufferDelayMs, "ms")}</dd></div>
+            <div><dt>RTT（云端）</dt><dd>{formatVideoMetric(remoteVideoStatistics?.rttMs, "ms")}</dd></div>
+            <div><dt>E2E（RTC 估算）</dt><dd>{formatVideoMetric(remoteVideoStatistics?.endToEndDelayMs, "ms")}</dd></div>
           </dl>
           <span className="watermark">✦ Xmax</span>
           {!remoteStream && (
@@ -753,18 +757,20 @@ export function App() {
 
       <div className="modeSection">
         <div className="modeTabs">
-          {EXAMPLE_MODES.map((mode) => (
-            <button
-              key={mode.key}
-              className={
-                mode.key === activeModeKey ? "modeTab active" : "modeTab"
-              }
-              onClick={() => handleModeChange(mode.key)}
-              disabled={busy}
-            >
-              {mode.label}
-            </button>
-          ))}
+          <div className="modeTabsInner">
+            {EXAMPLE_MODES.map((mode) => (
+              <button
+                key={mode.key}
+                className={
+                  mode.key === activeModeKey ? "modeTab active" : "modeTab"
+                }
+                onClick={() => handleModeChange(mode.key)}
+                disabled={busy}
+              >
+                {mode.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <input
@@ -788,6 +794,36 @@ export function App() {
                 }
               }}
             />
+            {uploadedReference ? (
+              <span
+                className="uploadedThumb"
+                title={uploadedReference.error ?? uploadedReference.name}
+              >
+                <img src={uploadedReference.thumbnail} alt={uploadedReference.name} />
+                {uploadedReference.upload_status === "uploading" && (
+                  <span className="uploadedThumbOverlay">
+                    <span className="presetSpinner" />
+                  </span>
+                )}
+                <button
+                  className="uploadedRemove"
+                  onClick={() => references.remove(uploadedReference.id)}
+                  disabled={busy}
+                  title="Remove reference"
+                >
+                  ×
+                </button>
+              </span>
+            ) : (
+              <button
+                className="uploadButton"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={busy || !apiKey}
+                title="Upload your own reference image"
+              >
+                +
+              </button>
+            )}
             <button
               className="submitButton"
               onClick={handleSubmitPrompt}
@@ -798,14 +834,16 @@ export function App() {
             </button>
           </div>
         )}
-        <ReferenceList
-          items={activeReferences}
-          rowRef={presetRowRef}
-          lineCapacity={presetLineCapacity}
-          disabled={busy || !apiKey}
-          onUpload={() => fileInputRef.current?.click()}
-          onSelect={(item) => void handleSelectReference(item)}
-        />
+        {activeMode.key !== "free" && (
+          <ReferenceList
+            items={activeReferences}
+            rowRef={presetRowRef}
+            lineCapacity={presetLineCapacity}
+            disabled={busy || !apiKey}
+            onUpload={() => fileInputRef.current?.click()}
+            onSelect={(item) => void handleSelectReference(item)}
+          />
+        )}
       </div>
 
       {errorText && <div className="error">{errorText}</div>}
