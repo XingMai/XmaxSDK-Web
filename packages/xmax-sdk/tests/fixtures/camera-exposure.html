@@ -8,20 +8,22 @@
   <button id="run">Run checks</button>
   <pre id="results">Not run</pre>
   <script type="module">
-    import { waitForCameraExposure } from "../../src/Foundation/Media/Camera/CameraExposureGate.ts";
+    import { waitForValidCameraFrame } from "../../src/Foundation/Media/Camera/CameraFrameValidator.ts";
 
     const results = document.querySelector("#results");
     const button = document.querySelector("#run");
     const assert = (condition, message) => { if (!condition) throw new Error(message); };
-    async function check(name, { dark = false, abort = false, fallback = false } = {}) {
+    async function check(name, { dark = false, abort = false, fallback = false, brightInitially = false } = {}) {
       const canvas = document.createElement("canvas");
       canvas.width = 320;
       canvas.height = 240;
       const context = canvas.getContext("2d");
       const started = performance.now();
+      let firstBrightAt;
       const paint = () => {
         const elapsed = performance.now() - started;
-        const value = dark || elapsed < 600 ? 0 : 100;
+        const value = dark || (!brightInitially && elapsed < 600) ? 0 : 100;
+        if (value && firstBrightAt === undefined) firstBrightAt = elapsed;
         context.fillStyle = `rgb(${value},${value},${value})`;
         context.fillRect(0, 0, 320, 240);
         // 模拟边缘灯光；不应让中央黑帧通过检查。
@@ -38,13 +40,17 @@
       const cancel = abort ? setTimeout(() => controller.abort(), 100) : undefined;
       try {
         let error;
-        try { await waitForCameraExposure(track, controller.signal); } catch (caught) { error = caught; }
+        try { await waitForValidCameraFrame(track, controller.signal); } catch (caught) { error = caught; }
         const elapsed = Math.round(performance.now() - started);
         if (abort) assert(error?.code === "CANCELLED", "Expected cancellation");
         else if (dark) assert(error?.code === "CAMERA_EXPOSURE_TIMEOUT", "Expected exposure timeout");
         else {
           assert(!error, error?.message);
-          assert(elapsed >= 1_000, "Released before bright frames stabilized");
+          assert(firstBrightAt !== undefined, "Released before a bright frame existed");
+          if (!brightInitially) {
+            assert(elapsed - firstBrightAt < 300,
+              `Unexpected extra wait: ready=${elapsed} ms, first bright=${Math.round(firstBrightAt)} ms`);
+          }
         }
         assert(track.readyState === "live", "Sampling must not stop the source track");
         assert(document.querySelectorAll("video").length === 0, "Leaked sampling video");
@@ -60,7 +66,8 @@
       button.disabled = true;
       results.textContent = "Running";
       try {
-        await check("dark to stable bright frames");
+        await check("initial frame already bright", { brightInitially: true });
+        await check("first bright frame after dark frames");
         await check("persistent dark frames", { dark: true });
         await check("cancel while sampling", { abort: true });
         await check("polling fallback", { fallback: true });

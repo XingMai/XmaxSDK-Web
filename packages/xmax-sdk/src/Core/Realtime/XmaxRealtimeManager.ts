@@ -441,7 +441,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    * 使用当前 Manager 创建的本地流建立实时连接。
    *
    * 创建实时会话、加入 RTC 房间并发布本地流，成功后启动会话心跳。
-   * 发布前并行检查相机亮度稳定性；5 秒内未通过检查时抛出
+   * 发布前并行检查相机亮度，首张合格帧即放行；5 秒内未通过检查时抛出
    * `cameraExposureTimeout`，不发布媒体，接入方可改善光照后重试。
    * 返回的远端媒体流在生成开始后承载远端生成画面。
    *
@@ -573,7 +573,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     token.signal.addEventListener("abort", abortExposure, { once: true });
     if (token.signal.aborted) abortExposure();
     try {
-      const cameraReady = this.cameraController.waitUntilExposureReady(exposureController.signal);
+      const cameraReady = this.cameraController.waitForValidCameraFrame(exposureController.signal);
       // 检查与建连并行；进房前检查失败也要接住拒绝，发布屏障仍等待原始结果。
       void cameraReady.catch(() => {});
       const remote = await this.connectionManager.connect({

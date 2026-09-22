@@ -32,7 +32,7 @@ export enum XmaxErrorCode {
   /** 接入方未授予相机权限。 */
   cameraPermissionDenied = "CAMERA_PERMISSION_DENIED",
 
-  /** 启动相机在限定时间内未获得足够明亮且稳定的画面，未发布视频。 */
+  /** 启动相机在限定时间内未获得亮度合格的画面，未发布视频。 */
   cameraExposureTimeout = "CAMERA_EXPOSURE_TIMEOUT",
 
   /** 接入方未授予麦克风权限。 */

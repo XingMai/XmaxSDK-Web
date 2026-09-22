@@ -1,5 +1,5 @@
 import { CameraPosition } from "../../Foundation/Media/Camera/CameraPosition";
-import { waitForCameraExposure } from "../../Foundation/Media/Camera/CameraExposureGate";
+import { waitForValidCameraFrame } from "../../Foundation/Media/Camera/CameraFrameValidator";
 import { XmaxError, XmaxErrorCode, type XmaxErrorListener } from "../../Foundation/Errors/XmaxError";
 import type { PermissionManaging } from "../../Foundation/Permissions/PermissionManaging";
 import { PermissionManager } from "../../Foundation/Permissions/PermissionManager";
@@ -79,11 +79,11 @@ export class CameraController implements CameraControlling {
     return this.activeTrack !== undefined && this.storedUseMicrophone;
   }
 
-  async waitUntilExposureReady(signal: AbortSignal): Promise<void> {
+  async waitForValidCameraFrame(signal: AbortSignal): Promise<void> {
     const track = this.activeTrack;
     const mediaTrack = track?.mediaStreamTrack;
     if (!mediaTrack) throw new XmaxError(XmaxErrorCode.mediaError, "Camera capture is not running");
-    await waitForCameraExposure(mediaTrack, signal);
+    await waitForValidCameraFrame(mediaTrack, signal);
     if (this.activeTrack !== track || track.mediaStreamTrack !== mediaTrack) {
       throw new XmaxError(XmaxErrorCode.cancelled, "Camera track changed during exposure check");
     }
