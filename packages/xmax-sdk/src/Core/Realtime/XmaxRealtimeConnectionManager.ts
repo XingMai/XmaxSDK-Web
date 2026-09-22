@@ -80,9 +80,13 @@ export class XmaxRealtimeConnectionManager {
 
     await streamController.connect(connection, options.includeLocalAudio, () => {
       options.ensureCurrent();
-    }, options.beforePublish);
-    options.ensureCurrent();
-    completeConnection();
+    }, async () => {
+      options.ensureCurrent();
+      // 进房配置已完成，停止连接计时；亮度等待及发布不属于会话/进房耗时。
+      completeConnection();
+      options.ensureCurrent();
+      await options.beforePublish?.();
+    });
     options.ensureCurrent();
     options.onPublished();
 

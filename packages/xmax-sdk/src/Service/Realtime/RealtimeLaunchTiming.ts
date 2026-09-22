@@ -6,11 +6,13 @@
 export interface RealtimeLaunchTiming {
   /** 开始打开摄像头到相机流创建完成（包含权限等待）。 */
   readonly cameraMs?: number;
-  /** 开始创建会话到 RTC 进房并发布本地流完成。 */
+  /** 开始创建会话到 RTC 进房配置完成；不含等待亮度检测及发布本地流。 */
   readonly connectionMs?: number;
+  /** 相机亮度检测开始到首张合格帧或超时放行；与建立连接并行，不可直接相加。 */
+  readonly frameValidationMs?: number;
   /** 开始发送生成信令到 SDK 远端视图首次呈现视频帧。 */
   readonly firstFrameMs?: number;
-  /** 开始打开摄像头到 SDK 远端视图首次呈现视频帧。 */
+  /** 开始打开摄像头到 SDK 远端视图首次呈现视频帧的实际总耗时，并非各项之和。 */
   readonly totalMs?: number;
 }
 

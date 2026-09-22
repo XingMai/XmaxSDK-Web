@@ -3,7 +3,7 @@ import { XmaxLogger } from "../../Logging/XmaxLogger";
 
 // 仅供不支持视频帧回调的浏览器使用；正常路径逐帧检测，无采样限流。
 const FALLBACK_POLL_INTERVAL_MS = 16;
-const TIMEOUT_MS = 5_000;
+const TIMEOUT_MS = 2_000;
 
 /** 启动曝光的保守启发式检查，不代表硬件自动曝光状态或画面质量评分。 */
 export class CameraFrameValidator {
@@ -32,7 +32,7 @@ export class CameraFrameValidator {
   }
 }
 
-/** 独立于可见预览读取采集轨；不保存图像，不调整亮度，也不停止原始轨道。 */
+/** 等待首张合格帧，超时则降级放行；不保存图像、不调整亮度、不停止原始轨道。 */
 export function waitForValidCameraFrame(track: MediaStreamTrack, signal: AbortSignal): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     let video: HTMLVideoElement | undefined;
@@ -42,7 +42,7 @@ export function waitForValidCameraFrame(track: MediaStreamTrack, signal: AbortSi
     let finished = false;
     const started = performance.now();
     const gate = new CameraFrameValidator();
-    const finish = (error?: XmaxError) => {
+    const finish = (result: "valid" | "timeout" | XmaxError = "valid") => {
       if (finished) return;
       finished = true;
       clearTimeout(timeout);
@@ -55,12 +55,19 @@ export function waitForValidCameraFrame(track: MediaStreamTrack, signal: AbortSi
       }
       signal.removeEventListener("abort", abort);
       track.removeEventListener("ended", ended);
-      if (error) {
-        if (error.code !== XmaxErrorCode.cancelled) XmaxLogger.media.warning(() => error.message);
-        reject(error);
+      if (result instanceof XmaxError) {
+        if (result.code !== XmaxErrorCode.cancelled) XmaxLogger.media.warning(() => result.message);
+        reject(result);
       } else {
-        XmaxLogger.media.info(() =>
-          `相机曝光检查通过 (Camera Exposure Ready)\n└─ ${Math.round(performance.now() - started)} ms`);
+        if (result === "timeout") {
+          XmaxLogger.media.warning(() => XmaxLogger.localized(
+            "相机亮度检查超时，按当前画面继续生成 (Camera Frame Validation Timed Out; Continuing)\n└─ 未获得亮度合格帧，不再等待。",
+            "Camera Frame Validation Timed Out; Continuing\n└─ No sufficiently bright frame received; proceeding without further waiting.",
+          ));
+        } else {
+          XmaxLogger.media.info(() =>
+            `相机曝光检查通过 (Camera Exposure Ready)\n└─ ${Math.round(performance.now() - started)} ms`);
+        }
         resolve();
       }
     };
@@ -121,11 +128,7 @@ export function waitForValidCameraFrame(track: MediaStreamTrack, signal: AbortSi
           }, FALLBACK_POLL_INTERVAL_MS);
         }
       };
-      timeout = setTimeout(() => finish(new XmaxError(XmaxErrorCode.cameraExposureTimeout,
-        XmaxLogger.localized(
-          "未获得亮度合格的相机画面，未发布视频。请检查相机或改善光照后重试。",
-          "No sufficiently bright camera frame received. Video was not published. Check the camera or improve lighting and retry.",
-        ))), TIMEOUT_MS);
+      timeout = setTimeout(() => finish("timeout"), TIMEOUT_MS);
       XmaxLogger.media.info(() => "等待首张亮度合格帧 (Waiting for the First Sufficiently Bright Frame)");
       void source.play().then(schedule, fail);
     } catch (error) {

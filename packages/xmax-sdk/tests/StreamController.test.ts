@@ -175,8 +175,8 @@ describe("StreamController", () => {
   it("曝光检查失败不会发布任何媒体", async () => {
     const { controller, rtc } = makeStream();
     await expect(controller.connect(connection, true, noopEnsureActive, async () => {
-      throw new XmaxError(XmaxErrorCode.cameraExposureTimeout, "too dark");
-    })).rejects.toMatchObject({ code: XmaxErrorCode.cameraExposureTimeout });
+      throw new XmaxError(XmaxErrorCode.mediaError, "sampling failed");
+    })).rejects.toMatchObject({ code: XmaxErrorCode.mediaError });
     expect(rtc.publishLocalVideoCalls).toBe(0);
     expect(rtc.publishLocalAudioCalls).toBe(0);
     await controller.disconnect();

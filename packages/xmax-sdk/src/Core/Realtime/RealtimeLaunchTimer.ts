@@ -30,6 +30,10 @@ export class RealtimeLaunchTimer {
     return this.measure("connectionMs", performance.now());
   }
 
+  startFrameValidation(): () => void {
+    return this.measure("frameValidationMs", performance.now());
+  }
+
   startFirstFrame(): () => void {
     return this.measure("firstFrameMs", performance.now());
   }
@@ -41,7 +45,7 @@ export class RealtimeLaunchTimer {
   }
 
   private measure(
-    key: "cameraMs" | "connectionMs" | "firstFrameMs",
+    key: "cameraMs" | "connectionMs" | "frameValidationMs" | "firstFrameMs",
     startedAt: number,
   ): () => void {
     const sequence = this.sequence;

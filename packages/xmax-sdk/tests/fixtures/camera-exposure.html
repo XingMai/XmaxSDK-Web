@@ -43,7 +43,10 @@
         try { await waitForValidCameraFrame(track, controller.signal); } catch (caught) { error = caught; }
         const elapsed = Math.round(performance.now() - started);
         if (abort) assert(error?.code === "CANCELLED", "Expected cancellation");
-        else if (dark) assert(error?.code === "CAMERA_EXPOSURE_TIMEOUT", "Expected exposure timeout");
+        else if (dark) {
+          assert(!error, "Dark environment should not fail startup");
+          assert(elapsed >= 2_000, "Expected timeout fallback");
+        }
         else {
           assert(!error, error?.message);
           assert(firstBrightAt !== undefined, "Released before a bright frame existed");

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CameraFrameValidator, waitForValidCameraFrame } from "../src/Foundation/Media/Camera/CameraFrameValidator";
 import { XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
+import { XmaxLogger } from "../src/Foundation/Logging/XmaxLogger";
 
 function pixels(luminance: number): Uint8ClampedArray {
   const data = new Uint8ClampedArray(64 * 48 * 4);
@@ -78,7 +79,7 @@ function setup(fallback = false) {
   return { video, context, canvas, track, controller, start, frame, cleaned };
 }
 
-afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe("waitForValidCameraFrame", () => {
   it("读取中央 60% 缩小画面，就绪后释放辅助资源但不停止相机", async () => {
@@ -117,16 +118,48 @@ describe("waitForValidCameraFrame", () => {
     s.cleaned();
   });
 
-  it.each(["dark", "stale", "muted", "disabled", "empty"])("%s 画面 5 秒后报错，不静默放行", async (kind) => {
+  it.each(["dark", "stale", "muted", "disabled", "empty"])("%s 画面 2 秒后警告放行，不阻断流程", async (kind) => {
     const s = setup();
+    const warning = vi.spyOn(XmaxLogger.media, "warning");
+    const info = vi.spyOn(XmaxLogger.media, "info");
     if (kind === "muted") s.track.muted = true;
     if (kind === "disabled") s.track.enabled = false;
     if (kind === "empty") s.video.videoWidth = 0;
-    const pending = expect(s.start()).rejects.toMatchObject({ code: XmaxErrorCode.cameraExposureTimeout });
+    const pending = s.start();
     await Promise.resolve();
-    for (let time = 0; time < 5_000; time += 100) s.frame(time, kind === "dark" || time === 0 ? 0 : 100, kind === "stale" ? 0 : time / 1_000);
-    await vi.advanceTimersByTimeAsync(5_000);
+    for (let time = 0; time < 2_000; time += 100) s.frame(time, kind === "dark" || time === 0 ? 0 : 100, kind === "stale" ? 0 : time / 1_000);
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(s.video.remove).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(pending).resolves.toBeUndefined();
+    expect(warning).toHaveBeenCalledOnce();
+    expect(warning.mock.calls[0]![0]()).toContain("Continuing");
+    expect(info.mock.calls.map(([message]) => message()).join("\n")).not.toContain("Camera Exposure Ready");
+    s.cleaned();
+  });
+
+  it("播放就绪超时后仍清理资源，迟到的播放完成不会重新启动采样", async () => {
+    const s = setup();
+    let resolvePlay!: () => void;
+    s.video.play.mockImplementation(() => new Promise<void>((resolve) => { resolvePlay = resolve; }));
+    const pending = s.start();
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(pending).resolves.toBeUndefined();
+    resolvePlay();
+    await Promise.resolve();
+    s.cleaned();
+    expect(s.video.requestVideoFrameCallback).not.toHaveBeenCalled();
+  });
+
+  it("超时前主动取消仍拒绝，不因超时定时器继续流程", async () => {
+    const s = setup();
+    const warning = vi.spyOn(XmaxLogger.media, "warning");
+    const pending = expect(s.start()).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
+    await vi.advanceTimersByTimeAsync(1_999);
+    s.controller.abort();
     await pending;
+    await vi.advanceTimersByTimeAsync(1);
+    expect(warning).not.toHaveBeenCalled();
     s.cleaned();
   });
 
@@ -192,12 +225,13 @@ describe("waitForValidCameraFrame", () => {
   it("轮询优先检查实际帧计数，不把继续走的播放时钟当作新帧", async () => {
     const s = setup(true);
     Object.assign(s.video, { getVideoPlaybackQuality: () => ({ totalVideoFrames: 1 }) });
-    const pending = expect(s.start()).rejects.toMatchObject({ code: XmaxErrorCode.cameraExposureTimeout });
-    for (let time = 0; time < 5_000; time += 100) {
+    const pending = s.start();
+    for (let time = 0; time < 2_000; time += 100) {
       s.frame(time, time === 0 ? 0 : 100);
       await vi.advanceTimersByTimeAsync(100);
     }
-    await pending;
+    await expect(pending).resolves.toBeUndefined();
+    expect(s.context.getImageData).toHaveBeenCalledTimes(1);
     s.cleaned();
   });
 });

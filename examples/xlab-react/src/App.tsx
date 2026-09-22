@@ -813,6 +813,7 @@ export function App() {
             <dl className="launchTiming" aria-label="启动耗时统计">
               <div><dt>打开摄像头</dt><dd>{formatLaunchTiming(launchTiming.cameraMs)}</dd></div>
               <div><dt>建立连接</dt><dd>{formatLaunchTiming(launchTiming.connectionMs)}</dd></div>
+              <div title="与建立连接并行，未计入连接耗时"><dt>亮度检测</dt><dd>{formatLaunchTiming(launchTiming.frameValidationMs)}</dd></div>
               <div><dt>首帧到达</dt><dd>{formatLaunchTiming(launchTiming.firstFrameMs)}</dd></div>
               <div className="launchTimingTotal"><dt>完整启动耗时</dt><dd>{formatLaunchTiming(launchTiming.totalMs)}</dd></div>
             </dl>
