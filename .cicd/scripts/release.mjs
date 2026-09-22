@@ -190,8 +190,19 @@ function publishGithub(version, artifacts, publish) {
   releaseIdentity(root, version); // Recheck after a potentially long isolated build.
   run('gh', ['release', 'create', version,
     ...manifest.packages.map((p) => join(output, p.file)), join(output, 'SHA256SUMS'), join(output, 'release.json'),
-    '--repo', repository, '--verify-tag', '--title', `XmaxSDK Web ${version}`, '--notes-file', join(output, 'release-notes.md'),
+    '--repo', repository, '--verify-tag', '--title', version, '--notes-file', join(output, 'release-notes.md'),
     ...(version.includes('-') ? ['--prerelease', '--latest=false'] : [])], root);
+  console.log(`GitHub Release ${version} published successfully.`);
+  // 发布完成后从 main 开出下一版本的开发分支，保持发版节奏一致。
+  const [nextMajor, nextMinor, currentPatch] = version.split('-')[0].split('.').map(Number);
+  const nextBranch = `feature/yueting-v${nextMajor}.${nextMinor}.${currentPatch + 1}`;
+  if (git(root, 'branch', '--list', nextBranch)) {
+    run('git', ['switch', nextBranch], root);
+    console.log(`Switched to existing branch ${nextBranch}.`);
+  } else {
+    run('git', ['switch', '-c', nextBranch, 'main'], root);
+    console.log(`Created and switched to ${nextBranch}.`);
+  }
 }
 
 function registryIntegrity(name, version) {

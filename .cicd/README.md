@@ -17,8 +17,10 @@
 | 产物打包 | 一个 `.tgz`、校验和及产物清单 |
 | GitHub Release | GitHub Release；npm 发布作为独立可选步骤 |
 
-不自动切换下一分支或强制移动本地分支。默认只验证，远端写入必须显式加
+默认只验证，远端写入必须显式加
 `--push` 或 `--publish`。脚本不会自动提交、创建标签或推送当前开发分支。
+GitHub Release 发布成功后会自动从 main 创建（或切换到已存在的）下一版本开发分支
+`feature/yueting-v<next-patch>`；除此之外不强制移动本地分支。
 
 ## 环境
 
@@ -43,11 +45,11 @@ pnpm install --frozen-lockfile
 
 ## 1. 开发分支与版本准备
 
-支持 `codex/*` 和 `feature/*` 分支；默认建议 `codex/release-<version>`。
+支持 `codex/*` 和 `feature/*` 分支；默认建议 `feature/yueting-v<version>`。
 准备前工作区必须干净。首次搭建流程时，先提交本目录及 packageManager 改动。
 
 ```bash
-git switch -c codex/release-1.0.0
+git switch -c feature/yueting-v1.0.0
 bash .cicd/ci-prepare.sh 1.0.0
 ```
 
@@ -173,7 +175,8 @@ bash .cicd/cd-github-release.sh 1.0.0 --artifacts <artifacts-dir> --publish
 ```
 
 再次检查提交和产物校验值，然后在 `XingMai/XmaxSDK-Web` 创建 Release，上传 SDK tarball、
-release.json 与 SHA256SUMS，使用同一份 Release Notes。预发布标签创建 prerelease，不标记为 latest。
+release.json 与 SHA256SUMS，使用同一份 Release Notes。Release 标题与标签一致，均为不带 `v` 的版本号。
+预发布标签创建 prerelease，不标记为 latest。
 已有 Release 不自动覆盖，失败后先用 `gh release view <version>` 检查是否已创建，
 避免把网络超时误认为没有发布。需补附件时由维护者核对校验值后处理。
 
@@ -186,7 +189,8 @@ npm install ./xmaxai-web-sdk-1.0.0.tgz
 
 React 应用使用自身的 `react` / `react-dom` 依赖，通过 `@xmaxai/web-sdk/react` 导入组件；非 React 应用无需安装 React。
 
-发布成功后，手动选择下一步分支，例如 `git switch -c codex/release-1.0.1`。
+发布成功后，脚本自动从 main 创建并切换到下一版本开发分支
+`feature/yueting-v<next-patch>`（分支已存在时直接切换），该分支只在本地创建，需要时自行推送。
 
 ## 常见停止原因
 
