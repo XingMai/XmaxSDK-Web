@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { waitForCameraExposure } from "../src/Foundation/Media/Camera/CameraExposureGate";
 import { CameraPosition } from "../src/Foundation/Media/Camera/CameraPosition";
 import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import type { PermissionManaging } from "../src/Foundation/Permissions/PermissionManaging";
@@ -13,6 +14,9 @@ import { RealtimeModel } from "../src/Service/Realtime/RealtimeModel";
 import { MediaService } from "../src/Service/Media/MediaService";
 import { RealtimeVideoFormat } from "../src/Service/Realtime/RealtimeVideoFormat";
 import type { VideoEncodingConfiguration } from "../src/Foundation/RTC/VideoEncodingConfiguration";
+
+vi.mock("../src/Foundation/Media/Camera/CameraExposureGate", () => ({ waitForCameraExposure: vi.fn() }));
+afterEach(() => vi.resetAllMocks());
 
 /** Node 环境没有 MediaStream，提供最小实现供预览流逻辑使用。 */
 class MediaStreamStub {
@@ -191,6 +195,38 @@ const defaultFormat = new RealtimeVideoFormat({
 });
 
 describe("CameraController", () => {
+  it("checks exposure on the active captured track using the operation signal", async () => {
+    const { controller } = makeController();
+    const stream = await controller.createLocalCameraStream({
+      videoFormat: defaultFormat, position: CameraPosition.front, useMicrophone: false,
+    });
+    const signal = new AbortController().signal;
+    await controller.waitUntilExposureReady(signal);
+    expect(waitForCameraExposure).toHaveBeenCalledWith(stream.videoTrack?.mediaStreamTrack, signal);
+    await controller.stopLocalCameraStream();
+  });
+
+  it("rejects exposure checks without active capture", async () => {
+    const { controller } = makeController();
+    await expect(controller.waitUntilExposureReady(new AbortController().signal))
+      .rejects.toMatchObject({ code: XmaxErrorCode.mediaError });
+    expect(waitForCameraExposure).not.toHaveBeenCalled();
+  });
+
+  it("rejects a stale exposure result after the camera track changes", async () => {
+    const { controller } = makeController();
+    await controller.createLocalCameraStream({
+      videoFormat: defaultFormat, position: CameraPosition.front, useMicrophone: false,
+    });
+    let ready!: () => void;
+    vi.mocked(waitForCameraExposure).mockReturnValueOnce(new Promise<void>((resolve) => { ready = resolve; }));
+    const pending = controller.waitUntilExposureReady(new AbortController().signal);
+    await controller.switchCamera();
+    ready();
+    await expect(pending).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
+    await controller.stopLocalCameraStream();
+  });
+
   it("creates a local camera stream with the resolved format", async () => {
     const { controller, rtc } = makeController();
     const stream = await controller.createLocalCameraStream({

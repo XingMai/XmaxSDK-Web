@@ -18,6 +18,9 @@ export interface CameraControlling {
   /** 当前相机流是否配置为使用麦克风。 */
   readonly useMicrophone: boolean;
 
+  /** 发布前等待当前相机曝光稳定；超时或取消时拒绝。 */
+  waitUntilExposureReady(signal: AbortSignal): Promise<void>;
+
   /** 设置当前相机流的一次性内部就绪处理；条件为已收到有效帧且预览已绑定。 */
   setPreviewReadyHandler(handler?: CameraPreviewReadyHandler): void;
 

@@ -441,6 +441,8 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    * 使用当前 Manager 创建的本地流建立实时连接。
    *
    * 创建实时会话、加入 RTC 房间并发布本地流，成功后启动会话心跳。
+   * 发布前并行检查相机亮度稳定性；5 秒内未通过检查时抛出
+   * `cameraExposureTimeout`，不发布媒体，接入方可改善光照后重试。
    * 返回的远端媒体流在生成开始后承载远端生成画面。
    *
    * @param localStream 由 `createLocalCameraStream` 创建的本地媒体流。
@@ -566,21 +568,34 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       new RealtimeState({ connectionState: RealtimeConnectionState.connecting }),
       token,
     );
-    const remote = await this.connectionManager.connect({
-      localTrack,
-      model: this.options.model,
-      includeLocalAudio: this.cameraController.useMicrophone,
-      ensureCurrent: () => token.ensureCurrent(),
-      onPublished: () => { this.acceptsVideoStatistics = true; },
-    });
-    await this.coordinator.commit(
-      new RealtimeState({
-        connectionState: RealtimeConnectionState.connected,
-        sessionID: this.connectionManager.currentSessionID,
-      }),
-      token,
-    );
-    return remote;
+    const exposureController = new AbortController();
+    const abortExposure = () => exposureController.abort();
+    token.signal.addEventListener("abort", abortExposure, { once: true });
+    if (token.signal.aborted) abortExposure();
+    try {
+      const cameraReady = this.cameraController.waitUntilExposureReady(exposureController.signal);
+      // 检查与建连并行；进房前检查失败也要接住拒绝，发布屏障仍等待原始结果。
+      void cameraReady.catch(() => {});
+      const remote = await this.connectionManager.connect({
+        localTrack,
+        model: this.options.model,
+        includeLocalAudio: this.cameraController.useMicrophone,
+        ensureCurrent: () => token.ensureCurrent(),
+        onPublished: () => { this.acceptsVideoStatistics = true; },
+        beforePublish: () => cameraReady,
+      });
+      await this.coordinator.commit(
+        new RealtimeState({
+          connectionState: RealtimeConnectionState.connected,
+          sessionID: this.connectionManager.currentSessionID,
+        }),
+        token,
+      );
+      return remote;
+    } finally {
+      token.signal.removeEventListener("abort", abortExposure);
+      abortExposure();
+    }
   }
 
   /** 编排插帧、首帧计时和生成状态，任务与确认由生成管理器负责。 */

@@ -80,6 +80,7 @@ class CameraControllingStub implements CameraControlling {
   useMicrophone = true;
   stopCalls = 0;
   previewReadyHandler?: CameraPreviewReadyHandler;
+  waitUntilExposureReady = vi.fn(async (_signal: AbortSignal): Promise<void> => {});
 
   setPreviewReadyHandler(handler?: CameraPreviewReadyHandler): void {
     this.previewReadyHandler = handler;
@@ -167,11 +168,15 @@ class StreamControllingStub implements StreamControlling {
   async connect(
     connection: RealtimeSessionConnection,
     includeLocalAudio: boolean,
+    ensureActive: () => void,
+    beforePublish?: () => Promise<void>,
   ): Promise<void> {
     if (this.failConnect) {
       throw this.failConnect;
     }
     this.connectCalls.push({ connection, includeLocalAudio });
+    await beforePublish?.();
+    ensureActive();
   }
 
   async disconnect(): Promise<void> {
@@ -685,6 +690,63 @@ describe("XmaxRealtimeManager launch timing", () => {
 });
 
 describe("XmaxRealtimeManager connect", () => {
+  it("曝光与会话进房并行，但未就绪时不开始生成", async () => {
+    const { manager, camera, stream, session } = makeManager();
+    const ready = makeDeferred<void>();
+    camera.waitUntilExposureReady.mockImplementation(() => ready.promise);
+    const pending = manager.startGeneration({ localStream: makeLocalStream(camera), context: testContext });
+    await vi.waitFor(() => expect(stream.connectCalls).toHaveLength(1));
+    expect(session.createCalls).toBe(1);
+    expect(stream.beginCalls).toHaveLength(0);
+    expect(session.heartbeatSessionID).toBeUndefined();
+    ready.resolve();
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+    stream.confirmationDeferreds[0]!.resolve();
+    await pending;
+    await manager.close();
+  });
+
+  it("曝光超时清理连接而保留相机，重试重新检查", async () => {
+    const { manager, camera, stream, session } = makeManager();
+    const local = makeLocalStream(camera);
+    camera.waitUntilExposureReady.mockRejectedValueOnce(
+      new XmaxError(XmaxErrorCode.cameraExposureTimeout, "too dark"),
+    );
+    await expect(manager.startGeneration({ localStream: local, context: testContext }))
+      .rejects.toMatchObject({ code: XmaxErrorCode.cameraExposureTimeout });
+    expect(stream.beginCalls).toHaveLength(0);
+    expect(session.closedSessionIDs).toEqual(["session-1"]);
+    expect(camera.stopCalls).toBe(0);
+    await manager.connect(local);
+    expect(camera.waitUntilExposureReady).toHaveBeenCalledTimes(2);
+    await manager.close();
+  });
+
+  it("关闭立即取消曝光等待，不发送生成信令", async () => {
+    const { manager, camera, stream } = makeManager();
+    camera.waitUntilExposureReady.mockImplementation((signal) => new Promise((_, reject) => {
+      signal.addEventListener("abort", () => reject(new XmaxError(XmaxErrorCode.cancelled, "cancelled")));
+    }));
+    const pending = manager.startGeneration({ localStream: makeLocalStream(camera), context: testContext });
+    const rejected = expect(pending).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
+    await vi.waitFor(() => expect(stream.connectCalls).toHaveLength(1));
+    await manager.close();
+    await rejected;
+    expect(camera.waitUntilExposureReady.mock.calls[0]![0].aborted).toBe(true);
+    expect(stream.beginCalls).toHaveLength(0);
+  });
+
+  it("会话失败取消仍在运行的曝光检查", async () => {
+    const { manager, camera, session } = makeManager();
+    session.failCreate = new XmaxError(XmaxErrorCode.networkError, "offline");
+    camera.waitUntilExposureReady.mockImplementation((signal) => new Promise((_, reject) => {
+      signal.addEventListener("abort", () => reject(new XmaxError(XmaxErrorCode.cancelled, "cancelled")));
+    }));
+    await expect(manager.connect(makeLocalStream(camera))).rejects.toMatchObject({ code: XmaxErrorCode.networkError });
+    expect(camera.waitUntilExposureReady.mock.calls[0]![0].aborted).toBe(true);
+    await manager.close();
+  });
+
   it("建立连接：创建会话、进房发布、启动心跳并进入 connected", async () => {
     const { manager, camera, stream, session } = makeManager();
     const localStream = makeLocalStream(camera);

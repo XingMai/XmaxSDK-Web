@@ -1,4 +1,5 @@
 import { CameraPosition } from "../../Foundation/Media/Camera/CameraPosition";
+import { waitForCameraExposure } from "../../Foundation/Media/Camera/CameraExposureGate";
 import { XmaxError, XmaxErrorCode, type XmaxErrorListener } from "../../Foundation/Errors/XmaxError";
 import type { PermissionManaging } from "../../Foundation/Permissions/PermissionManaging";
 import { PermissionManager } from "../../Foundation/Permissions/PermissionManager";
@@ -76,6 +77,16 @@ export class CameraController implements CameraControlling {
   /** 当前相机流是否配置为使用麦克风。 */
   get useMicrophone(): boolean {
     return this.activeTrack !== undefined && this.storedUseMicrophone;
+  }
+
+  async waitUntilExposureReady(signal: AbortSignal): Promise<void> {
+    const track = this.activeTrack;
+    const mediaTrack = track?.mediaStreamTrack;
+    if (!mediaTrack) throw new XmaxError(XmaxErrorCode.mediaError, "Camera capture is not running");
+    await waitForCameraExposure(mediaTrack, signal);
+    if (this.activeTrack !== track || track.mediaStreamTrack !== mediaTrack) {
+      throw new XmaxError(XmaxErrorCode.cancelled, "Camera track changed during exposure check");
+    }
   }
 
   /** 设置当前相机流的一次性内部就绪处理；条件为已收到有效帧且预览已绑定。 */

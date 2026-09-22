@@ -155,6 +155,44 @@ function emitRemoteVideo(
 }
 
 describe("StreamController", () => {
+  it("先进入房间，曝光屏障通过后才发布视频和音频", async () => {
+    const { controller, rtc } = makeStream();
+    let ready!: () => void;
+    const gate = new Promise<void>((resolve) => { ready = resolve; });
+    const beforePublish = vi.fn(() => gate);
+    const pending = controller.connect(connection, true, noopEnsureActive, beforePublish);
+    await vi.waitFor(() => expect(beforePublish).toHaveBeenCalledOnce());
+    expect(rtc.joinRoomCalls).toHaveLength(1);
+    expect(rtc.publishLocalVideoCalls).toBe(0);
+    expect(rtc.publishLocalAudioCalls).toBe(0);
+    ready();
+    await pending;
+    expect(rtc.publishLocalVideoCalls).toBe(1);
+    expect(rtc.publishLocalAudioCalls).toBe(1);
+    await controller.disconnect();
+  });
+
+  it("曝光检查失败不会发布任何媒体", async () => {
+    const { controller, rtc } = makeStream();
+    await expect(controller.connect(connection, true, noopEnsureActive, async () => {
+      throw new XmaxError(XmaxErrorCode.cameraExposureTimeout, "too dark");
+    })).rejects.toMatchObject({ code: XmaxErrorCode.cameraExposureTimeout });
+    expect(rtc.publishLocalVideoCalls).toBe(0);
+    expect(rtc.publishLocalAudioCalls).toBe(0);
+    await controller.disconnect();
+  });
+
+  it("曝光等待结束后再次校验租约，避免取消后发布", async () => {
+    const { controller, rtc } = makeStream();
+    let cancelled = false;
+    await expect(controller.connect(connection, true, () => {
+      if (cancelled) throw new XmaxError(XmaxErrorCode.cancelled, "cancelled");
+    }, async () => { cancelled = true; })).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
+    expect(rtc.publishLocalVideoCalls).toBe(0);
+    expect(rtc.publishLocalAudioCalls).toBe(0);
+    await controller.disconnect();
+  });
+
   it("forwards network statistics after publishing without a generated stream and supports unsubscribe", async () => {
     const { controller, rtc } = makeStream();
     const listener = vi.fn();

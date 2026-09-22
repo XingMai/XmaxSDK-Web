@@ -49,6 +49,7 @@ export class XmaxRealtimeConnectionManager {
     includeLocalAudio: boolean;
     ensureCurrent: () => void;
     onPublished: () => void;
+    beforePublish?: () => Promise<void>;
   }): Promise<RealtimeMediaStream> {
     const sessionService = this.requireSessionService();
     const streamController = this.dependencies.streamController;
@@ -79,7 +80,7 @@ export class XmaxRealtimeConnectionManager {
 
     await streamController.connect(connection, options.includeLocalAudio, () => {
       options.ensureCurrent();
-    });
+    }, options.beforePublish);
     options.ensureCurrent();
     completeConnection();
     options.ensureCurrent();

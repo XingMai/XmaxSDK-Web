@@ -202,6 +202,7 @@ export class StreamController implements StreamControlling {
     connection: RealtimeSessionConnection,
     includeLocalAudio: boolean,
     ensureActive: () => void,
+    beforePublish?: () => Promise<void>,
   ): Promise<void> {
     await this.roomController.join(connection, ensureActive);
     ensureActive();
@@ -211,6 +212,8 @@ export class StreamController implements StreamControlling {
         `RTC 房间已配置 (RTC Room Configured)\n` +
         `└─ roomID: ${connection.roomID}, botID: ${connection.botID ?? "(未设置)"}`,
     );
+    await beforePublish?.();
+    ensureActive();
     await this.publishLocalStream(includeLocalAudio);
   }
 

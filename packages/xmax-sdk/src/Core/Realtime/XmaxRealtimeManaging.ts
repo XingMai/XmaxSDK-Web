@@ -111,6 +111,8 @@ export interface XmaxRealtimeManaging {
    * 使用当前 Manager 创建的本地流建立实时连接。
    *
    * 创建实时会话、加入 RTC 房间并发布本地流，成功后启动会话心跳。
+   * 发布前并行检查相机亮度稳定性；5 秒内未通过检查时抛出
+   * `cameraExposureTimeout`，不发布媒体，接入方可改善光照后重试。
    * 返回的远端媒体流在生成开始后承载远端生成画面。
    *
    * @param localStream 由 `createLocalCameraStream` 创建的本地媒体流。

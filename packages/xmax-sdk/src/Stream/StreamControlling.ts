@@ -70,12 +70,14 @@ export interface StreamControlling {
    * @param connection RTC 房间、用户、凭据和目标机器人信息。
    * @param includeLocalAudio 是否随本地视频一起发布本地音频。
    * @param ensureActive 在异步边界校验当前连接操作仍然有效的回调。
+   * @param beforePublish 发布前的可选媒体就绪检查，不阻塞进房。
    * @throws 连接已取消，或 RTC 进房、房间配置与本地流发布失败时抛出错误。
    */
   connect(
     connection: RealtimeSessionConnection,
     includeLocalAudio: boolean,
     ensureActive: () => void,
+    beforePublish?: () => Promise<void>,
   ): Promise<void>;
 
   /** 清理生成状态、本地发布和远端订阅，并离开当前 RTC 房间。 */
