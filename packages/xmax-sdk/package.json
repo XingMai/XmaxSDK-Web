@@ -26,7 +26,8 @@
   "scripts": {
     "build": "node scripts/embed-framegen.mjs && tsup",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build && npm run test && cp ../../README.md ./README.md"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",

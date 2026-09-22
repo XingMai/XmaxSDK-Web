@@ -6,3 +6,4 @@ coverage/
 .vite/
 .pnpm-store/
 .cicd/out/
+packages/xmax-sdk/README.md

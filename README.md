@@ -169,7 +169,7 @@ We introduce XmaxSDK, a JavaScript SDK designed for real-time interactive video 
 ## Prerequisites
 
 - A WebRTC-enabled browser running on HTTPS or localhost
-- Node.js 18 or later and pnpm for development
+- Node.js 18 or later, with pnpm or npm for development
 - An Xmax API key
 
 > [!WARNING]
@@ -182,51 +182,11 @@ We introduce XmaxSDK, a JavaScript SDK designed for real-time interactive video 
 
 ## Installation
 
-XmaxSDK currently supports [**pnpm workspace integration**](#pnpm) and
-[**manual integration**](#manual). The packages are not yet published to npm.
-
-### pnpm
-
-From the root of this repository, install the dependencies and build the SDK:
-
 ```bash
-pnpm install
-pnpm build
+npm install @xmaxai/web-sdk
 ```
 
-Add the following to your application's `package.json` within the same workspace:
-
-```json
-{
-  "dependencies": {
-    "@xmaxai/web-sdk": "workspace:*"
-  }
-}
-```
-
-Install the dependencies:
-
-```bash
-pnpm install
-```
-
-### Manual
-
-After building the SDK, create a local package:
-
-```bash
-cd packages/xmax-sdk
-pnpm pack
-```
-
-Then install the generated `xmaxai-web-sdk-1.0.0.tgz` in your application:
-
-```bash
-npm install /path/to/xmaxai-web-sdk-1.0.0.tgz
-```
-
-Use a JavaScript bundler to resolve the package and its dependencies.
-The same package includes optional React components at `@xmaxai/web-sdk/react`.
+The package includes optional React components at `@xmaxai/web-sdk/react`.
 React applications use their own React installation; non-React applications do not need React.
 
 <br>

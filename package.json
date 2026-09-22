@@ -6,6 +6,10 @@
   "description": "XmaxSDK for Web — Realtime Interactive Video Generation",
   "type": "module",
   "packageManager": "pnpm@9.15.9",
+  "workspaces": [
+    "packages/*",
+    "examples/*"
+  ],
   "scripts": {
     "ci:check": "bash .cicd/ci-check.sh",
     "ci:test": "node --test .cicd/tests/*.test.mjs",
