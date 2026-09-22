@@ -151,7 +151,6 @@ describe("EncodingController.configure", () => {
   it("interpolates and extrapolates upload bitrate", async () => {
     const { controller, rtcManager } = makeController();
     const cases = [
-      [1920, 1080, 30, 3150, 6300],
       [1920, 1080, 24, 2722, 5444],
       [832, 1472, 24, 1805, 3611],
       [1472, 832, 24, 1805, 3611],

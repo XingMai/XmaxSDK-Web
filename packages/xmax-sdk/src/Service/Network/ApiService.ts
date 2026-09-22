@@ -224,7 +224,7 @@ export class ApiService implements ApiServicing {
       const message = envelope.message?.trim();
       throw new XmaxError(
         XmaxErrorCode.apiError,
-        message && message.length > 0 ? message : "Xmax API request failed",
+        message || "Xmax API request failed",
         { apiCode: envelope.code, httpStatus: status },
       );
     }

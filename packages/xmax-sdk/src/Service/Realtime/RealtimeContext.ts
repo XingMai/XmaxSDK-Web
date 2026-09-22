@@ -20,9 +20,6 @@ export class RealtimeContext {
   constructor(init: RealtimeContextInit) {
     this.prompt = init.prompt.trim();
     const normalizedReferencePath = init.referencePath?.trim();
-    this.referencePath =
-      normalizedReferencePath && normalizedReferencePath.length > 0
-        ? normalizedReferencePath
-        : undefined;
+    this.referencePath = normalizedReferencePath || undefined;
   }
 }

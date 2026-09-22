@@ -235,6 +235,6 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
   /** 归一化可选字符串：去除首尾空白后为空时返回 `undefined`。 */
   private static nonEmpty(value?: string): string | undefined {
     const normalized = value?.trim();
-    return normalized && normalized.length > 0 ? normalized : undefined;
+    return normalized || undefined;
   }
 }
