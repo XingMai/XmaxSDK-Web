@@ -351,7 +351,8 @@ button:disabled {
   position: relative;
 }
 
-.remoteVolumeButton {
+.remoteVolumeButton,
+.statisticsToggle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -366,12 +367,20 @@ button:disabled {
 }
 
 .remoteVolumeButton.active,
-.remoteVolumeButton:not(:disabled):hover {
+.remoteVolumeButton:not(:disabled):hover,
+.statisticsToggle:hover {
   color: var(--text);
   border-color: #c7cbd3;
 }
 
-.remoteVolumeButton:focus-visible {
+.statisticsToggle.active {
+  color: var(--accent);
+  border-color: #d7ddfb;
+  background: #eef1ff;
+}
+
+.remoteVolumeButton:focus-visible,
+.statisticsToggle:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
@@ -618,6 +627,11 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.localStatistics[hidden],
+.remoteStatistics[hidden] {
+  display: none;
 }
 
 .launchTiming,

@@ -24,6 +24,7 @@ import { EXAMPLE_MODES, type ExampleModeKey } from "./presets";
 import { ReferenceLibrary, type ReferenceItem } from "./ReferenceLibrary";
 import { ReferenceList } from "./ReferenceList";
 import { RemoteVolumeControl } from "./RemoteVolumeControl";
+import { StatisticsToggle } from "./StatisticsToggle";
 import { compressReferenceImage } from "./compressReferenceImage";
 
 const API_KEY_STORAGE = "xmax.xlab.apiKey";
@@ -82,6 +83,7 @@ export function App() {
   const [interpolationRequested, setInterpolationRequested] = useState(true);
   const [interpolationSwitching, setInterpolationSwitching] = useState(false);
   const [remoteAudioVolume, setRemoteAudioVolume] = useState(0);
+  const [statisticsVisible, setStatisticsVisible] = useState(true);
 
   const realtimeRef = useRef<XmaxRealtimeManaging | undefined>(undefined);
   const generationBusyRef = useRef(false);
@@ -766,6 +768,7 @@ export function App() {
           <img className="brandLogo" src="/xmax-wordmark.png" alt="Xmax" />
         </div>
         <div className="sessionControls">
+          <StatisticsToggle visible={statisticsVisible} onChange={setStatisticsVisible} />
           <RemoteVolumeControl volume={remoteAudioVolume} disabled={!sessionActive || !realtimeRef.current}
             onChange={handleRemoteVolumeChange} />
           <button
@@ -806,7 +809,7 @@ export function App() {
             style={{ width: "100%", height: "100%" }}
           />
           <span className="stageLabel">Local</span>
-          <div className="localStatistics">
+          <div className="localStatistics" id="local-statistics" hidden={!statisticsVisible}>
             <dl className="launchTiming" aria-label="启动耗时统计">
               <div><dt>打开摄像头</dt><dd>{formatLaunchTiming(launchTiming.cameraMs)}</dd></div>
               <div><dt>建立连接</dt><dd>{formatLaunchTiming(launchTiming.connectionMs)}</dd></div>
@@ -835,7 +838,7 @@ export function App() {
             </div>
           )}
           <span className="stageLabel">Result</span>
-          <div className="remoteStatistics">
+          <div className="remoteStatistics" id="remote-statistics" hidden={!statisticsVisible}>
             <dl className="videoStatistics" aria-label="下行视频统计">
               <div><dt>下行分辨率</dt><dd>{formatVideoResolution(remoteVideoStatistics)}</dd></div>
               <div><dt>下行帧率</dt><dd>{formatVideoMetric(remoteVideoStatistics?.frameRate, "fps")}</dd></div>
