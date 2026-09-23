@@ -177,7 +177,7 @@ describe("XmaxRealtimeConnectionManager", () => {
     });
     const op = operation();
     const options = {
-      localTrack: new RealtimeVideoTrack({ id: "local", videoFormat }), model: RealtimeModel.x2_fast_1080p,
+      localTrack: new RealtimeVideoTrack({ id: "local", videoFormat }), model: RealtimeModel.x2_0_trtc,
       includeLocalAudio: true, ensureCurrent: op.ensureCurrent, onPublished: vi.fn(),
     };
     return { manager, stream, service, events, options, op, session, connection };

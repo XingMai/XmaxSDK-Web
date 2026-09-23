@@ -62,7 +62,7 @@ export function App() {
   const [apiKey, setApiKey] = useState(
     () => localStorage.getItem(API_KEY_STORAGE) ?? "",
   );
-  const [model] = useState<RealtimeModel>(RealtimeModel.x2_fast_1080p);
+  const [model] = useState<RealtimeModel>(RealtimeModel.x2_0_trtc);
   const [wechatOpen, setWechatOpen] = useState(false);
   const [keyEditorOpen, setKeyEditorOpen] = useState(false);
   const [useMicrophone, setUseMicrophone] = useState(true);

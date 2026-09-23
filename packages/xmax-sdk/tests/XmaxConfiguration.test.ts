@@ -25,7 +25,7 @@ describe("XmaxConfiguration", () => {
 
   it("resolves environment API base URLs", () => {
     expect(apiBaseURL(XmaxEnvironment.china)).toBe(
-      "https://dev.xmaxai.com/open/api/v1",
+      "https://cloud.xmax.22duck.cn/open/api/v1",
     );
     expect(apiBaseURL(XmaxEnvironment.global)).toBe(
       "https://api.xmax.cloud/open/api/v1",

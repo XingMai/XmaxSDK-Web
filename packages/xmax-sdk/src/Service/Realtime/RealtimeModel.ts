@@ -15,9 +15,9 @@ export enum RealtimeModel {
   x2_0_pro = "x2.0-pro",
 
   /**
-   * Xmax X2 Fast 1080P 实时生成模型。
+   * Xmax X2.0 TRTC 实时生成模型。
    */
-  x2_fast_1080p = "x2-fast-1080p",
+  x2_0_trtc = "x2.0-trtc",
 }
 
 export interface ModelSize {
@@ -31,7 +31,7 @@ const RESOLUTION_BUCKETS: Record<RealtimeModel, ModelSize[]> = {
     { width: 1024, height: 1920 },
     { width: 1920, height: 1024 },
   ],
-  [RealtimeModel.x2_fast_1080p]: [
+  [RealtimeModel.x2_0_trtc]: [
     { width: 1024, height: 1920 },
     { width: 1920, height: 1024 },
   ],
@@ -40,7 +40,7 @@ const RESOLUTION_BUCKETS: Record<RealtimeModel, ModelSize[]> = {
 const MAXIMUM_INPUT_PIXELS: Record<RealtimeModel, number> = {
   [RealtimeModel.x2_0]: 1280000,
   [RealtimeModel.x2_0_pro]: 2100000,
-  [RealtimeModel.x2_fast_1080p]: 2100000,
+  [RealtimeModel.x2_0_trtc]: 2100000,
 };
 
 /**

@@ -93,7 +93,7 @@ describe("RealtimeSessionService", () => {
   it.each([
     [RealtimeModel.x2_0, "x2.0"],
     [RealtimeModel.x2_0_pro, "x2.0-pro"],
-    [RealtimeModel.x2_fast_1080p, "x2-fast-1080p"],
+    [RealtimeModel.x2_0_trtc, "x2.0-trtc"],
   ] as const)("creates a %s session and parses TRTC connection info", async (model, modelID) => {
     const api = new ApiServicingStub();
     api.postResponses = [sessionPayload()];
@@ -124,7 +124,7 @@ describe("RealtimeSessionService", () => {
     api.postResponses = [sessionPayload({ modelExtra: JSON.stringify(trtcModelExtra) })];
     const service = makeService(api);
 
-    const session = await service.createSession(RealtimeModel.x2_fast_1080p);
+    const session = await service.createSession(RealtimeModel.x2_0_trtc);
     expect(session.connection?.sdkAppID).toBe("1600126360");
     expect(session.connection?.userSig).toBe("sig-v1");
   });
@@ -136,7 +136,7 @@ describe("RealtimeSessionService", () => {
     ];
     const service = makeService(api);
 
-    await expect(service.createSession(RealtimeModel.x2_fast_1080p)).rejects.toMatchObject({
+    await expect(service.createSession(RealtimeModel.x2_0_trtc)).rejects.toMatchObject({
       code: XmaxErrorCode.sessionError,
     });
   });
@@ -148,7 +148,7 @@ describe("RealtimeSessionService", () => {
     ];
     const service = makeService(api);
 
-    await expect(service.createSession(RealtimeModel.x2_fast_1080p)).rejects.toMatchObject({
+    await expect(service.createSession(RealtimeModel.x2_0_trtc)).rejects.toMatchObject({
       code: XmaxErrorCode.sessionError,
     });
   });

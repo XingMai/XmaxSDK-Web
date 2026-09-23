@@ -173,7 +173,7 @@ function makeController() {
   const controller = new CameraController({
     permissionManager: permission,
     rtcManager: rtc,
-    mediaService: new MediaService(RealtimeModel.x2_fast_1080p),
+    mediaService: new MediaService(RealtimeModel.x2_0_trtc),
   });
   return { controller, rtc, permission };
 }

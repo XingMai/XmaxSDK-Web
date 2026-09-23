@@ -14,10 +14,7 @@ export enum XmaxEnvironment {
 }
 
 const API_BASE_URLS: Record<XmaxEnvironment, string> = {
-  /**
-   * 临时联调环境。
-   */
-  [XmaxEnvironment.china]: "https://dev.xmaxai.com/open/api/v1",
+  [XmaxEnvironment.china]: "https://cloud.xmax.22duck.cn/open/api/v1",
   [XmaxEnvironment.global]: "https://api.xmax.cloud/open/api/v1",
 };
 

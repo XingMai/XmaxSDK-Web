@@ -216,7 +216,7 @@ after a user action such as clicking a Start button.
 
 Choose a model with `RealtimeModel.x2_0` (`x2.0`),
 `RealtimeModel.x2_0_pro` (`x2.0-pro`), or
-`RealtimeModel.x2_fast_1080p` (`x2-fast-1080p`).
+`RealtimeModel.x2_0_trtc` (`x2.0-trtc`).
 
 ```javascript
 import {
@@ -236,7 +236,7 @@ const client = new XmaxClient(
 );
 
 const realtime = client.createRealtimeManager(
-  new RealtimeConfiguration({ model: RealtimeModel.x2_fast_1080p })
+  new RealtimeConfiguration({ model: RealtimeModel.x2_0_trtc })
 );
 
 const localStream = await realtime.createLocalCameraStream({

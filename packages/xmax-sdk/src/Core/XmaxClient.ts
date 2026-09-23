@@ -60,9 +60,9 @@ export class XmaxClient {
   /**
    * 创建媒体处理与能力查询 Service。
    *
-   * @param model 媒体输入规则使用的模型，默认为 `x2-fast-1080p`。
+   * @param model 媒体输入规则使用的模型，默认为 `x2.0-trtc`。
    */
-  createMediaService(model: RealtimeModel = RealtimeModel.x2_fast_1080p): MediaServicing {
+  createMediaService(model: RealtimeModel = RealtimeModel.x2_0_trtc): MediaServicing {
     return new MediaService(model);
   }
 

@@ -11,7 +11,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe("frame interpolation configuration and support", () => {
   it("defaults off, supports the top-level flag, and gives the nested option priority", () => {
-    const model = RealtimeModel.x2_fast_1080p;
+    const model = RealtimeModel.x2_0_trtc;
     expect(new RealtimeConfiguration({ model }).frameInterpolation).toEqual({ enabled: false, targetFrameRate: 60 });
     expect(new RealtimeConfiguration({ model, isFrameInterpolationEnabled: true }).frameInterpolation.enabled).toBe(true);
     const options = new RealtimeConfiguration({ model, isFrameInterpolationEnabled: false, frameInterpolation: { enabled: true, targetFrameRate: 30 } });
