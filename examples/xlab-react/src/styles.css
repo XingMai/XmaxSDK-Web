@@ -109,7 +109,8 @@ button:disabled {
   display: inline-flex;
 }
 
-.keyButton {
+.keyButton,
+.modelButton {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -138,7 +139,8 @@ button:disabled {
   color: var(--text);
 }
 
-.keyButton:not(:disabled):hover {
+.keyButton:not(:disabled):hover,
+.modelButton:not(:disabled):hover {
   border-color: #c9ced6;
   box-shadow:
     0 2px 4px rgba(16, 24, 40, 0.1),
@@ -471,49 +473,6 @@ button:disabled {
 .remoteVolumePopover input[type="range"]:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 6px;
-}
-
-.interpolationPill {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  height: 36px;
-  padding: 0 15px 0 12px;
-  border: 1px solid #e2e5ea;
-  border-radius: 999px;
-  background: linear-gradient(180deg, #ffffff 0%, #f3f4f6 100%);
-  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.9);
-  color: #8b919d;
-  font-size: 13px;
-  font-weight: 600;
-  white-space: nowrap;
-  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
-}
-
-.interpolationPill.active {
-  color: #a96608;
-  border-color: #f0cf88;
-  background: linear-gradient(180deg, #fffaf0 0%, #fff0ca 100%);
-}
-
-.interpolationPill:not(:disabled):hover {
-  border-color: #c7cbd3;
-  color: var(--text);
-}
-
-.interpolationPill.active:not(:disabled):hover {
-  border-color: #dda842;
-  color: #865007;
-}
-
-.interpolationPill:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
-}
-
-.interpolationPill:disabled {
-  opacity: 0.65;
 }
 
 .sessionTimer {
@@ -1134,6 +1093,28 @@ button:disabled {
 /* ── 窄屏适配 ──────────────────────────── */
 
 @media (max-width: 720px) {
+  .topbarRight {
+    min-width: 0;
+    gap: 8px;
+  }
+
+  .topbarRight .keyEntry {
+    min-width: 36px;
+  }
+
+  .topbarRight .keyButton.filled {
+    width: 36px;
+    padding: 0;
+  }
+
+  .topbarRight .keyValue {
+    display: none;
+  }
+
+  .modelPopover {
+    width: min(220px, calc(100vw - 80px));
+  }
+
   .stageRow {
     grid-template-columns: 1fr;
   }

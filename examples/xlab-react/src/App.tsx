@@ -25,6 +25,7 @@ import { ReferenceLibrary, type ReferenceItem } from "./ReferenceLibrary";
 import { ReferenceList } from "./ReferenceList";
 import { RemoteVolumeControl } from "./RemoteVolumeControl";
 import { StatisticsToggle } from "./StatisticsToggle";
+import { StatisticsPanel } from "./StatisticsPanel";
 import { compressReferenceImage } from "./compressReferenceImage";
 
 const API_KEY_STORAGE = "xmax.xlab.apiKey";
@@ -80,8 +81,6 @@ export function App() {
   const [networkStatistics, setNetworkStatistics] = useState<NetworkStatistics>();
   const [errorText, setErrorText] = useState("");
   const [busy, setBusy] = useState(false);
-  const [interpolationRequested, setInterpolationRequested] = useState(true);
-  const [interpolationSwitching, setInterpolationSwitching] = useState(false);
   const [remoteAudioVolume, setRemoteAudioVolume] = useState(0);
   const [statisticsVisible, setStatisticsVisible] = useState(true);
 
@@ -131,18 +130,6 @@ export function App() {
     const timer = setInterval(() => {
       setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
     }, 1000);
-    return () => clearInterval(timer);
-  }, [localStream]);
-
-  // 同步功能开关及真正的故障降级，不跟随逐帧插值状态变化。
-  useEffect(() => {
-    if (!localStream) return;
-    const update = () => {
-      const realtime = realtimeRef.current;
-      if (realtime) setInterpolationRequested(realtime.isFrameInterpolationEnabled);
-    };
-    update();
-    const timer = setInterval(update, 250);
     return () => clearInterval(timer);
   }, [localStream]);
 
@@ -342,7 +329,7 @@ export function App() {
     setBusy(true);
     setErrorText("");
     const realtime = client.createRealtimeManager(
-      new RealtimeConfiguration({ model, frameInterpolation: { enabled: interpolationRequested } }),
+      new RealtimeConfiguration({ model }),
     );
     realtimeRef.current = realtime;
     // 会话建立成功后是否已切换到生成页面。
@@ -374,6 +361,7 @@ export function App() {
         videoFormat: CAMERA_VIDEO_FORMAT,
         position: CameraPosition.front,
         useMicrophone,
+        enableFrameValidation: true
       });
       await attachStateListener(realtime, () => {
         switchedToSession = true;
@@ -402,30 +390,6 @@ export function App() {
     } finally {
       generationBusyRef.current = false;
       setBusy(false);
-    }
-  }
-
-  async function handleToggleInterpolation() {
-    const realtime = realtimeRef.current;
-    if (!realtime || generationBusyRef.current) return;
-    const enabled = !realtime.isFrameInterpolationEnabled;
-    generationBusyRef.current = true;
-    setBusy(true);
-    setInterpolationSwitching(true);
-    setErrorText("");
-    try {
-      await realtime.setFrameInterpolationEnabled(enabled);
-      if (realtimeRef.current === realtime) {
-        setInterpolationRequested(realtime.isFrameInterpolationEnabled);
-      }
-    } catch (error) {
-      if (realtimeRef.current === realtime) {
-        setErrorText(error instanceof Error ? error.message : String(error));
-      }
-    } finally {
-      generationBusyRef.current = false;
-      setBusy(false);
-      setInterpolationSwitching(false);
     }
   }
 
@@ -627,7 +591,9 @@ export function App() {
               <button
                 type="button"
                 className={apiKey ? "keyButton filled" : "keyButton"}
-                onClick={() => setKeyEditorOpen((open) => !open)}
+                onClick={() => {
+                  setKeyEditorOpen((open) => !open);
+                }}
                 title="API Key"
               >
                 <svg
@@ -771,26 +737,6 @@ export function App() {
           <StatisticsToggle visible={statisticsVisible} onChange={setStatisticsVisible} />
           <RemoteVolumeControl volume={remoteAudioVolume} disabled={!sessionActive || !realtimeRef.current}
             onChange={handleRemoteVolumeChange} />
-          <button
-            type="button"
-            className={`interpolationPill${interpolationRequested ? " active" : ""}`}
-            onClick={handleToggleInterpolation}
-            disabled={busy || !realtimeRef.current}
-            aria-label="Frame interpolation"
-            aria-pressed={interpolationRequested}
-            aria-busy={interpolationSwitching}
-            title={
-              !realtimeRef.current ? "会话开始后可切换插帧" :
-              interpolationSwitching ? "正在切换插帧…" :
-              interpolationRequested ? "2× 插帧已开启，点击关闭" :
-              "插帧已关闭，点击开启"
-            }
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <path d="M13.7 2.3a.75.75 0 0 0-1.3-.5L4.2 13a.75.75 0 0 0 .6 1.2h5.6l-.9 7.5a.75.75 0 0 0 1.3.5L19.8 11a.75.75 0 0 0-.6-1.2h-6.3l.8-7.5Z" />
-            </svg>
-            <span>2x</span>
-          </button>
           <span className="sessionTimer">{formatElapsed(elapsedSeconds)}</span>
           <button
             className="stopButton"
@@ -810,23 +756,23 @@ export function App() {
           />
           <span className="stageLabel">Local</span>
           <div className="localStatistics" id="local-statistics" hidden={!statisticsVisible}>
-            <dl className="launchTiming" aria-label="启动耗时统计">
-              <div><dt>打开摄像头</dt><dd>{formatLaunchTiming(launchTiming.cameraMs)}</dd></div>
-              <div><dt>建立连接</dt><dd>{formatLaunchTiming(launchTiming.connectionMs)}</dd></div>
-              <div title="与建立连接并行，未计入连接耗时"><dt>亮度检测</dt><dd>{formatLaunchTiming(launchTiming.frameValidationMs)}</dd></div>
-              <div><dt>首帧到达</dt><dd>{formatLaunchTiming(launchTiming.firstFrameMs)}</dd></div>
-              <div className="launchTimingTotal"><dt>完整启动耗时</dt><dd>{formatLaunchTiming(launchTiming.totalMs)}</dd></div>
-            </dl>
-            <dl className="videoStatistics" aria-label="上行视频统计">
-              <div><dt>上行分辨率</dt><dd>{formatVideoResolution(localVideoStatistics)}</dd></div>
-              <div><dt>上行帧率</dt><dd>{formatVideoMetric(localVideoStatistics?.frameRate, "fps")}</dd></div>
-              <div><dt>上行码率</dt><dd>{formatVideoMetric(localVideoStatistics?.bitrateKbps, "kbps")}</dd></div>
-            </dl>
-            <dl className="videoStatistics" aria-label="上行网络与延迟统计">
-              <div title="本端 SDK → TRTC 云端的上行丢包率，不是本地预览丢包率"><dt>上行丢包率</dt><dd>{formatVideoMetric(remoteVideoStatistics?.uplinkLossPercent, "%")}</dd></div>
-              <div><dt>上行网络质量</dt><dd>{formatNetworkQuality(networkStatistics?.uplinkQuality)}</dd></div>
-              <div title="本端上行连接到 TRTC 云端的往返延迟，不是单程耗时"><dt>上行 RTT</dt><dd>{formatVideoMetric(networkStatistics?.uplinkRttMs, "ms")}</dd></div>
-            </dl>
+            <StatisticsPanel className="launchTiming" label="启动耗时统计" rows={[
+              { label: "打开摄像头", value: formatLaunchTiming(launchTiming.cameraMs) },
+              { label: "建立连接", value: formatLaunchTiming(launchTiming.connectionMs) },
+              { label: "亮度检测", value: formatLaunchTiming(launchTiming.frameValidationMs), title: "与建立连接并行，未计入连接耗时" },
+              { label: "首帧到达", value: formatLaunchTiming(launchTiming.firstFrameMs) },
+              { label: "完整启动耗时", value: formatLaunchTiming(launchTiming.totalMs), className: "launchTimingTotal" },
+            ]} />
+            <StatisticsPanel label="上行视频统计" rows={[
+              { label: "上行分辨率", value: formatVideoResolution(localVideoStatistics) },
+              { label: "上行帧率", value: formatVideoMetric(localVideoStatistics?.frameRate, "fps") },
+              { label: "上行码率", value: formatVideoMetric(localVideoStatistics?.bitrateKbps, "kbps") },
+            ]} />
+            <StatisticsPanel label="上行网络与延迟统计" rows={[
+              { label: "上行丢包率", value: formatVideoMetric(remoteVideoStatistics?.uplinkLossPercent, "%"), title: "本端 SDK → TRTC 云端的上行丢包率，不是本地预览丢包率" },
+              { label: "上行网络质量", value: formatNetworkQuality(networkStatistics?.uplinkQuality) },
+              { label: "上行 RTT", value: formatVideoMetric(networkStatistics?.uplinkRttMs, "ms"), title: "本端上行连接到 TRTC 云端的往返延迟，不是单程耗时" },
+            ]} />
           </div>
         </div>
         <div className="stage">
@@ -840,18 +786,18 @@ export function App() {
           )}
           <span className="stageLabel">Result</span>
           <div className="remoteStatistics" id="remote-statistics" hidden={!statisticsVisible}>
-            <dl className="videoStatistics" aria-label="下行视频统计">
-              <div><dt>下行分辨率</dt><dd>{formatVideoResolution(remoteVideoStatistics)}</dd></div>
-              <div><dt>下行帧率</dt><dd>{formatVideoMetric(remoteVideoStatistics?.frameRate, "fps")}</dd></div>
-              <div><dt>下行码率</dt><dd>{formatVideoMetric(remoteVideoStatistics?.bitrateKbps, "kbps")}</dd></div>
-            </dl>
-            <dl className="videoStatistics" aria-label="下行网络与延迟统计">
-              <div><dt>播放缓冲延迟</dt><dd>{formatVideoMetric(remoteVideoStatistics?.jitterBufferDelayMs, "ms")}</dd></div>
-              <div><dt>下行丢包率</dt><dd>{formatVideoMetric(remoteVideoStatistics?.downlinkLossPercent, "%")}</dd></div>
-              <div title="本端所有下行连接的平均网络质量"><dt>下行网络质量</dt><dd>{formatNetworkQuality(networkStatistics?.downlinkQuality)}</dd></div>
-              <div title="本端所有下行连接到 TRTC 云端的平均往返延迟，不是单程耗时"><dt>下行 RTT</dt><dd>{formatVideoMetric(networkStatistics?.downlinkRttMs, "ms")}</dd></div>
-              <div><dt>E2E（RTC 估算）</dt><dd>{formatVideoMetric(remoteVideoStatistics?.endToEndDelayMs, "ms")}</dd></div>
-            </dl>
+            <StatisticsPanel label="下行视频统计" rows={[
+              { label: "下行分辨率", value: formatVideoResolution(remoteVideoStatistics) },
+              { label: "下行帧率", value: formatVideoMetric(remoteVideoStatistics?.frameRate, "fps") },
+              { label: "下行码率", value: formatVideoMetric(remoteVideoStatistics?.bitrateKbps, "kbps") },
+            ]} />
+            <StatisticsPanel label="下行网络与延迟统计" rows={[
+              { label: "播放缓冲延迟", value: formatVideoMetric(remoteVideoStatistics?.jitterBufferDelayMs, "ms") },
+              { label: "下行丢包率", value: formatVideoMetric(remoteVideoStatistics?.downlinkLossPercent, "%") },
+              { label: "下行网络质量", value: formatNetworkQuality(networkStatistics?.downlinkQuality), title: "本端所有下行连接的平均网络质量" },
+              { label: "下行 RTT", value: formatVideoMetric(networkStatistics?.downlinkRttMs, "ms"), title: "本端所有下行连接到 TRTC 云端的平均往返延迟，不是单程耗时" },
+              { label: "E2E（RTC 估算）", value: formatVideoMetric(remoteVideoStatistics?.endToEndDelayMs, "ms") },
+            ]} />
           </div>
           <span className="watermark">✦ Xmax</span>
           {!remoteStream && (
