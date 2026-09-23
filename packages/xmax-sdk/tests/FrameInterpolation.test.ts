@@ -10,10 +10,10 @@ import { createHash } from "node:crypto";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("frame interpolation configuration and support", () => {
-  it("defaults on, supports the top-level flag, and gives the nested option priority", () => {
+  it("defaults off, supports the top-level flag, and gives the nested option priority", () => {
     const model = RealtimeModel.x2_fast_1080p;
-    expect(new RealtimeConfiguration({ model }).frameInterpolation).toEqual({ enabled: true, targetFrameRate: 60 });
-    expect(new RealtimeConfiguration({ model, isFrameInterpolationEnabled: false }).frameInterpolation.enabled).toBe(false);
+    expect(new RealtimeConfiguration({ model }).frameInterpolation).toEqual({ enabled: false, targetFrameRate: 60 });
+    expect(new RealtimeConfiguration({ model, isFrameInterpolationEnabled: true }).frameInterpolation.enabled).toBe(true);
     const options = new RealtimeConfiguration({ model, isFrameInterpolationEnabled: false, frameInterpolation: { enabled: true, targetFrameRate: 30 } });
     expect(options.isFrameInterpolationEnabled).toBe(true);
     expect(Object.isFrozen(options.frameInterpolation)).toBe(true);

@@ -1,4 +1,14 @@
-import { RealtimeVideoTrack, XmaxVideoView } from "../../src/index";
+import { RealtimeVideoTrack, XmaxLogger, XmaxLoggerOption, XmaxVideoView } from "../../src/index";
+
+// 测试页开启 SDK 日志并捕获到全局数组，便于自动化读取遥测输出。
+XmaxLogger.configure(XmaxLoggerOption.all);
+const logs: string[] = [];
+const originalInfo = console.info.bind(console);
+console.info = (...args: unknown[]) => {
+  logs.push(args.map(String).join(" "));
+  originalInfo(...args);
+};
+Object.assign(window, { __xmaxLogs: logs });
 
 const input = document.createElement("canvas");
 const query = new URLSearchParams(location.search);
@@ -22,7 +32,19 @@ function draw() {
   context.fillText(`input ${++phase}`, 12, 164);
 }
 draw();
-const timer = setInterval(draw, 40);
+// jitter=1 时模拟网络抖动：绘制间隔在 15-90ms 间随机，平均约 40ms。
+if (query.get("jitter")) {
+  const tick = () => {
+    draw();
+    setTimeout(tick, 15 + Math.random() * 75);
+  };
+  setTimeout(tick, 40);
+} else if (query.get("drops")) {
+  // drops=1 时模拟均匀 25fps 源流随机丢帧：约 15% 的周期不重绘。
+  setInterval(() => { if (Math.random() > 0.15) draw(); }, 40);
+} else {
+  setInterval(draw, 40);
+}
 const stream = input.captureStream(25);
 const source = document.createElement("video");
 source.autoplay = true;
@@ -63,7 +85,7 @@ document.getElementById("detach")!.onclick = toggleMount;
 
 const check = {
   state, setEnabled, toggleMount,
-  stop: () => { view.track = undefined; view.detach(); clearInterval(timer); stream.getTracks().forEach((t) => t.stop()); },
+  stop: () => { view.track = undefined; view.detach(); stream.getTracks().forEach((t) => t.stop()); },
 };
 Object.assign(window, { interpolationCheck: check });
 window.addEventListener("pagehide", check.stop, { once: true });

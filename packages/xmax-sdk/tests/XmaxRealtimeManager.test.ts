@@ -78,6 +78,7 @@ const testVideoFormat = new RealtimeVideoFormat({
 class CameraControllingStub implements CameraControlling {
   currentTrack?: RealtimeVideoTrack;
   useMicrophone = true;
+  isFrameValidationEnabled = true;
   stopCalls = 0;
   previewReadyHandler?: CameraPreviewReadyHandler;
   waitForValidCameraFrame = vi.fn(async (_signal: AbortSignal): Promise<void> => {});
@@ -86,7 +87,8 @@ class CameraControllingStub implements CameraControlling {
     this.previewReadyHandler = handler;
   }
 
-  async createLocalCameraStream(): Promise<RealtimeMediaStream> {
+  async createLocalCameraStream(options?: { enableFrameValidation?: boolean }): Promise<RealtimeMediaStream> {
+    this.isFrameValidationEnabled = options?.enableFrameValidation ?? true;
     const track = new RealtimeVideoTrack({
       id: "video0",
       videoFormat: testVideoFormat,
@@ -267,12 +269,12 @@ class RealtimeSessionServicingStub implements RealtimeSessionServicing {
 }
 
 /** 组装 Manager 与各层桩。 */
-function makeManager(supportsFrameInterpolation?: () => Promise<boolean>) {
+function makeManager(supportsFrameInterpolation?: () => Promise<boolean>, interpolationEnabled = false) {
   const camera = new CameraControllingStub();
   const stream = new StreamControllingStub();
   const session = new RealtimeSessionServicingStub();
   const manager = new XmaxRealtimeManager(
-    new RealtimeConfiguration({ model: RealtimeModel.x2_fast_1080p }),
+    new RealtimeConfiguration({ model: RealtimeModel.x2_fast_1080p, isFrameInterpolationEnabled: interpolationEnabled }),
     {
       cameraController: camera,
       streamController: stream,
@@ -293,7 +295,7 @@ const testContext = new RealtimeContext({ prompt: "a red cube" });
 
 describe("XmaxRealtimeManager frame interpolation", () => {
   async function generating(supports: () => Promise<boolean> = async () => true) {
-    const s = makeManager(supports);
+    const s = makeManager(supports, true);
     const localStream = makeLocalStream(s.camera);
     const remote = await s.manager.connect(localStream);
     const pending = s.manager.startGeneration({ localStream, context: testContext });
@@ -387,7 +389,7 @@ describe("XmaxRealtimeManager frame interpolation", () => {
 
   it("does not publish a late capability result after a close", async () => {
     const pendingSupport = makeDeferred<boolean>();
-    const s = makeManager(() => pendingSupport.promise);
+    const s = makeManager(() => pendingSupport.promise, true);
     makeLocalStream(s.camera);
     const enabling = s.manager.setFrameInterpolationEnabled(true);
     const rejected = expect(enabling).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
@@ -399,7 +401,7 @@ describe("XmaxRealtimeManager frame interpolation", () => {
   });
 
   it("does not change the return size when a GPU failure happens before generation confirmation", async () => {
-    const s = makeManager(async () => true);
+    const s = makeManager(async () => true, true);
     const localStream = makeLocalStream(s.camera);
     const remote = await s.manager.connect(localStream);
     let rendering: RemoteFrameInterpolationOptions | undefined;
@@ -765,6 +767,34 @@ describe("XmaxRealtimeManager launch timing", () => {
 });
 
 describe("XmaxRealtimeManager connect", () => {
+  it.each([undefined, true, false])("相机流检测开关 %s 控制生成和重连，不伪造禁用时的检测耗时", async (enableFrameValidation) => {
+    const { manager, camera, stream } = makeManager();
+    const snapshots: RealtimeLaunchTiming[] = [];
+    await manager.setLaunchTimingListener((timing) => snapshots.push(timing));
+    const create = vi.spyOn(camera, "createLocalCameraStream");
+    const options = {
+      videoFormat: testVideoFormat, position: CameraPosition.front, useMicrophone: false,
+      enableFrameValidation,
+    };
+    const localStream = await manager.createLocalCameraStream(options);
+    expect(create).toHaveBeenCalledWith(options);
+    const pending = manager.startGeneration({ localStream, context: testContext });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+    stream.confirmationDeferreds[0]!.resolve();
+    await pending;
+    if (enableFrameValidation === false) {
+      expect(camera.waitForValidCameraFrame).not.toHaveBeenCalled();
+      expect(snapshots.every((timing) => timing.frameValidationMs === undefined)).toBe(true);
+    } else {
+      expect(camera.waitForValidCameraFrame).toHaveBeenCalledOnce();
+      expect(snapshots.at(-1)?.frameValidationMs).toEqual(expect.any(Number));
+    }
+    await manager.disconnect();
+    await manager.connect(localStream);
+    expect(camera.waitForValidCameraFrame).toHaveBeenCalledTimes(enableFrameValidation === false ? 0 : 2);
+    await manager.close();
+  });
+
   it("亮度检查超时降级完成后继续生成，不关闭会话或重开相机", async () => {
     vi.useFakeTimers();
     try {
