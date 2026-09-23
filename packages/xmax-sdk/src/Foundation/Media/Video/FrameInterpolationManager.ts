@@ -39,12 +39,11 @@ struct Output { @builtin(position) position: vec4f, @location(0) uv: vec2f }
 
 /** 每条远端视图持有独立 Device；中途初始化失败也能完整回收 runtime 的内部资源。 */
 export class FrameInterpolationManager implements FrameInterpolationProcessing {
-  /** 原帧环形缓冲的槽位数；中间帧双缓冲紧随其后，显示中的纹理不会被覆写。 */
-  static readonly originalSlots = 4;
+  /** 原帧环形缓冲的槽位数；插值结果固定在最后一个槽位。 */
+  static readonly originalSlots = 3;
   private runtime?: RT;
   private textures: GPUTexture[] = [];
   private nextOriginal = 0;
-  private nextMidpoint = 0;
   private capturePipeline!: GPURenderPipeline;
   private displayPipeline!: GPURenderPipeline;
   private sampler!: GPUSampler;
@@ -113,8 +112,8 @@ export class FrameInterpolationManager implements FrameInterpolationProcessing {
         throw new Error("Interpolation initialization cancelled");
       }
       this.runtime = runtime;
-      // 四张原帧环形缓冲加两张中间帧输出，显示滞后时也不会覆写屏幕上的纹理。
-      for (let i = 0; i < FrameInterpolationManager.originalSlots + 2; i++) {
+      // 三张原帧环形缓冲加一张中间帧输出，显示中的纹理不会被覆写。
+      for (let i = 0; i < FrameInterpolationManager.originalSlots + 1; i++) {
         this.textures.push(device.createTexture({
           size: [w, h], format: "rgba8unorm",
           usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.STORAGE_BINDING,
@@ -163,12 +162,10 @@ export class FrameInterpolationManager implements FrameInterpolationProcessing {
   }
 
   async interpolate(previous: number, current: number): Promise<number> {
-    const slot = FrameInterpolationManager.originalSlots + this.nextMidpoint;
-    this.nextMidpoint = 1 - this.nextMidpoint;
     this.runtime!.prepPair(this.textures[previous]!, this.textures[current]!);
-    this.runtime!.runT(0.5, this.textures[slot]!);
+    this.runtime!.runT(0.5, this.textures[FrameInterpolationManager.originalSlots]!);
     await this.device.queue.onSubmittedWorkDone();
-    return slot;
+    return FrameInterpolationManager.originalSlots;
   }
 
   present(slot: number): void {

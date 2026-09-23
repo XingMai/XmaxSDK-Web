@@ -10,24 +10,17 @@ export interface RemoteFrameInterpolationOptions {
 
 type ProcessorFactory = typeof FrameInterpolationManager.create;
 
-interface InputFrame {
+interface QueuedFrame {
   slot: number;
   time: number;
 }
 
-interface QueuedFrame {
-  slot: number;
-  start: number;
-  end: number;
-}
-
 /**
- * 远端帧显示管线：输出帧带显示窗口排队，显示时钟按 vsync 推进。
+ * 远端帧显示管线：帧按时间戳排队，显示时钟按 vsync 推进。
  *
  * 输入仍来自 video 元素的帧回调，但接管后画面始终由 canvas 输出，
- * 不再切回 video。每对连续帧产出一个中间帧，与原帧各占半个源帧
- * 间隔依次显示；插值耗时只让输出整体顺延，不丢弃中间帧，显示
- * 节奏保持匀速。断流或时间线不连续时从最新帧重新接管。
+ * 不再切回 video，因此不会显示比当前更旧的内容。输出整体延迟一个
+ * 源帧间隔，为中间帧留出计算窗口；迟到的中间帧直接丢弃不补播。
  */
 export class RemoteVideoFramePipeline {
   private processor?: FrameInterpolationProcessing;
@@ -37,16 +30,18 @@ export class RemoteVideoFramePipeline {
   private stallTimer?: ReturnType<typeof setTimeout>;
   private initializationTimer?: ReturnType<typeof setTimeout>;
   private loading = false;
+  private busy = false;
   private stopped = false;
   private generation = 0;
-  /** 未处理的最新输入帧；处理期间到达的输入只保留最新一帧。 */
-  private latest?: InputFrame;
-  private draining = false;
-  private last?: InputFrame;
-  /** 输出时间线末端（performance 时间轴）；排期永不早于当前时刻。 */
-  private nextPresentation = 0;
+  /** 播放时钟锚点：最近一次输入帧的媒体时间与对应的 vsync 时刻。 */
+  private anchor?: { media: number; at: number };
+  /** 输出延迟，取最近一次有效源帧间隔，为中间帧留出计算窗口。 */
+  private delay = 0;
   private queue: QueuedFrame[] = [];
-  private displayed?: QueuedFrame;
+  private displayedTime?: number;
+  private previousTime?: number;
+  private previousSlot?: number;
+  private previousPresented?: number;
   private slowPairs = 0;
   private active = false;
 
@@ -70,15 +65,15 @@ export class RemoteVideoFramePipeline {
 
   private observe(): void {
     if (this.stopped) return;
-    this.callback = this.video.requestVideoFrameCallback((_now, metadata) => {
+    this.callback = this.video.requestVideoFrameCallback((now, metadata) => {
       this.callback = undefined;
       if (this.stopped) return;
-      try { this.frame(metadata); } catch (error) { this.fail(error); }
+      try { this.frame(now, metadata); } catch (error) { this.fail(error); }
       this.observe();
     });
   }
 
-  private frame(metadata: VideoFrameCallbackMetadata): void {
+  private frame(now: number, metadata: VideoFrameCallbackMetadata): void {
     if (typeof document !== "undefined" && document.hidden) {
       this.resetTimeline();
       return;
@@ -94,96 +89,82 @@ export class RemoteVideoFramePipeline {
     }
     const time = metadata.mediaTime * 1000;
     // 重复或倒序的输入不进入时间线；换流会创建新的管线。
-    if (!Number.isFinite(time) || (this.last !== undefined && time <= this.last.time)) return;
-    this.latest = { slot: this.processor.capture(this.video), time };
-    if (!this.draining) void this.drain();
-  }
-
-  /** 串行处理输入帧：中间帧与原帧算好后一起排期，不在中途切换画面。 */
-  private async drain(): Promise<void> {
-    if (this.stopped) return;
-    this.draining = true;
-    try {
-      while (this.latest && !this.stopped) {
-        const input = this.latest;
-        this.latest = undefined;
-        const last = this.last;
-        this.last = input;
-        const interval = last === undefined ? 0 : input.time - last.time;
-        if (last === undefined || interval > 250) {
-          // 首帧与断流恢复直接显示当前帧；旧队列内容都已过期。
-          this.queue = [];
-          this.present({ slot: input.slot, start: 0, end: 0 });
-          this.nextPresentation = performance.now();
-          this.startTick();
-          continue;
-        }
-        if (interval < 2000 / this.options.targetFrameRate - 1) {
-          // 间隔已经超出输出预算时只做透传，原帧独占整个间隔。
-          this.schedule([{ slot: input.slot, interval }]);
-          continue;
-        }
-        const midpointSlot = await this.interpolate(last.slot, input.slot, interval);
-        if (midpointSlot === undefined || this.stopped) return;
-        // 中间帧与原帧各占半个间隔依次显示；插值耗时只顺延，不丢帧。
-        this.schedule([
-          { slot: midpointSlot, interval: interval / 2 },
-          { slot: input.slot, interval: interval - interval / 2 },
-        ]);
-      }
-    } finally {
-      this.draining = false;
+    if (!Number.isFinite(time) || (this.previousTime !== undefined && time <= this.previousTime)) return;
+    const previous = this.previousTime;
+    const interval = previous === undefined ? 0 : time - previous;
+    const consecutive = this.previousPresented === undefined || metadata.presentedFrames === this.previousPresented + 1;
+    const previousSlot = this.previousSlot;
+    this.anchor = { media: time, at: now };
+    this.previousTime = time;
+    this.previousPresented = metadata.presentedFrames;
+    const slot = this.processor.capture(this.video);
+    this.previousSlot = slot;
+    if (previous === undefined || interval > 250) {
+      // 首帧与断流恢复直接显示当前帧；旧队列内容都已过期。
+      this.queue = [];
+      this.delay = 0;
+      this.present({ slot, time });
+      this.startTick();
+      return;
     }
-  }
-
-  /** 等待中间帧完成；GPU 超时、失败或时间线已重置时返回 undefined。 */
-  private async interpolate(previous: number, current: number, interval: number): Promise<number | undefined> {
-    const generation = this.generation;
-    const startedAt = performance.now();
-    this.stallTimer = setTimeout(() => this.fail(new Error("Interpolation GPU submission timed out")), Math.max(100, interval * 3));
-    try {
-      const slot = await this.processor!.interpolate(previous, current);
-      if (this.stopped || generation !== this.generation) return undefined;
-      // 连续多对超过一个完整源帧间隔才降级；偶发慢帧只顺延输出。
-      this.slowPairs = performance.now() - startedAt > interval ? this.slowPairs + 1 : 0;
-      if (this.slowPairs >= 5) {
-        this.fail(new Error("Interpolation exceeded the GPU frame budget for 5 consecutive pairs"));
-        return undefined;
-      }
-      return slot;
-    } catch (error) {
-      if (!this.stopped) this.fail(error);
-      return undefined;
-    } finally {
-      clearTimeout(this.stallTimer);
-      this.stallTimer = undefined;
-    }
-  }
-
-  /** 帧窗口从时间线末端依次排开；显示已排干时从当前时刻重新开始。 */
-  private schedule(frames: { slot: number; interval: number }[]): void {
-    let start = Math.max(this.nextPresentation, performance.now());
-    for (const frame of frames) {
-      this.enqueue({ slot: frame.slot, start, end: start + frame.interval });
-      start += frame.interval;
-    }
-    this.nextPresentation = start;
+    this.delay = interval;
+    this.enqueue({ slot, time });
     this.startTick();
+    // 跳帧或间隔超出输出预算时只显示原帧，不做插值。
+    if (!consecutive || interval < 2000 / this.options.targetFrameRate - 1 || previousSlot === undefined || this.busy) return;
+    this.interpolate(previousSlot, slot, previous, time, interval);
   }
 
+  /** 帧按显示时间升序入队；同一时间的内容后到先出。 */
   private enqueue(frame: QueuedFrame): void {
-    const index = this.queue.findIndex((queued) => queued.start >= frame.start);
+    const index = this.queue.findIndex((queued) => queued.time >= frame.time);
     if (index < 0) this.queue.push(frame);
     else this.queue.splice(index, 0, frame);
   }
 
-  /** vsync 显示节拍：显示窗口覆盖当前时刻的帧，过期帧直接清出队列。 */
+  private interpolate(previousSlot: number, currentSlot: number,
+    previousTime: number, currentTime: number, interval: number): void {
+    const generation = this.generation;
+    const midpoint = (previousTime + currentTime) / 2;
+    const startedAt = performance.now();
+    this.busy = true;
+    this.stallTimer = setTimeout(() => {
+      if (this.busy) this.fail(new Error("Interpolation GPU submission timed out"));
+    }, Math.max(100, interval * 3));
+    void this.processor!.interpolate(previousSlot, currentSlot).then((slot) => {
+      if (this.stopped) return;
+      this.busy = false;
+      clearTimeout(this.stallTimer);
+      this.stallTimer = undefined;
+      if (generation !== this.generation) return;
+      const elapsed = performance.now() - startedAt;
+      this.slowPairs = elapsed > interval / 2 ? this.slowPairs + 1 : 0;
+      if (this.slowPairs >= 5) {
+        this.fail(new Error("Interpolation exceeded the GPU frame budget for 5 consecutive pairs"));
+        return;
+      }
+      // 显示时钟已越过中点的中间帧直接丢弃，不补播。
+      if (this.position(performance.now()) >= midpoint) return;
+      this.enqueue({ slot, time: midpoint });
+    }).catch((error) => { if (!this.stopped) this.fail(error); });
+  }
+
+  /** 显示时钟位置：锚点媒体时间随墙钟推进，整体后移一个源帧间隔。 */
+  private position(now: number): number {
+    if (!this.anchor) return -Infinity;
+    return this.anchor.media + (now - this.anchor.at) - this.delay;
+  }
+
+  /** vsync 显示节拍：弹出到点的帧并显示最新的一张。 */
   private readonly tick = (now: number): void => {
     if (this.stopped) return;
     this.raf = requestAnimationFrame(this.tick);
-    while (this.queue.length > 0 && this.queue[0]!.end <= now) this.queue.shift();
-    const frame = this.queue[0];
-    if (frame && frame.start <= now) this.present(frame);
+    const position = this.position(now);
+    let frame: QueuedFrame | undefined;
+    while (this.queue.length > 0 && this.queue[0]!.time <= position) {
+      frame = this.queue.shift();
+    }
+    if (frame) this.present(frame);
   };
 
   private startTick(): void {
@@ -191,9 +172,10 @@ export class RemoteVideoFramePipeline {
   }
 
   private present(frame: QueuedFrame): void {
-    if (this.displayed === frame) return;
+    // 环形槽位会复用，按时间戳去重而不是按槽位。
+    if (this.displayedTime === frame.time) return;
     this.processor!.present(frame.slot);
-    this.displayed = frame;
+    this.displayedTime = frame.time;
     this.canvas.style.visibility = "visible";
     this.setActive(true);
   }
@@ -226,15 +208,17 @@ export class RemoteVideoFramePipeline {
 
   private resetTimeline(): void {
     this.generation++;
-    this.latest = undefined;
-    this.last = undefined;
     this.queue = [];
-    this.displayed = undefined;
-    this.nextPresentation = 0;
     clearTimeout(this.stallTimer);
     this.stallTimer = undefined;
     if (this.raf !== undefined) cancelAnimationFrame(this.raf);
     this.raf = undefined;
+    this.anchor = undefined;
+    this.delay = 0;
+    this.displayedTime = undefined;
+    this.previousTime = undefined;
+    this.previousSlot = undefined;
+    this.previousPresented = undefined;
     this.canvas.style.visibility = "hidden";
     this.setActive(false);
   }
