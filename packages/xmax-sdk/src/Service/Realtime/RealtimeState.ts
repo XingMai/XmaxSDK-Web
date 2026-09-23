@@ -4,25 +4,39 @@ import { XmaxError } from "../../Foundation/Errors/XmaxError";
  * 实时业务连接状态。
  */
 export enum RealtimeConnectionState {
-  /** 没有可用的本地媒体流。 */
+  /**
+   * 没有可用的本地媒体流。
+   */
   idle = "Idle",
 
-  /** 正在准备本地媒体流；摄像头还需等待有效帧和预览视图绑定。 */
+  /**
+   * 正在准备本地媒体流；摄像头还需等待有效帧和预览视图绑定。
+   */
   preparing = "Preparing",
 
-  /** 本地媒体流已就绪，可以预览、连接和生成。 */
+  /**
+   * 本地媒体流已就绪，可以预览、连接和生成。
+   */
   ready = "Ready",
 
-  /** 正在创建 Session、加入 Room 并发布本地流。 */
+  /**
+   * 正在创建 Session、加入 Room 并发布本地流。
+   */
   connecting = "Connecting",
 
-  /** 实时连接已建立，当前没有生成任务。 */
+  /**
+   * 实时连接已建立，当前没有生成任务。
+   */
   connected = "Connected",
 
-  /** 实时连接已建立且生成任务正在运行。 */
+  /**
+   * 实时连接已建立且生成任务正在运行。
+   */
   generating = "Generating",
 
-  /** 正在清理生成、Room 和 Session 资源。 */
+  /**
+   * 正在清理生成、Room 和 Session 资源。
+   */
   disconnecting = "Disconnecting",
 }
 
@@ -37,6 +51,9 @@ export type RealtimeReason =
 export const RealtimeReason = {
   normal: { kind: "normal" } as RealtimeReason,
   orientationChanged: { kind: "orientationChanged" } as RealtimeReason,
+  /**
+   * 将 SDK 错误包装为状态切换原因，保留错误码和原始说明。
+   */
   failure(error: XmaxError): RealtimeReason {
     return { kind: "failure", error };
   },
@@ -53,16 +70,33 @@ export interface RealtimeStateInit {
  * 实时业务当前状态快照。
  */
 export class RealtimeState {
-  /** 当前连接生命周期状态。 */
+  /**
+   * 连接生命周期
+   */
+  /**
+   * 当前连接生命周期状态。
+   */
   readonly connectionState: RealtimeConnectionState;
 
-  /** 当前或最近一次实时 Session 标识。 */
+  /**
+   * 业务标识
+   */
+  /**
+   * 当前或最近一次实时 Session 标识。
+   */
   readonly sessionID?: string;
 
-  /** 当前生成任务标识。 */
+  /**
+   * 当前生成任务标识。
+   */
   readonly taskID?: string;
 
-  /** 进入当前状态的原因；正常开始新的操作时清空。 */
+  /**
+   * 状态变化原因
+   */
+  /**
+   * 进入当前状态的原因；正常开始新的操作时清空。
+   */
   readonly reason?: RealtimeReason;
 
   /**
@@ -95,5 +129,7 @@ export class RealtimeState {
   }
 }
 
-/** 实时状态监听器。 */
+/**
+ * 实时状态监听器。
+ */
 export type RealtimeStateListener = (state: RealtimeState) => void;

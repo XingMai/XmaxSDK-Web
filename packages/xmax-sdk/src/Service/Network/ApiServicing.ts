@@ -26,15 +26,23 @@ export interface ApiServicing {
    */
   request<T>(method: ApiMethod, path: string, body?: unknown): Promise<T>;
 
-  /** 发送 GET 请求。 */
+  /**
+   * 发送 GET 请求。
+   */
   get<T>(path: string): Promise<T>;
 
-  /** 发送 POST 请求。 */
+  /**
+   * 发送 POST 请求。
+   */
   post<T>(path: string, body?: unknown): Promise<T>;
 
-  /** 发送 PUT 请求。 */
+  /**
+   * 发送 PUT 请求。
+   */
   put<T>(path: string, body?: unknown): Promise<T>;
 
-  /** 发送 DELETE 请求。 */
+  /**
+   * 发送 DELETE 请求。
+   */
   delete<T>(path: string): Promise<T>;
 }

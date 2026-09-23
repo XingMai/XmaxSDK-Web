@@ -18,7 +18,9 @@ import type {
   StreamGenerationOptions,
 } from "./StreamControlling";
 
-/** 生成确认等待器。 */
+/**
+ * 生成确认等待器。
+ */
 interface GenerationWaiter {
   taskID: string;
   resolve: () => void;
@@ -27,7 +29,9 @@ interface GenerationWaiter {
   confirmationPending: boolean;
 }
 
-/** 传输层运行状态。 */
+/**
+ * 传输层运行状态。
+ */
 interface StreamState {
   roomID: string;
   botID: string;
@@ -40,6 +44,9 @@ interface StreamState {
   activeRemoteStream?: RemoteStream;
 }
 
+/**
+ * 创建独立的空传输状态，每次重置使用新的订阅集合，避免旧房间资源残留。
+ */
 function makeInitialState(): StreamState {
   return {
     roomID: "",
@@ -52,22 +59,34 @@ function makeInitialState(): StreamState {
 }
 
 export interface StreamControllerOptions {
-  /** RTC 引擎与媒体传输组件。 */
+  /**
+   * RTC 引擎与媒体传输组件。
+   */
   rtcManager: RtcManaging;
 
-  /** 房间生命周期与信令组件（可替换，测试用）。 */
+  /**
+   * 房间生命周期与信令组件（可替换，测试用）。
+   */
   roomController?: RoomControlling;
 
-  /** 视频编码参数配置组件（可替换，测试用）。 */
+  /**
+   * 视频编码参数配置组件（可替换，测试用）。
+   */
   encodingController?: EncodingControlling;
 
-  /** 运行期错误回调。 */
+  /**
+   * 运行期错误回调。
+   */
   errorListener?: XmaxErrorListener;
 
-  /** 远端生成流就绪与清理回调。 */
+  /**
+   * 远端生成流就绪与清理回调。
+   */
   remoteStreamListener?: RemoteStreamListener;
 
-  /** 生成开始确认超时时间（毫秒）；默认 30 秒。 */
+  /**
+   * 生成开始确认超时时间（毫秒）；默认 30 秒。
+   */
   generationTimeoutMs?: number;
 }
 
@@ -78,27 +97,39 @@ export interface StreamControllerOptions {
  * 渲染绑定被接受）作为生成开始成功的确认信号。
  */
 export class StreamController implements StreamControlling {
-  // 基础层组件
+  /**
+   * 基础层组件
+   */
   private readonly rtcManager: RtcManaging;
 
-  // 传输层组件
+  /**
+   * 传输层组件
+   */
   private readonly roomController: RoomControlling;
   private readonly encodingController: EncodingControlling;
 
-  // 事件监听
+  /**
+   * 事件监听
+   */
   private readonly errorListener: XmaxErrorListener;
   private readonly remoteStreamListener: RemoteStreamListener;
   private localVideoStatisticsListener?: VideoStatisticsListener;
   private networkStatisticsListener?: NetworkStatisticsListener;
   private remoteVideoStatisticsListener?: RemoteVideoStatisticsListener;
 
-  // 生成配置
+  /**
+   * 生成配置
+   */
   private readonly generationTimeoutMs: number;
 
-  // 音频配置
+  /**
+   * 音频配置
+   */
   private remoteAudioVolumePercentage = 100;
 
-  // 运行状态
+  /**
+   * 运行状态
+   */
   private state: StreamState = makeInitialState();
 
   /**
@@ -119,6 +150,7 @@ export class StreamController implements StreamControlling {
     this.encodingController =
       options.encodingController ??
       new EncodingController({ rtcManager: options.rtcManager });
+
     this.errorListener = options.errorListener ?? (() => {});
     this.remoteStreamListener = options.remoteStreamListener ?? (() => {});
     this.generationTimeoutMs = options.generationTimeoutMs ?? 30_000;
@@ -150,32 +182,44 @@ export class StreamController implements StreamControlling {
     });
   }
 
-  /** 当前是否存在正在启动或已经运行的生成任务。 */
+  /**
+   * 当前是否存在正在启动或已经运行的生成任务。
+   */
   get hasGenerationTask(): boolean {
     return this.state.generationTaskID !== undefined;
   }
 
-  /** 设置本地主视频流统计监听器，不改变 RTC 事件监听权。 */
+  /**
+   * 设置本地主视频流统计监听器，不改变 RTC 事件监听权。
+   */
   setLocalVideoStatisticsListener(listener?: VideoStatisticsListener): void {
     this.localVideoStatisticsListener = listener;
   }
 
-  /** 网络统计不按远端用户过滤，连接发布完成后即可回调。 */
+  /**
+   * 网络统计不按远端用户过滤，连接发布完成后即可回调。
+   */
   setNetworkStatisticsListener(listener?: NetworkStatisticsListener): void {
     this.networkStatisticsListener = listener;
   }
 
-  /** 监听当前实际生成结果流的统计，不按会话下发的 botID 猜测结果流身份。 */
+  /**
+   * 监听当前实际生成结果流的统计，不按会话下发的 botID 猜测结果流身份。
+   */
   setRemoteVideoStatisticsListener(listener?: RemoteVideoStatisticsListener): void {
     this.remoteVideoStatisticsListener = listener;
   }
 
-  /** 当前远端生成音频播放音量，取值范围为 `0...1`。 */
+  /**
+   * 当前远端生成音频播放音量，取值范围为 `0...1`。
+   */
   get remoteAudioVolume(): number {
     return this.remoteAudioVolumePercentage / 100;
   }
 
-  /** 设置远端生成音频播放音量，并应用到所有已订阅的远端音频。 */
+  /**
+   * 设置远端生成音频播放音量，并应用到所有已订阅的远端音频。
+   */
   setRemoteAudioVolume(volume: number): void {
     const rtcVolume = Math.min(Math.max(Math.round(volume * 100), 0), 100);
     for (const userID of [...this.state.subscribedRemoteAudioUserIDs].sort()) {
@@ -206,18 +250,22 @@ export class StreamController implements StreamControlling {
   ): Promise<void> {
     await this.roomController.join(connection, ensureActive);
     ensureActive();
+
     this.configureRoom({ roomID: connection.roomID, botID: connection.botID });
     XmaxLogger.stream.info(
       () =>
         `RTC 房间已配置 (RTC Room Configured)\n` +
         `└─ roomID: ${connection.roomID}, botID: ${connection.botID ?? "(未设置)"}`,
     );
+
     await beforePublish?.();
     ensureActive();
     await this.publishLocalStream(includeLocalAudio);
   }
 
-  /** 清理生成状态、本地发布和远端订阅，并离开当前 RTC 房间。 */
+  /**
+   * 清理生成状态、本地发布和远端订阅，并离开当前 RTC 房间。
+   */
   async disconnect(): Promise<void> {
     await this.resetStream();
     await this.roomController.leave();
@@ -269,6 +317,7 @@ export class StreamController implements StreamControlling {
         );
       }, this.generationTimeoutMs),
     };
+
     this.state.generationTaskID = taskID;
     this.state.generationWaiter = waiter;
 
@@ -290,6 +339,7 @@ export class StreamController implements StreamControlling {
       }
       throw mapped;
     }
+
     return confirmation;
   }
 
@@ -376,12 +426,16 @@ export class StreamController implements StreamControlling {
     }
   }
 
-  /** 设置房间业务消息监听器，传入空值时清除监听器。 */
+  /**
+   * 设置房间业务消息监听器，传入空值时清除监听器。
+   */
   setRoomListener(listener?: RoomListener): void {
     this.roomController.setListener(listener);
   }
 
-  /** 配置当前房间；已有发布、订阅或生成任务时拒绝重新配置。 */
+  /**
+   * 配置当前房间；已有发布、订阅或生成任务时拒绝重新配置。
+   */
   private configureRoom(options: { roomID: string; botID?: string }): void {
     const roomID = options.roomID.trim();
     const botID = options.botID?.trim() ?? "";
@@ -402,11 +456,14 @@ export class StreamController implements StreamControlling {
         "Reset the current RTC room before configuring another one",
       );
     }
+
     this.state.roomID = roomID;
     this.state.botID = botID;
   }
 
-  /** 发布本地视频，按需发布本地音频；音频发布失败时回滚视频发布。 */
+  /**
+   * 发布本地视频，按需发布本地音频；音频发布失败时回滚视频发布。
+   */
   private async publishLocalStream(includeAudio: boolean): Promise<void> {
     if (!this.state.roomID) {
       throw new XmaxError(
@@ -433,7 +490,9 @@ export class StreamController implements StreamControlling {
     }
   }
 
-  /** 处理远端视频发布状态变化：按机器人标识过滤后订阅或清理。 */
+  /**
+   * 处理远端视频发布状态变化：按机器人标识过滤后订阅或清理。
+   */
   private async handleRemoteVideoPublished(
     userID: string,
     published: boolean,
@@ -442,11 +501,13 @@ export class StreamController implements StreamControlling {
     if (!trimmedUserID) {
       return;
     }
+
     XmaxLogger.stream.info(
       () =>
         `远端视频发布状态变化 (Remote Video Publication Changed)\n` +
         `└─ userID: ${trimmedUserID}, published: ${published}`,
     );
+
     if (!this.state.roomID) {
       return;
     }
@@ -482,11 +543,14 @@ export class StreamController implements StreamControlling {
     }
   }
 
-  /** 订阅远端视频并在成功后就绪或确认生成任务。 */
+  /**
+   * 订阅远端视频并在成功后就绪或确认生成任务。
+   */
   private async subscribeRemoteVideo(userID: string): Promise<void> {
     if (this.state.subscribedRemoteUserIDs.has(userID)) {
       return;
     }
+
     try {
       const track = await this.rtcManager.subscribeRemoteVideo(userID, true);
       if (!track) {
@@ -495,10 +559,12 @@ export class StreamController implements StreamControlling {
           "Remote video track is not available",
         );
       }
+
       // 订阅期间连接可能已被重置。
       if (!this.state.roomID) {
         return;
       }
+
       this.state.subscribedRemoteUserIDs.add(userID);
       XmaxLogger.stream.info(
         () =>
@@ -519,7 +585,9 @@ export class StreamController implements StreamControlling {
     }
   }
 
-  /** 订阅成功后就绪远端流：有待确认的生成任务时确认它，否则更新当前绑定。 */
+  /**
+   * 订阅成功后就绪远端流：有待确认的生成任务时确认它，否则更新当前绑定。
+   */
   private confirmOrUpdateRemoteStream(
     userID: string,
     track: MediaStreamTrack,
@@ -559,7 +627,9 @@ export class StreamController implements StreamControlling {
     }
   }
 
-  /** 订阅远端音频：先应用当前音量再订阅。 */
+  /**
+   * 订阅远端音频：先应用当前音量再订阅。
+   */
   private async subscribeRemoteAudio(userID: string): Promise<void> {
     if (this.state.subscribedRemoteAudioUserIDs.has(userID)) {
       return;
@@ -569,7 +639,9 @@ export class StreamController implements StreamControlling {
     this.state.subscribedRemoteAudioUserIDs.add(userID);
   }
 
-  /** 取消订阅远端音频；失败仅记录日志。 */
+  /**
+   * 取消订阅远端音频；失败仅记录日志。
+   */
   private async unsubscribeRemoteAudio(userID: string): Promise<void> {
     if (!this.state.subscribedRemoteAudioUserIDs.delete(userID)) {
       return;
@@ -605,19 +677,25 @@ export class StreamController implements StreamControlling {
       clearTimeout(waiter.timeoutTimer);
       waiter.reject(new XmaxError(XmaxErrorCode.cancelled, reason));
     }
+
     for (const userID of remoteAudioUserIDs.sort()) {
       await this.performCleanup(
         "取消订阅 RTC 远端音频失败 (Failed to Unsubscribe from RTC Remote Audio)",
         () => this.rtcManager.subscribeRemoteAudio(userID, false),
       );
     }
+
     this.clearRemoteStream();
+
     return currentTaskID;
   }
 
-  /** 复位传输层：停止生成、取消全部远端订阅、取消本地发布。 */
+  /**
+   * 复位传输层：停止生成、取消全部远端订阅、取消本地发布。
+   */
   private async resetStream(): Promise<void> {
     await this.stopStreamGeneration("");
+
     const previousState = this.state;
     this.state = makeInitialState();
 
@@ -629,12 +707,14 @@ export class StreamController implements StreamControlling {
         },
       );
     }
+
     if (previousState.localAudioPublished) {
       await this.performCleanup(
         "取消发布 RTC 本地音频失败 (Failed to Unpublish RTC Local Audio)",
         () => this.rtcManager.unpublishLocalAudio(),
       );
     }
+
     if (previousState.localVideoPublished) {
       await this.performCleanup(
         "取消发布 RTC 本地视频失败 (Failed to Unpublish RTC Local Video)",
@@ -643,7 +723,9 @@ export class StreamController implements StreamControlling {
     }
   }
 
-  /** 确认生成开始：清理等待器并兑现确认 Promise。 */
+  /**
+   * 确认生成开始：清理等待器并兑现确认 Promise。
+   */
   private resolveGenerationStart(taskID: string): void {
     const waiter = this.state.generationWaiter;
     if (this.state.generationTaskID !== taskID || waiter?.taskID !== taskID) {
@@ -654,7 +736,9 @@ export class StreamController implements StreamControlling {
     waiter.resolve();
   }
 
-  /** 拒绝生成开始：清理等待器并拒绝确认 Promise。 */
+  /**
+   * 拒绝生成开始：清理等待器并拒绝确认 Promise。
+   */
   private rejectGenerationStart(taskID: string, error: XmaxError): void {
     const waiter = this.state.generationWaiter;
     if (this.state.generationTaskID !== taskID || waiter?.taskID !== taskID) {
@@ -665,7 +749,9 @@ export class StreamController implements StreamControlling {
     waiter.reject(error);
   }
 
-  /** 通知渲染层清理远端生成流；失败仅记录日志。 */
+  /**
+   * 通知渲染层清理远端生成流；失败仅记录日志。
+   */
   private clearRemoteStream(): void {
     this.remoteVideoStatisticsListener?.(undefined);
     try {
@@ -679,7 +765,9 @@ export class StreamController implements StreamControlling {
     }
   }
 
-  /** 回滚本地视频发布；失败仅记录日志。 */
+  /**
+   * 回滚本地视频发布；失败仅记录日志。
+   */
   private async rollbackLocalVideoPublication(): Promise<void> {
     await this.performCleanup(
       "回滚 RTC 本地视频发布失败 (Failed to Roll Back RTC Local Video Publication)",
@@ -690,7 +778,9 @@ export class StreamController implements StreamControlling {
     );
   }
 
-  /** 执行清理动作；失败仅记录日志。 */
+  /**
+   * 执行清理动作；失败仅记录日志。
+   */
   private async performCleanup(
     title: string,
     action: () => Promise<void> | void,

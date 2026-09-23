@@ -214,6 +214,10 @@ The following JavaScript snippet creates a camera stream, starts real-time gener
 and binds the output to a video view. Run this within an async function in the browser,
 after a user action such as clicking a Start button.
 
+Choose a model with `RealtimeModel.x2_0` (`x2.0`),
+`RealtimeModel.x2_0_pro` (`x2.0-pro`), or
+`RealtimeModel.x2_fast_1080p` (`x2-fast-1080p`).
+
 ```javascript
 import {
   CameraPosition,
@@ -239,6 +243,7 @@ const localStream = await realtime.createLocalCameraStream({
   videoFormat: new RealtimeVideoFormat({ width: 1024, height: 1920, fps: 30 }),
   position: CameraPosition.front,
   useMicrophone: false,
+  enableFrameValidation: true, // Optional; false skips the startup brightness check and its wait.
 });
 
 const videoView = new XmaxRealtimeVideoView({

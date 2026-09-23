@@ -90,17 +90,21 @@ async function flushHeartbeats(rounds = 5): Promise<void> {
 }
 
 describe("RealtimeSessionService", () => {
-  it("creates a session and parses TRTC connection info", async () => {
+  it.each([
+    [RealtimeModel.x2_0, "x2.0"],
+    [RealtimeModel.x2_0_pro, "x2.0-pro"],
+    [RealtimeModel.x2_fast_1080p, "x2-fast-1080p"],
+  ] as const)("creates a %s session and parses TRTC connection info", async (model, modelID) => {
     const api = new ApiServicingStub();
     api.postResponses = [sessionPayload()];
     const service = makeService(api);
 
-    const session = await service.createSession(RealtimeModel.x2_fast_1080p);
+    const session = await service.createSession(model);
 
     expect(api.requests[0]).toMatchObject({
       method: ApiMethod.post,
       path: "/session",
-      body: { model: "x2-fast-1080p" },
+      body: { model: modelID },
     });
     expect(session.id).toBe("ums-001");
     expect(session.userID).toBe("user-001");

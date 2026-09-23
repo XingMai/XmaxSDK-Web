@@ -15,7 +15,9 @@ import { frameInterpolationAdapter } from "../../Foundation/Media/Video/FrameInt
  * 模型输入尺寸与远端插帧能力。
  */
 export class MediaService implements MediaServicing {
-  // 模型约束
+  /**
+   * 模型约束
+   */
   readonly model: RealtimeModel;
 
   /**
@@ -27,7 +29,9 @@ export class MediaService implements MediaServicing {
     this.model = model;
   }
 
-  /** Web 插帧保留原始尺寸；/16 对齐由 GPU 内部补边处理，不缩小回传视频。 */
+  /**
+   * Web 插帧保留原始尺寸；/16 对齐由 GPU 内部补边处理，不缩小回传视频。
+   */
   resolveFrameInterpolationSize(size: ModelSize): ModelSize {
     const { width, height } = size;
     if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width <= 0 || height <= 0) {
@@ -36,11 +40,16 @@ export class MediaService implements MediaServicing {
     return { width, height };
   }
 
-  /** WebGPU 适配器探测是异步的；实际性能和运行状态由渲染管线判断。 */
+  /**
+   * WebGPU 适配器探测是异步的；实际性能和运行状态由渲染管线判断。
+   */
   async supportsFrameInterpolation(size: ModelSize): Promise<boolean> {
     return (await frameInterpolationAdapter(size)) !== null;
   }
 
+  /**
+   * 按模型分辨率档位或像素预算解析输入尺寸，保持宽高比例并对齐；不支持的规格抛错。
+   */
   resolveModelInputSize(size: ModelSize): ModelSize {
     const buckets = resolutionBuckets(this.model);
     if (buckets.length > 0) {
@@ -87,6 +96,7 @@ export class MediaService implements MediaServicing {
       rounding((validated.height * scale) / alignment) * alignment,
       alignment,
     );
+
     const alignedPixels = width * height;
     if (alignedPixels >= minimumPixels && alignedPixels <= maximumPixels) {
       return { width, height };
@@ -99,12 +109,15 @@ export class MediaService implements MediaServicing {
     );
   }
 
-  /** 在对齐网格上选择满足面积限制且最接近目标的尺寸。 */
+  /**
+   * 在对齐网格上选择满足面积限制且最接近目标的尺寸。
+   */
   private boundedAlignedSize(width: number, height: number): ModelSize {
     const alignment = inputSizeAlignment(this.model);
     const unitPixels = alignment * alignment;
     const minimumUnits = Math.ceil(minimumInputPixels(this.model) / unitPixels);
     const maximumUnits = Math.floor(maximumInputPixels(this.model) / unitPixels);
+
     let bestSize: ModelSize = { width: 0, height: 0 };
     let bestDistance = Number.POSITIVE_INFINITY;
 
@@ -128,10 +141,13 @@ export class MediaService implements MediaServicing {
         bestSize = { width: candidateWidth, height: candidateHeight };
       }
     }
+
     return bestSize;
   }
 
-  /** 校验尺寸为有限正数，并归一化为不小于 1 的整数。 */
+  /**
+   * 校验尺寸为有限正数，并归一化为不小于 1 的整数。
+   */
   private validatedSize(size: ModelSize): ModelSize {
     if (
       !Number.isFinite(size.width) ||

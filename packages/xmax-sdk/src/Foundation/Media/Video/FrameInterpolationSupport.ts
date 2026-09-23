@@ -1,7 +1,9 @@
 /// <reference types="@webgpu/types" />
 import type { ModelSize } from "../../../Service/Realtime/RealtimeModel";
 
-/** 不缓存失败结果，允许设备恢复后显式重试；能力查询不创建 GPUDevice。 */
+/**
+ * 不缓存失败结果，允许设备恢复后显式重试；能力查询不创建 GPUDevice。
+ */
 export async function frameInterpolationAdapter(size?: ModelSize): Promise<GPUAdapter | null> {
   if (typeof navigator === "undefined" || !navigator.gpu ||
       typeof HTMLVideoElement === "undefined" ||

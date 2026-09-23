@@ -1,15 +1,21 @@
-// Core
+/**
+ * Core
+ */
 export { XmaxClient } from "./Core/XmaxClient";
 export { XmaxConfiguration } from "./Core/XmaxConfiguration";
 export type { XmaxConfigurationInit } from "./Core/XmaxConfiguration";
 
-// Core / Realtime
+/**
+ * Core / Realtime
+ */
 export { RealtimeConfiguration } from "./Core/Realtime/RealtimeConfiguration";
 export type { RealtimeConfigurationInit } from "./Core/Realtime/RealtimeConfiguration";
 export type { FrameInterpolationConfiguration } from "./Core/Realtime/RealtimeConfiguration";
 export type { XmaxRealtimeManaging } from "./Core/Realtime/XmaxRealtimeManaging";
 
-// Foundation
+/**
+ * Foundation
+ */
 export type { NetworkQualityLevel, NetworkStatistics, NetworkStatisticsListener } from "./Foundation/RTC/NetworkStatistics";
 export { XmaxError, XmaxErrorCode } from "./Foundation/Errors/XmaxError";
 export type { XmaxErrorListener } from "./Foundation/Errors/XmaxError";
@@ -24,7 +30,9 @@ export type {
 } from "./Foundation/RTC/VideoStatistics";
 export { XmaxEnvironment, apiBaseURL } from "./Foundation/Runtime/XmaxEnvironment";
 
-// Service / Realtime
+/**
+ * Service / Realtime
+ */
 export type {
   RealtimeLaunchTiming,
   RealtimeLaunchTimingListener,
@@ -50,11 +58,15 @@ export {
 export type { RealtimeVideoFormatInit } from "./Service/Realtime/RealtimeVideoFormat";
 export { RealtimeVideoTrack } from "./Service/Realtime/RealtimeVideoTrack";
 
-// Service / Media
+/**
+ * Service / Media
+ */
 export { MediaService } from "./Service/Media/MediaService";
 export type { MediaServicing } from "./Service/Media/MediaServicing";
 
-// Service / Storage
+/**
+ * Service / Storage
+ */
 export { StorageService } from "./Service/Storage/StorageService";
 export type {
   StorageServicing,
@@ -62,6 +74,8 @@ export type {
 } from "./Service/Storage/StorageServicing";
 export { StoredFile } from "./Service/Storage/StoredFile";
 
-// Render
+/**
+ * Render
+ */
 export { XmaxVideoView } from "./Render/Video/XmaxVideoView";
 export { XmaxRealtimeVideoView } from "./Render/Video/XmaxRealtimeVideoView";

@@ -9,40 +9,59 @@ import { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
 import { StreamID } from "../../Service/Realtime/StreamID";
 import { VideoRenderRegistry, type VideoRenderTarget } from "../../Service/Realtime/VideoRenderBinding";
 import type { RemoteStreamBinding, StreamControlling } from "../../Stream/StreamControlling";
-import type { RoomEventTargetSize } from "../../Stream/Room/RoomEvent";
 import type { RealtimeLaunchTimer } from "./RealtimeLaunchTimer";
 import { RealtimeCoordinator } from "./RealtimeCoordinator";
 
-/** 内部连接管理器：拥有会话、心跳、RTC 连接及远端轨道；不提交公开状态。 */
+/**
+ * 内部连接管理器：拥有会话、心跳、RTC 连接及远端轨道；不提交公开状态。
+ */
 export class XmaxRealtimeConnectionManager {
+  /**
+   * 会话资源
+   */
   private activeSession?: RealtimeSession;
+
+  /**
+   * 远端轨道与渲染绑定
+   */
   private activeRemoteTrack?: RealtimeVideoTrack;
-  private remoteBinding?: {
-    target: VideoRenderTarget;
-    setFrameInterpolation: (options?: RemoteFrameInterpolationOptions) => void;
-    setMediaStream: (stream: MediaStream | null) => void;
-    setMirrored: (mirrored: boolean) => void;
-  };
-  private targetSize?: RoomEventTargetSize;
+  private remoteTarget?: VideoRenderTarget;
 
-  constructor(private readonly dependencies: {
-    sessionService?: RealtimeSessionServicing;
-    streamController: StreamControlling;
-    timing: RealtimeLaunchTimer;
-    isMirrored: () => boolean;
-    remoteAudioVolume: () => number;
-    onHeartbeatFailure: (sessionID: string, error: XmaxError) => void;
-    onFrameDisplayed: () => void;
-    onRenderAttached: () => void;
-    onRenderDetached: () => void;
-  }) {}
+  /**
+   * 注入会话、传输、计时和渲染回调依赖；连接资源在 connect 时创建。
+   */
+  constructor(
+    /**
+     * 会话、传输、计时与渲染依赖
+     */
+    private readonly dependencies: {
+      sessionService?: RealtimeSessionServicing;
+      streamController: StreamControlling;
+      timing: RealtimeLaunchTimer;
+      isMirrored: () => boolean;
+      remoteAudioVolume: () => number;
+      onHeartbeatFailure: (sessionID: string, error: XmaxError) => void;
+      onFrameDisplayed: () => void;
+      onRenderAttached: () => void;
+      onRenderDetached: () => void;
+    }
+  ) {}
 
+  /**
+   * 当前活动会话标识；尚未连接或清理完成后为空。
+   */
   get currentSessionID(): string | undefined { return this.activeSession?.id; }
-  get currentTargetSize(): RoomEventTargetSize | undefined { return this.targetSize; }
 
-  /** 未配置 API 服务时在连接操作开始前报错，不影响本地预览。 */
+  /**
+   * 未配置 API 服务时在连接操作开始前报错，不影响本地预览。
+   */
   validateConfiguration(): void { this.requireSessionService(); }
 
+  /**
+   * 创建会话、配置编码、进房并发布本地媒体，启动心跳后返回远端占位流。
+   * 进房结束即记录连接耗时；可选 beforePublish 检查只阻塞发布，不计入连接耗时。
+   * @throws 会话、进房、发布失败或操作租约已失效时抛出错误，由上层统一清理。
+   */
   async connect(options: {
     localTrack: RealtimeVideoTrack;
     model: RealtimeModel;
@@ -53,12 +72,14 @@ export class XmaxRealtimeConnectionManager {
   }): Promise<RealtimeMediaStream> {
     const sessionService = this.requireSessionService();
     const streamController = this.dependencies.streamController;
+
     // 会话创建成功后立即登记，供失败清理时关闭会话。
     options.ensureCurrent();
     const completeConnection = this.dependencies.timing.startConnection();
     const session = await sessionService.createSession(options.model);
     this.activeSession = session;
     options.ensureCurrent();
+
     const connection = session.connection;
     if (!connection) {
       throw new XmaxError(
@@ -110,30 +131,51 @@ export class XmaxRealtimeConnectionManager {
     return new RealtimeMediaStream({ id: StreamID.remote, videoTrack: remoteTrack });
   }
 
+  /**
+   * 更新已绑定远端视图的插帧配置；传 undefined 停用插帧。
+   */
   setFrameInterpolation(options?: RemoteFrameInterpolationOptions): void {
-    this.remoteBinding?.setFrameInterpolation(options);
+    this.remoteTarget?.setFrameInterpolation?.(options);
   }
 
-  clearRemoteMedia(): void { this.remoteBinding?.setMediaStream(null); }
+  /**
+   * 清空远端视图的媒体流，保留轨道与视图绑定以供统一清理。
+   */
+  clearRemoteMedia(): void { this.remoteTarget?.setMediaStream(null); }
+  /**
+   * 停止会话心跳；未配置会话服务时不执行操作。
+   */
   stopHeartbeat(): void { this.dependencies.sessionService?.stopHeartbeat(); }
 
-  /** 等待接收轨解除静音；超时只警告，取消必须立即退出并移除监听。 */
+  /**
+   * 等待接收轨解除静音；超时只警告，取消必须立即退出并移除监听。
+   */
   async waitUntilRemoteTrackReady(timeoutMs: number, signal: AbortSignal): Promise<void> {
     if (signal.aborted) throw RealtimeCoordinator.cancelledError();
+
     const mediaTrack = this.activeRemoteTrack?.mediaStreamTrack;
     if (!mediaTrack || !mediaTrack.muted) return;
+
     await new Promise<void>((resolve, reject) => {
       const cleanup = () => {
         clearTimeout(timer);
         mediaTrack.removeEventListener("unmute", finish);
         signal.removeEventListener("abort", abort);
       };
-      const finish = () => { cleanup(); resolve(); };
-      const abort = () => { cleanup(); reject(RealtimeCoordinator.cancelledError()); };
+      const finish = () => {
+        cleanup();
+        resolve();
+      };
+      const abort = () => {
+        cleanup();
+        reject(RealtimeCoordinator.cancelledError());
+      };
+
       const timer = setTimeout(() => {
         XmaxLogger.realtime.warning(() => "等待远端生成流首帧超时 (Timed Out Waiting for the First Remote Frame)");
         finish();
       }, timeoutMs);
+
       mediaTrack.addEventListener("unmute", finish);
       signal.addEventListener("abort", abort, { once: true });
       if (signal.aborted) abort();
@@ -152,20 +194,24 @@ export class XmaxRealtimeConnectionManager {
       if (track) {
         track.mediaStreamTrack = undefined;
       }
-      this.remoteBinding?.setMediaStream(null);
+      this.remoteTarget?.setMediaStream(null);
       return;
     }
+
     if (!track) {
       throw new XmaxError(
         XmaxErrorCode.rtcError,
         "Remote generation stream arrived without an active realtime connection",
       );
     }
+
     track.mediaStreamTrack = binding.videoTrack;
-    this.remoteBinding?.setMediaStream(new MediaStream([binding.videoTrack]));
+    this.remoteTarget?.setMediaStream(new MediaStream([binding.videoTrack]));
   }
 
-  /** 为远端轨道注册渲染绑定：attach 时挂流占位，媒体轨到达后送入画面。 */
+  /**
+   * 为远端轨道注册渲染绑定：attach 时挂流占位，媒体轨到达后送入画面。
+   */
   private registerRemoteBinding(track: RealtimeVideoTrack): void {
     VideoRenderRegistry.register(track, {
       frameDisplayHandler: () => {
@@ -174,26 +220,19 @@ export class XmaxRealtimeConnectionManager {
         }
       },
       attachHandler: (view) => {
-        this.remoteBinding?.setFrameInterpolation(undefined);
+        this.remoteTarget?.setFrameInterpolation?.(undefined);
+
         view.isMirrored = this.dependencies.isMirrored();
-        this.remoteBinding = {
-          target: view,
-          setFrameInterpolation: (options) => view.setFrameInterpolation?.(options),
-          setMediaStream: (stream) => {
-            view.setMediaStream(stream);
-          },
-          setMirrored: (mirrored) => {
-            view.isMirrored = mirrored;
-          },
-        };
+        this.remoteTarget = view;
         this.dependencies.onRenderAttached();
+
         const mediaTrack = track.mediaStreamTrack;
         view.setMediaStream(mediaTrack ? new MediaStream([mediaTrack]) : null);
       },
       detachHandler: (view) => {
-        if (this.remoteBinding?.target === view) {
+        if (this.remoteTarget === view) {
           this.dependencies.onRenderDetached();
-          this.remoteBinding = undefined;
+          this.remoteTarget = undefined;
         }
         view.setFrameInterpolation?.(undefined);
         view.setMediaStream(null);
@@ -201,14 +240,18 @@ export class XmaxRealtimeConnectionManager {
     });
   }
 
-  /** 同步远端结果画面的镜像状态：与当前本地摄像头位置保持一致。 */
+  /**
+   * 同步远端结果画面的镜像状态：与当前本地摄像头位置保持一致。
+   */
   updateRemoteMirror(): void {
-    this.remoteBinding?.setMirrored(
-      this.dependencies.isMirrored(),
-    );
+    if (this.remoteTarget) {
+      this.remoteTarget.isMirrored = this.dependencies.isMirrored();
+    }
   }
 
-  /** 构造当前远端生成结果媒体流。 */
+  /**
+   * 构造当前远端生成结果媒体流。
+   */
   makeRemoteStream(): RealtimeMediaStream {
     const track = this.activeRemoteTrack;
     if (!track) {
@@ -228,10 +271,12 @@ export class XmaxRealtimeConnectionManager {
     if (!current || current.id !== session.id) {
       return;
     }
+
     const next = session.connection;
     if (!next) {
       return;
     }
+
     const previous = current.connection;
     const bindingChanged =
       previous !== undefined &&
@@ -246,6 +291,7 @@ export class XmaxRealtimeConnectionManager {
       );
       return;
     }
+
     this.activeSession = new RealtimeSession({
       id: session.id,
       userID: session.userID ?? current.userID,
@@ -254,25 +300,31 @@ export class XmaxRealtimeConnectionManager {
       closeReason: session.closeReason,
     });
   }
-  /** 尽力清理全部连接资源，即使退房失败也关闭服务端会话。 */
+  /**
+   * 尽力清理全部连接资源，即使退房失败也关闭服务端会话。
+   */
   async disconnect(): Promise<string | undefined> {
     const sessionID = this.activeSession?.id;
+
     this.stopHeartbeat();
     this.clearRemoteMedia();
+
     try {
       await this.dependencies.streamController.disconnect();
     } catch (error) {
       XmaxLogger.realtime.error(() => `断开 RTC 连接失败 (Failed to Disconnect RTC)\n└─ ${XmaxError.from(error).message}`);
     }
+
     const track = this.activeRemoteTrack;
     if (track) {
       VideoRenderRegistry.unregister(track);
       track.mediaStreamTrack = undefined;
     }
+
     this.activeSession = undefined;
     this.activeRemoteTrack = undefined;
-    this.remoteBinding = undefined;
-    this.targetSize = undefined;
+    this.remoteTarget = undefined;
+
     if (sessionID && this.dependencies.sessionService) {
       try {
         await this.dependencies.sessionService.closeSession(sessionID);
@@ -280,10 +332,13 @@ export class XmaxRealtimeConnectionManager {
         XmaxLogger.realtime.error(() => `关闭实时会话失败 (Failed to Close Realtime Session)\n└─ ${XmaxError.from(error).message}`);
       }
     }
+
     return sessionID;
   }
 
-  /** 获取会话 Service；未配置 API 服务时抛出配置错误。 */
+  /**
+   * 获取会话 Service；未配置 API 服务时抛出配置错误。
+   */
   private requireSessionService(): RealtimeSessionServicing {
     if (!this.dependencies.sessionService) {
       throw new XmaxError(

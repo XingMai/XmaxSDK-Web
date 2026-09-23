@@ -9,12 +9,18 @@ import type { RemoteFrameInterpolationOptions } from "../../Render/Video/RemoteV
  * 不感知具体视图类型。
  */
 export interface VideoRenderTarget {
-  /** 画面是否镜像显示（仅影响显示，不影响发布流）。 */
+  /**
+   * 画面是否镜像显示（仅影响显示，不影响发布流）。
+   */
   isMirrored: boolean;
 
-  /** 设置渲染用的媒体流；传 null 清空画面。 */
+  /**
+   * 设置渲染用的媒体流；传 null 清空画面。
+   */
   setMediaStream: (stream: MediaStream | null) => void;
-  /** SDK 视频视图实现；自定义只显示原流的目标可以不实现。 */
+  /**
+   * SDK 视频视图实现；自定义只显示原流的目标可以不实现。
+   */
   setFrameInterpolation?: (options?: RemoteFrameInterpolationOptions) => void;
 }
 
@@ -22,13 +28,19 @@ export interface VideoRenderTarget {
  * 轨道与渲染视图之间的绑定行为。
  */
 export interface VideoRenderBinding {
-  /** 视图首帧呈现时通知轨道拥有者，独立于视图自身的渐入回调。 */
+  /**
+   * 视图首帧呈现时通知轨道拥有者，独立于视图自身的渐入回调。
+   */
   frameDisplayHandler?: () => void;
 
-  /** 视图绑定轨道时调用；负责把画面接入视图。 */
+  /**
+   * 视图绑定轨道时调用；负责把画面接入视图。
+   */
   attachHandler: (target: VideoRenderTarget, contentMode: VideoContentMode) => void;
 
-  /** 视图解绑轨道时调用；负责释放画面资源。 */
+  /**
+   * 视图解绑轨道时调用；负责释放画面资源。
+   */
   detachHandler: (target: VideoRenderTarget) => void;
 }
 
@@ -39,19 +51,31 @@ export interface VideoRenderBinding {
  * 未注册绑定的轨道由视图按 `mediaStreamTrack` 直接渲染。
  */
 export class VideoRenderRegistry {
+  /**
+   * 轨道渲染绑定索引
+   */
   private static bindings = new WeakMap<RealtimeVideoTrack, VideoRenderBinding>();
 
-  /** @internal */
+  /**
+   * 注册轨道的自定义渲染绑定，覆盖该轨道已有的绑定。
+   * @internal
+   */
   static register(track: RealtimeVideoTrack, binding: VideoRenderBinding): void {
     VideoRenderRegistry.bindings.set(track, binding);
   }
 
-  /** @internal */
+  /**
+   * 移除轨道的渲染绑定，不执行视图解绑或资源释放。
+   * @internal
+   */
   static unregister(track: RealtimeVideoTrack): void {
     VideoRenderRegistry.bindings.delete(track);
   }
 
-  /** @internal */
+  /**
+   * 查询轨道的自定义渲染绑定；未注册时返回 undefined。
+   * @internal
+   */
   static binding(forTrack: RealtimeVideoTrack): VideoRenderBinding | undefined {
     return VideoRenderRegistry.bindings.get(forTrack);
   }

@@ -403,7 +403,7 @@ describe("StreamController", () => {
   });
 
   it("rejects a second generation while one is active", async () => {
-    const { controller, rtc } = makeStream();
+    const { controller } = makeStream();
     await controller.connect(connection, false, noopEnsureActive);
     const confirmation = controller.beginGeneration({
       taskID: "task-001",

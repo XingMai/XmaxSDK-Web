@@ -11,7 +11,9 @@ import { RoomEvent, type RoomEventTargetSize } from "./RoomEvent";
 import { RoomHeartbeat } from "./RoomHeartbeat";
 import { RoomMessageCodec } from "./RoomMessageCodec";
 
-/** 房间生命周期状态。 */
+/**
+ * 房间生命周期状态。
+ */
 type RoomState =
   | { kind: "idle" }
   | { kind: "joining"; operationID: string }
@@ -19,13 +21,19 @@ type RoomState =
   | { kind: "leaving" };
 
 export interface RoomControllerOptions {
-  /** RTC 引擎与房间能力组件。 */
+  /**
+   * RTC 引擎与房间能力组件。
+   */
   rtcManager: RtcManaging;
 
-  /** 房间心跳组件（可替换，测试用）。 */
+  /**
+   * 房间心跳组件（可替换，测试用）。
+   */
   heartbeat?: RoomHeartbeat;
 
-  /** 房间消息编解码组件（可替换，测试用）。 */
+  /**
+   * 房间消息编解码组件（可替换，测试用）。
+   */
   codec?: RoomMessageCodec;
 }
 
@@ -36,17 +44,25 @@ export interface RoomControllerOptions {
  * （TRTC 自定义消息通道只有广播语义），再分发给监听器。
  */
 export class RoomController implements RoomControlling {
-  // 基础层组件
+  /**
+   * 基础层组件
+   */
   private readonly rtcManager: RtcManaging;
 
-  // 传输层组件
+  /**
+   * 传输层组件
+   */
   private readonly heartbeat: RoomHeartbeat;
   private readonly codec: RoomMessageCodec;
 
-  // 事件监听
+  /**
+   * 事件监听
+   */
   private listener?: RoomListener;
 
-  // 房间资源
+  /**
+   * 房间资源
+   */
   private state: RoomState = { kind: "idle" };
   private leaveOperation?: Promise<void>;
 
@@ -127,7 +143,9 @@ export class RoomController implements RoomControlling {
     }
   }
 
-  /** 停止房间心跳并离开当前 RTC 房间；并发的离开操作共享同一个任务。 */
+  /**
+   * 停止房间心跳并离开当前 RTC 房间；并发的离开操作共享同一个任务。
+   */
   async leave(): Promise<void> {
     if (this.leaveOperation) {
       await this.leaveOperation;
@@ -205,7 +223,9 @@ export class RoomController implements RoomControlling {
     );
   }
 
-  /** 尝试发送生成停止信令；未进房或任务标识为空时忽略。 */
+  /**
+   * 尝试发送生成停止信令；未进房或任务标识为空时忽略。
+   */
   stopGeneration(taskID: string): void {
     if (!taskID || this.state.kind !== "joined") {
       return;
@@ -213,7 +233,9 @@ export class RoomController implements RoomControlling {
     this.send(RoomEvent.stop({ userID: this.state.userID, taskID }));
   }
 
-  /** 发送生成任务的交互轨迹；任务标识或轨迹为空时忽略。 */
+  /**
+   * 发送生成任务的交互轨迹；任务标识或轨迹为空时忽略。
+   */
   sendTracks(taskID: string, points: RealtimePoint[]): void {
     if (!taskID || points.length === 0) {
       return;
@@ -227,12 +249,16 @@ export class RoomController implements RoomControlling {
     );
   }
 
-  /** 设置房间事件监听器，传入空值时清除监听器。 */
+  /**
+   * 设置房间事件监听器，传入空值时清除监听器。
+   */
   setListener(listener?: RoomListener): void {
     this.listener = listener;
   }
 
-  /** 执行离开：复位状态、停止心跳、清空组包缓存并退房。 */
+  /**
+   * 执行离开：复位状态、停止心跳、清空组包缓存并退房。
+   */
   private async performLeave(): Promise<void> {
     this.state = { kind: "idle" };
     this.heartbeat.stop();
@@ -241,22 +267,15 @@ export class RoomController implements RoomControlling {
     this.leaveOperation = undefined;
   }
 
-  /** 组包入站消息并按目标用户过滤后分发完整业务消息。 */
+  /**
+   * 组包入站消息并按目标用户过滤后分发完整业务消息。
+   */
   handleIncomingMessage(senderUserID: string, raw: string): void {
-    const complete = this.codec.processIncoming(senderUserID, raw);
-    if (complete === undefined) {
-      return;
-    }
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(complete);
-    } catch {
-      XmaxLogger.room.warning(() => "房间消息不是合法 JSON (Room Message Is Not Valid JSON)");
-      return;
-    }
+    const parsed = this.codec.processIncoming(senderUserID, raw);
     if (typeof parsed !== "object" || parsed === null) {
       return;
     }
+
     const message = parsed as Record<string, unknown>;
 
     // TRTC 自定义消息只有广播语义，按 payload 中的 user_id 过滤目标。
@@ -266,10 +285,13 @@ export class RoomController implements RoomControlling {
     if (targetUserID && ownUserID && targetUserID !== ownUserID) {
       return;
     }
+
     this.listener?.onRoomMessage(senderUserID, message);
   }
 
-  /** 发送房间信令并输出日志。 */
+  /**
+   * 发送房间信令并输出日志。
+   */
   private send(message: string): void {
     for (const packet of this.codec.encodeOutgoing(message)) {
       try {
@@ -285,7 +307,9 @@ export class RoomController implements RoomControlling {
     );
   }
 
-  /** 返回当前房间中的用户标识；未进房时抛出错误。 */
+  /**
+   * 返回当前房间中的用户标识；未进房时抛出错误。
+   */
   private requireUserID(): string {
     if (this.state.kind !== "joined") {
       throw new XmaxError(XmaxErrorCode.rtcError, "RTC room is not joined");

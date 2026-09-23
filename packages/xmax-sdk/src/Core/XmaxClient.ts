@@ -16,10 +16,17 @@ import { apiBaseURL } from "../Foundation/Runtime/XmaxEnvironment";
  * SDK 的统一入口，负责创建实时和媒体服务组件。
  */
 export class XmaxClient {
-  /** 客户端使用的全局配置。 */
+  /**
+   * 客户端配置
+   */
+  /**
+   * 客户端使用的全局配置。
+   */
   readonly configuration: XmaxConfiguration;
 
-  // 服务层组件
+  /**
+   * 服务层组件
+   */
   private readonly apiService: ApiServicing;
 
   /**

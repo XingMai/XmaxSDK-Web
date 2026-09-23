@@ -3,13 +3,19 @@ import { XmaxLoggerOption } from "../Foundation/Logging/XmaxLogger";
 import { XmaxEnvironment } from "../Foundation/Runtime/XmaxEnvironment";
 
 export interface XmaxConfigurationInit {
-  /** 调用 Xmax 服务使用的 API Key。 */
+  /**
+   * 调用 Xmax 服务使用的 API Key。
+   */
   apiKey: string;
 
-  /** SDK 连接的服务环境；默认为国内环境。 */
+  /**
+   * SDK 连接的服务环境；默认为国内环境。
+   */
   environment?: XmaxEnvironment;
 
-  /** SDK 输出的日志类型；默认为不输出日志。 */
+  /**
+   * SDK 输出的日志类型；默认为不输出日志。
+   */
   loggerOptions?: XmaxLoggerOption;
 }
 
@@ -17,13 +23,25 @@ export interface XmaxConfigurationInit {
  * SDK 全局配置。
  */
 export class XmaxConfiguration {
-  /** 调用 Xmax 服务使用的 API Key。 */
+  /**
+   * 服务身份与环境
+   */
+  /**
+   * 调用 Xmax 服务使用的 API Key。
+   */
   readonly apiKey: string;
 
-  /** SDK 连接的服务环境，同时决定日志细项语言：国内为中文，海外为英文。 */
+  /**
+   * SDK 连接的服务环境，同时决定日志细项语言：国内为中文，海外为英文。
+   */
   readonly environment: XmaxEnvironment;
 
-  /** SDK 输出的日志类型；默认为不输出日志。 */
+  /**
+   * 日志配置
+   */
+  /**
+   * SDK 输出的日志类型；默认为不输出日志。
+   */
   readonly loggerOptions: XmaxLoggerOption;
 
   /**

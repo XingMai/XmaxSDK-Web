@@ -2,25 +2,39 @@ import type { XmaxError } from "../../Foundation/Errors/XmaxError";
 import type { RealtimeSession } from "./RealtimeSession";
 
 export interface RealtimeSessionConnectionInit {
-  /** RTC 提供方标识（当前仅支持 `trtc`）。 */
+  /**
+   * RTC 提供方标识（当前仅支持 `trtc`）。
+   */
   provider: string;
 
-  /** TRTC 房间号（字符串房间号）。 */
+  /**
+   * TRTC 房间号（字符串房间号）。
+   */
   roomID: string;
 
-  /** TRTC SDKAppID（按字符串处理）。 */
+  /**
+   * TRTC SDKAppID（按字符串处理）。
+   */
   sdkAppID: string;
 
-  /** TRTC 登录身份（`rtc_user_id`，不是业务 `user_id`）。 */
+  /**
+   * TRTC 登录身份（`rtc_user_id`，不是业务 `user_id`）。
+   */
   userID: string;
 
-  /** TRTC 登录签名。 */
+  /**
+   * TRTC 登录签名。
+   */
   userSig: string;
 
-  /** TRTC 进房鉴权字段（字符串房间号对应的 privateMapKey）。 */
+  /**
+   * TRTC 进房鉴权字段（字符串房间号对应的 privateMapKey）。
+   */
   privateMapKey: string;
 
-  /** 房间内生成 Bot 的用户标识，用于匹配远端结果流。 */
+  /**
+   * 房间内生成 Bot 的用户标识，用于匹配远端结果流。
+   */
   botID?: string;
 }
 
@@ -31,28 +45,48 @@ export interface RealtimeSessionConnectionInit {
  * 下发新的 `userSig` / `privateMapKey`，使用方应覆盖本地缓存。
  */
 export class RealtimeSessionConnection {
-  // RTC 提供方
-  /** RTC 提供方标识（当前仅支持 `trtc`）。 */
+  /**
+   * RTC 提供方
+   */
+  /**
+   * RTC 提供方标识（当前仅支持 `trtc`）。
+   */
   readonly provider: string;
 
-  // 进房参数
-  /** TRTC 房间号（字符串房间号）。 */
+  /**
+   * 进房参数
+   */
+  /**
+   * TRTC 房间号（字符串房间号）。
+   */
   readonly roomID: string;
 
-  /** TRTC SDKAppID（按字符串处理）。 */
+  /**
+   * TRTC SDKAppID（按字符串处理）。
+   */
   readonly sdkAppID: string;
 
-  /** TRTC 登录身份（`rtc_user_id`，不是业务 `user_id`）。 */
+  /**
+   * TRTC 登录身份（`rtc_user_id`，不是业务 `user_id`）。
+   */
   readonly userID: string;
 
-  /** TRTC 登录签名。 */
+  /**
+   * TRTC 登录签名。
+   */
   readonly userSig: string;
 
-  /** TRTC 进房鉴权字段（字符串房间号对应的 privateMapKey）。 */
+  /**
+   * TRTC 进房鉴权字段（字符串房间号对应的 privateMapKey）。
+   */
   readonly privateMapKey: string;
 
-  // 房间成员
-  /** 房间内生成 Bot 的用户标识，用于匹配远端结果流。 */
+  /**
+   * 房间成员
+   */
+  /**
+   * 房间内生成 Bot 的用户标识，用于匹配远端结果流。
+   */
   readonly botID?: string;
 
   /**
@@ -77,13 +111,17 @@ export class RealtimeSessionConnection {
   }
 }
 
-/** 实时会话心跳失败回调。 */
+/**
+ * 实时会话心跳失败回调。
+ */
 export type RealtimeSessionHeartbeatFailureHandler = (
   sessionID: string,
   error: XmaxError,
 ) => void | Promise<void>;
 
-/** 实时会话心跳刷新回调；心跳成功且会话仍活跃时携带最新会话数据。 */
+/**
+ * 实时会话心跳刷新回调；心跳成功且会话仍活跃时携带最新会话数据。
+ */
 export type RealtimeSessionHeartbeatRefreshHandler = (
   session: RealtimeSession,
 ) => void;

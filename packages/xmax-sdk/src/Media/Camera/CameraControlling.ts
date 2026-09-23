@@ -12,16 +12,29 @@ export type CameraPreviewReadyHandler = (isCurrent: () => boolean) => void;
  * 定义本地摄像头流、麦克风采集和预览资源管理能力。
  */
 export interface CameraControlling {
-  /** 当前本地相机视频轨道；尚未创建或已停止时为空。 */
+  /**
+   * 当前本地相机视频轨道；尚未创建或已停止时为空。
+   */
   readonly currentTrack?: RealtimeVideoTrack;
 
-  /** 当前相机流是否配置为使用麦克风。 */
+  /**
+   * 当前相机流是否配置为使用麦克风。
+   */
   readonly useMicrophone: boolean;
 
-  /** 发布前等待当前相机首张亮度合格帧；超时放行，取消或采样失败时拒绝。 */
+  /**
+   * 当前相机流是否启用发布前的帧亮度检测。
+   */
+  readonly isFrameValidationEnabled: boolean;
+
+  /**
+   * 发布前等待当前相机首张亮度合格帧；超时放行，取消或采样失败时拒绝。
+   */
   waitForValidCameraFrame(signal: AbortSignal): Promise<void>;
 
-  /** 设置当前相机流的一次性内部就绪处理；条件为已收到有效帧且预览已绑定。 */
+  /**
+   * 设置当前相机流的一次性内部就绪处理；条件为已收到有效帧且预览已绑定。
+   */
   setPreviewReadyHandler(handler?: CameraPreviewReadyHandler): void;
 
   /**
@@ -32,9 +45,15 @@ export interface CameraControlling {
     videoFormat: RealtimeVideoFormat;
     position: CameraPosition;
     useMicrophone: boolean;
+    /**
+     * 默认 true；跟随当前相机流，切换设备和重新连接时保留。
+     */
+    enableFrameValidation?: boolean;
   }): Promise<RealtimeMediaStream>;
 
-  /** 停止相机和麦克风采集，并释放当前轨道及本地预览资源。 */
+  /**
+   * 停止相机和麦克风采集，并释放当前轨道及本地预览资源。
+   */
   stopLocalCameraStream(): Promise<void>;
 
   /**

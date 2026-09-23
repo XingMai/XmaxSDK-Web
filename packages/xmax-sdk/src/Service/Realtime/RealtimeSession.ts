@@ -1,19 +1,29 @@
 import type { RealtimeSessionConnection } from "./RealtimeSessionConnection";
 
 export interface RealtimeSessionInit {
-  /** 会话标识（sessionUid）。 */
+  /**
+   * 会话标识（sessionUid）。
+   */
   id: string;
 
-  /** 业务用户标识。 */
+  /**
+   * 业务用户标识。
+   */
   userID?: string;
 
-  /** 会话状态（如 ACTIVE）。 */
+  /**
+   * 会话状态（如 ACTIVE）。
+   */
   status?: string;
 
-  /** RTC 连接参数。 */
+  /**
+   * RTC 连接参数。
+   */
   connection?: RealtimeSessionConnection;
 
-  /** 会话关闭原因。 */
+  /**
+   * 会话关闭原因。
+   */
   closeReason?: string;
 }
 
@@ -21,22 +31,38 @@ export interface RealtimeSessionInit {
  * Xmax 实时生成会话。
  */
 export class RealtimeSession {
-  // 会话信息
-  /** 会话标识（sessionUid）。 */
+  /**
+   * 会话信息
+   */
+  /**
+   * 会话标识（sessionUid）。
+   */
   readonly id: string;
 
-  /** 业务用户标识。 */
+  /**
+   * 业务用户标识。
+   */
   readonly userID?: string;
 
-  // 运行状态
-  /** 会话状态（如 ACTIVE）；响应未携带时为空。 */
+  /**
+   * 运行状态
+   */
+  /**
+   * 会话状态（如 ACTIVE）；响应未携带时为空。
+   */
   readonly status?: string;
 
-  /** 会话关闭原因。 */
+  /**
+   * 会话关闭原因。
+   */
   readonly closeReason?: string;
 
-  // RTC 连接
-  /** RTC 连接参数；心跳等响应未携带完整参数时为空。 */
+  /**
+   * RTC 连接
+   */
+  /**
+   * RTC 连接参数；心跳等响应未携带完整参数时为空。
+   */
   readonly connection?: RealtimeSessionConnection;
 
   /**

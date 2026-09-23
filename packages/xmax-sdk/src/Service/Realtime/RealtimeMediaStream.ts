@@ -4,10 +4,17 @@ import { RealtimeVideoTrack } from "./RealtimeVideoTrack";
  * 实时生成输入/输出的媒体流。
  */
 export class RealtimeMediaStream {
-  /** 媒体流标识。 */
+  /**
+   * 流标识与轨道
+   */
+  /**
+   * 媒体流标识。
+   */
   readonly id: string;
 
-  /** 媒体流包含的视频轨道。 */
+  /**
+   * 媒体流包含的视频轨道。
+   */
   readonly videoTrack?: RealtimeVideoTrack;
 
   /**

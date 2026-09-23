@@ -17,7 +17,9 @@ import {
   type VideoEncodingConfiguration,
 } from "./VideoEncodingConfiguration";
 
-/** TRTC 事件名（字符串字面量，避免在非浏览器环境引用 TRTC 运行时常量）。 */
+/**
+ * TRTC 事件名（字符串字面量，避免在非浏览器环境引用 TRTC 运行时常量）。
+ */
 const RTC_EVENT = {
   remoteVideoAvailable: "remote-video-available",
   remoteVideoUnavailable: "remote-video-unavailable",
@@ -26,13 +28,19 @@ const RTC_EVENT = {
   networkQuality: "network-quality",
 } as const;
 
-/** TRTC 主流类型标识。 */
+/**
+ * TRTC 主流类型标识。
+ */
 const STREAM_TYPE_MAIN = "main";
 
-/** 房间自定义消息使用的 cmdId。 */
+/**
+ * 房间自定义消息使用的 cmdId。
+ */
 const CUSTOM_MESSAGE_CMD_ID = 1;
 
-/** 房间自定义消息编码后的字节上限。 */
+/**
+ * 房间自定义消息编码后的字节上限。
+ */
 const ROOM_MESSAGE_MAX_BYTES = 1000;
 
 /**
@@ -43,25 +51,39 @@ const ROOM_MESSAGE_MAX_BYTES = 1000;
  */
 const CAPTURE_PLACEHOLDER_BITRATE = 1000;
 
-/** 编码策略偏好到 TRTC 弱网偏好的映射。 */
+/**
+ * 编码策略偏好到 TRTC 弱网偏好的映射。
+ */
 const QOS_PREFERENCE_MAP: Record<RtcVideoEncoderPreference, "smooth" | "clear"> = {
   [RtcVideoEncoderPreference.maintainFramerate]: "smooth",
   [RtcVideoEncoderPreference.maintainQuality]: "clear",
 };
 
-/** 引擎事件订阅需要的最小接口，用于隔离 TRTC 事件枚举类型。 */
+/**
+ * 引擎事件订阅需要的最小接口，用于隔离 TRTC 事件枚举类型。
+ */
 interface RtcEventSource {
+  /**
+   * 为指定 RTC 事件注册回调。
+   */
   on(event: string, handler: (event: never) => void): void;
+  /**
+   * 移除指定 RTC 事件的对应回调。
+   */
   off(event: string, handler: (event: never) => void): void;
 }
 
-/** TRTC 远端视频事件的负载。 */
+/**
+ * TRTC 远端视频事件的负载。
+ */
 interface RtcRemoteVideoEvent {
   userId: string;
   streamType: string;
 }
 
-/** TRTC 自定义消息事件的负载。 */
+/**
+ * TRTC 自定义消息事件的负载。
+ */
 interface RtcCustomMessageEvent {
   userId: string;
   cmdId: number;
@@ -76,20 +98,30 @@ interface RtcCustomMessageEvent {
  * 交给 SDK 自己的渲染层预览。房间信令走自定义消息通道（`cmdId = 1`）。
  */
 export class RtcManager implements RtcManaging {
-  // 依赖
+  /**
+   * 依赖
+   */
   private readonly engineManager: RtcEngineManager;
 
-  // RTC 资源
+  /**
+   * RTC 资源
+   */
   private lease?: RtcEngineLease;
 
-  // 采集状态
+  /**
+   * 采集状态
+   */
   private isCapturing = false;
   private isAudioCapturing = false;
 
-  // 房间状态
+  /**
+   * 房间状态
+   */
   private isInRoom = false;
 
-  // 事件监听
+  /**
+   * 事件监听
+   */
   private eventListener?: RtcEventListener;
   private removeStatsListeners?: () => void;
 
@@ -102,12 +134,16 @@ export class RtcManager implements RtcManaging {
     this.engineManager = engineManager;
   }
 
-  /** RTC 引擎是否已初始化。 */
+  /**
+   * RTC 引擎是否已初始化。
+   */
   get isInitialized(): boolean {
     return this.lease !== undefined;
   }
 
-  /** 初始化 RTC 引擎（获取独占租约）并注册事件桥接；已初始化时重复调用不产生效果。 */
+  /**
+   * 初始化 RTC 引擎（获取独占租约）并注册事件桥接；已初始化时重复调用不产生效果。
+   */
   async initialize(): Promise<void> {
     if (this.lease) {
       return;
@@ -117,7 +153,9 @@ export class RtcManager implements RtcManaging {
     this.lease = lease;
   }
 
-  /** 停止采集与发布、销毁 RTC 引擎并释放租约；未初始化时重复调用不产生效果。 */
+  /**
+   * 停止采集与发布、销毁 RTC 引擎并释放租约；未初始化时重复调用不产生效果。
+   */
   async destroy(): Promise<void> {
     const lease = this.lease;
     this.lease = undefined;
@@ -125,21 +163,26 @@ export class RtcManager implements RtcManaging {
     this.isCapturing = false;
     this.isAudioCapturing = false;
     this.isInRoom = false;
+
     this.removeStatsListeners?.();
     this.removeStatsListeners = undefined;
+
     if (!lease) {
       return;
     }
+
     try {
       await lease.engine.stopLocalAudio();
     } catch {
       // 引擎销毁前停止音频失败不影响租约释放。
     }
+
     try {
       await lease.engine.stopLocalVideo();
     } catch {
       // 引擎销毁前停止采集失败不影响租约释放。
     }
+
     this.engineManager.release(lease);
   }
 
@@ -217,7 +260,9 @@ export class RtcManager implements RtcManaging {
     }
   }
 
-  /** 停止摄像头采集；引擎未初始化或采集未启动时不产生效果。 */
+  /**
+   * 停止摄像头采集；引擎未初始化或采集未启动时不产生效果。
+   */
   async stopCameraCapture(): Promise<void> {
     const engine = this.lease?.engine;
     this.isCapturing = false;
@@ -251,6 +296,7 @@ export class RtcManager implements RtcManaging {
         "Already in an RTC room",
       );
     }
+
     try {
       await engine.enterRoom({
         sdkAppId,
@@ -267,12 +313,15 @@ export class RtcManager implements RtcManaging {
     }
   }
 
-  /** 离开当前 RTC 房间；未在房间中或引擎未初始化时不产生效果，退房失败仅记录日志。 */
+  /**
+   * 离开当前 RTC 房间；未在房间中或引擎未初始化时不产生效果，退房失败仅记录日志。
+   */
   async leaveRoom(): Promise<void> {
     const engine = this.lease?.engine;
     if (!engine || !this.isInRoom) {
       return;
     }
+
     this.isInRoom = false;
     try {
       await engine.exitRoom();
@@ -340,7 +389,9 @@ export class RtcManager implements RtcManaging {
     }
   }
 
-  /** 停止发布本地视频流；采集保持运行，本地预览不受影响。 */
+  /**
+   * 停止发布本地视频流；采集保持运行，本地预览不受影响。
+   */
   async unpublishLocalVideo(): Promise<void> {
     const engine = this.lease?.engine;
     if (!engine || !this.isCapturing) {
@@ -372,7 +423,9 @@ export class RtcManager implements RtcManaging {
     }
   }
 
-  /** 停止发布本地音频流；麦克风采集保持运行。 */
+  /**
+   * 停止发布本地音频流；麦克风采集保持运行。
+   */
   async unpublishLocalAudio(): Promise<void> {
     const engine = this.lease?.engine;
     if (!engine || !this.isAudioCapturing) {
@@ -458,6 +511,7 @@ export class RtcManager implements RtcManaging {
         "Not in an RTC room",
       );
     }
+
     const encoded = new TextEncoder().encode(message);
     if (encoded.byteLength > ROOM_MESSAGE_MAX_BYTES) {
       throw new XmaxError(
@@ -465,20 +519,26 @@ export class RtcManager implements RtcManaging {
         "Room message exceeds the 1000-byte limit",
       );
     }
+
     engine.sendCustomMessage({
       cmdId: CUSTOM_MESSAGE_CMD_ID,
       data: encoded.buffer as ArrayBuffer,
     });
   }
 
-  /** 设置 RTC 事件监听器，传入空值时清除监听器。 */
+  /**
+   * 设置 RTC 事件监听器，传入空值时清除监听器。
+   */
   setEventListener(listener?: RtcEventListener): void {
     this.eventListener = listener;
   }
 
-  /** 注册引擎事件桥接：媒体、消息及性能日志。 */
+  /**
+   * 注册引擎事件桥接：媒体、消息及性能日志。
+   */
   private registerEventBridge(engine: RtcEngine): void {
     const source = engine as unknown as RtcEventSource;
+
     // 直接使用 TRTC 的统计周期，不创建定时器；退房和旧引擎的迟到事件不输出。
     const onStatistics = (stats: TRTCStatistics) => {
       if (this.isInRoom && this.lease?.engine === engine) {
@@ -516,6 +576,7 @@ export class RtcManager implements RtcManaging {
         ));
       }
     };
+
     const onNetworkQuality = (stats: NetworkQuality) => {
       if (this.isInRoom && this.lease?.engine === engine) {
         RtcStatsLogger.logNetworkQuality(stats);
@@ -532,24 +593,28 @@ export class RtcManager implements RtcManaging {
         }));
       }
     };
+
     source.on(RTC_EVENT.statistics, onStatistics);
     source.on(RTC_EVENT.networkQuality, onNetworkQuality);
     this.removeStatsListeners = () => {
       source.off(RTC_EVENT.statistics, onStatistics);
       source.off(RTC_EVENT.networkQuality, onNetworkQuality);
     };
+
     source.on(RTC_EVENT.remoteVideoAvailable, (event: RtcRemoteVideoEvent) => {
       if (event.streamType !== STREAM_TYPE_MAIN) {
         return;
       }
       this.eventListener?.onRemoteVideoPublished(event.userId, true);
     });
+
     source.on(RTC_EVENT.remoteVideoUnavailable, (event: RtcRemoteVideoEvent) => {
       if (event.streamType !== STREAM_TYPE_MAIN) {
         return;
       }
       this.eventListener?.onRemoteVideoPublished(event.userId, false);
     });
+
     source.on(RTC_EVENT.customMessage, (event: RtcCustomMessageEvent) => {
       if (event.cmdId !== CUSTOM_MESSAGE_CMD_ID) {
         return;
@@ -565,7 +630,9 @@ export class RtcManager implements RtcManaging {
     });
   }
 
-  /** 返回当前引擎实例；未初始化时抛出错误。 */
+  /**
+   * 返回当前引擎实例；未初始化时抛出错误。
+   */
   private requireEngine(): RtcEngine {
     const engine = this.lease?.engine;
     if (!engine) {
@@ -577,11 +644,14 @@ export class RtcManager implements RtcManaging {
     return engine;
   }
 
-  /** 将 TRTC 错误映射为 SDK 统一错误。 */
+  /**
+   * 将 TRTC 错误映射为 SDK 统一错误。
+   */
   private mapError(error: unknown): XmaxError {
     if (error instanceof XmaxError) {
       return error;
     }
+
     const rtcError = error as {
       message?: unknown;
       originError?: { name?: string };
@@ -591,6 +661,7 @@ export class RtcManager implements RtcManaging {
       typeof rtcError?.message === "string" && rtcError.message.trim().length > 0
         ? rtcError.message.trim()
         : String(error);
+
     // 浏览器权限拒绝（getUserMedia 的 NotAllowedError 会被 TRTC 包装后抛出）。
     if (
       originName === "NotAllowedError" ||
@@ -603,6 +674,7 @@ export class RtcManager implements RtcManaging {
     if (originName) {
       return new XmaxError(XmaxErrorCode.mediaError, message);
     }
+
     return new XmaxError(XmaxErrorCode.rtcError, message);
   }
 }

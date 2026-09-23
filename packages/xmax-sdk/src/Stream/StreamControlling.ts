@@ -8,30 +8,48 @@ import type { RealtimeVideoFormat } from "../Service/Realtime/RealtimeVideoForma
 import type { RoomListener } from "./Room/RoomControlling";
 import type { RoomEventTargetSize } from "./Room/RoomEvent";
 
-/** 远端结果流及其可供渲染层绑定的视频轨。 */
+/**
+ * 远端结果流及其可供渲染层绑定的视频轨。
+ */
 export interface RemoteStreamBinding {
-  /** 远端流标识。 */
+  /**
+   * 远端流标识。
+   */
   stream: RemoteStream;
 
-  /** 远端视频轨。 */
+  /**
+   * 远端视频轨。
+   */
   videoTrack: MediaStreamTrack;
 }
 
-/** 远端生成流就绪（携带绑定）与清理（传入空值）回调。 */
+/**
+ * 远端生成流就绪（携带绑定）与清理（传入空值）回调。
+ */
 export type RemoteStreamListener = (binding: RemoteStreamBinding | null) => void;
 
-/** 生成开始/变更信令的公共参数。 */
+/**
+ * 生成开始/变更信令的公共参数。
+ */
 export interface StreamGenerationOptions {
-  /** 当前生成任务的唯一标识。 */
+  /**
+   * 当前生成任务的唯一标识。
+   */
   taskID: string;
 
-  /** 当前本地媒体使用的视频格式。 */
+  /**
+   * 当前本地媒体使用的视频格式。
+   */
   videoFormat: RealtimeVideoFormat;
 
-  /** 当前连接的回传尺寸；缺省时保持生成尺寸。 */
+  /**
+   * 当前连接的回传尺寸；缺省时保持生成尺寸。
+   */
   targetSize?: RoomEventTargetSize;
 
-  /** 当前生成任务使用的条件上下文。 */
+  /**
+   * 当前生成任务使用的条件上下文。
+   */
   context: RealtimeContext;
 }
 
@@ -39,13 +57,19 @@ export interface StreamGenerationOptions {
  * 定义传输层向 Core 暴露的统一能力。
  */
 export interface StreamControlling {
-  /** 监听本端上下行网络统计，传入 undefined 取消。 */
+  /**
+   * 监听本端上下行网络统计，传入 undefined 取消。
+   */
   setNetworkStatisticsListener(listener?: NetworkStatisticsListener): void;
 
-  /** 当前是否存在正在启动或已经运行的生成任务。 */
+  /**
+   * 当前是否存在正在启动或已经运行的生成任务。
+   */
   readonly hasGenerationTask: boolean;
 
-  /** 当前远端生成音频播放音量，取值范围为 `0...1`。 */
+  /**
+   * 当前远端生成音频播放音量，取值范围为 `0...1`。
+   */
   readonly remoteAudioVolume: number;
 
   /**
@@ -80,7 +104,9 @@ export interface StreamControlling {
     beforePublish?: () => Promise<void>,
   ): Promise<void>;
 
-  /** 清理生成状态、本地发布和远端订阅，并离开当前 RTC 房间。 */
+  /**
+   * 清理生成状态、本地发布和远端订阅，并离开当前 RTC 房间。
+   */
   disconnect(): Promise<void>;
 
   /**
@@ -132,12 +158,18 @@ export interface StreamControlling {
    */
   sendTracks(taskID: string, points: RealtimePoint[]): void;
 
-  /** 设置房间业务消息监听器，传入空值时清除监听器。 */
+  /**
+   * 设置房间业务消息监听器，传入空值时清除监听器。
+   */
   setRoomListener(listener?: RoomListener): void;
 
-  /** 设置本地主视频流统计监听器，传入 undefined 清除。 */
+  /**
+   * 设置本地主视频流统计监听器，传入 undefined 清除。
+   */
   setLocalVideoStatisticsListener(listener?: VideoStatisticsListener): void;
 
-  /** 监听当前实际生成结果流的统计，按已接受的远端用户标识过滤。 */
+  /**
+   * 监听当前实际生成结果流的统计，按已接受的远端用户标识过滤。
+   */
   setRemoteVideoStatisticsListener(listener?: RemoteVideoStatisticsListener): void;
 }

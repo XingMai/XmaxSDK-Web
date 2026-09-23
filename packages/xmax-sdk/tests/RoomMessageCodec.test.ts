@@ -38,21 +38,21 @@ describe("RoomMessageCodec", () => {
     for (const chunk of shuffled.slice(0, -1)) {
       expect(receiver.processIncoming("sender-001", chunk)).toBeUndefined();
     }
-    expect(receiver.processIncoming("sender-001", shuffled[shuffled.length - 1]!)).toBe(
-      message,
+    expect(receiver.processIncoming("sender-001", shuffled[shuffled.length - 1]!)).toEqual(
+      JSON.parse(message),
     );
   });
 
   it("treats non-chunk JSON as plain business messages", () => {
     const codec = new RoomMessageCodec();
     const plain = '{"event":"tracks","user_id":"user-001"}';
-    expect(codec.processIncoming("sender-001", plain)).toBe(plain);
+    expect(codec.processIncoming("sender-001", plain)).toEqual(JSON.parse(plain));
   });
 
   it("treats chunk-like messages with incomplete fields as plain messages", () => {
     const codec = new RoomMessageCodec();
     const broken = '{"event":"__trtc_chunk__","eventId":"x"}';
-    expect(codec.processIncoming("sender-001", broken)).toBe(broken);
+    expect(codec.processIncoming("sender-001", broken)).toEqual(JSON.parse(broken));
   });
 
   it("discards reassembled messages that are not valid JSON", () => {
@@ -79,7 +79,7 @@ describe("RoomMessageCodec", () => {
     expect(codec.processIncoming("a", chunkOf('{"v":', 0))).toBeUndefined();
     expect(codec.processIncoming("b", chunkOf("1}", 1))).toBeUndefined();
     // b 的组包仍缺 index=0；a 收齐后返回完整消息。
-    expect(codec.processIncoming("a", chunkOf("1}", 1))).toBe('{"v":1}');
-    expect(codec.processIncoming("b", chunkOf('{"v":', 0))).toBe('{"v":1}');
+    expect(codec.processIncoming("a", chunkOf("1}", 1))).toEqual({ v: 1 });
+    expect(codec.processIncoming("b", chunkOf('{"v":', 0))).toEqual({ v: 1 });
   });
 });

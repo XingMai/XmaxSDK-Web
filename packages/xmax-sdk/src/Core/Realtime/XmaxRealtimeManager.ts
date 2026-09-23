@@ -38,7 +38,9 @@ import type { XmaxRealtimeManaging } from "./XmaxRealtimeManaging";
 import { XmaxRealtimeConnectionManager } from "./XmaxRealtimeConnectionManager";
 import { XmaxRealtimeGenerationManager } from "./XmaxRealtimeGenerationManager";
 
-/** 等待远端生成流首帧的时限（毫秒）；超时仅记录日志，不影响生成流程。 */
+/**
+ * 等待远端生成流首帧的时限（毫秒）；超时仅记录日志，不影响生成流程。
+ */
 const REMOTE_FIRST_FRAME_TIMEOUT_MS = 5_000;
 
 /**
@@ -49,20 +51,36 @@ const REMOTE_FIRST_FRAME_TIMEOUT_MS = 5_000;
  * 生成任务和上下文，Coordinator 统一管理公开状态、操作租约与取消。
  */
 export class XmaxRealtimeManager implements XmaxRealtimeManaging {
-  // 业务配置
+  /**
+   * 业务配置
+   */
   readonly options: RealtimeConfiguration;
   private readonly mediaService: MediaService;
+
+  /**
+   * 插帧能力、用户配置与渲染版本
+   */
   private readonly supportsInterpolation: (size?: ModelSize) => Promise<boolean>;
   private interpolationRequested: boolean;
   private interpolationSize?: ModelSize;
   private interpolationRevision = 0;
 
-  // 业务组件
+  /**
+   * 业务组件
+   */
   private readonly coordinator: RealtimeCoordinator;
   private readonly errorHandler: RealtimeErrorHandler;
   private readonly cameraController: CameraControlling;
+
+  /**
+   * 启动计时与首帧通知
+   */
   private readonly launchTimer = new RealtimeLaunchTimer();
   private remoteFrameDisplayHandler?: () => void;
+
+  /**
+   * 本地、远端和网络统计快照及观察者
+   */
   private localVideoStatistics?: VideoStatistics;
   private localVideoStatisticsListener?: VideoStatisticsListener;
   private remoteVideoStatistics?: RemoteVideoStatistics;
@@ -71,12 +89,16 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   private networkStatistics?: NetworkStatistics;
   private networkStatisticsListener?: NetworkStatisticsListener;
 
-  // 实时业务管理组件；状态所有权分别归连接和生成管理器。
+  /**
+   * 实时业务管理组件；状态所有权分别归连接和生成管理器。
+   */
   private readonly connectionManager: XmaxRealtimeConnectionManager;
   private readonly generationManager: XmaxRealtimeGenerationManager;
   private readonly streamController: StreamControlling;
 
-  // 音量配置
+  /**
+   * 音量配置
+   */
   private storedLocalAudioVolume = 1;
   private storedRemoteAudioVolume = 0;
 
@@ -97,19 +119,22 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   }) {
     this.options = options;
     this.mediaService = new MediaService(options.model);
+
     this.interpolationRequested = options.isFrameInterpolationEnabled;
     this.supportsInterpolation = dependencies?.supportsFrameInterpolation ??
       (async (size) => (await frameInterpolationAdapter(size)) !== null);
+
     this.errorHandler = new RealtimeErrorHandler();
 
     const rtcManager = dependencies?.rtcManager ?? new RtcManager();
     this.cameraController = dependencies?.cameraController ?? new CameraController({
       rtcManager,
-      mediaService: new MediaService(options.model),
+      mediaService: this.mediaService,
       errorListener: (error) => {
         void this.errorHandler.report(error);
       },
     });
+
     const sessionService =
       dependencies?.sessionService ??
       (dependencies?.apiService
@@ -125,6 +150,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         this.connectionManager.handleRemoteStreamBinding(binding);
       },
     });
+
     this.connectionManager = new XmaxRealtimeConnectionManager({
       sessionService,
       streamController: this.streamController,
@@ -139,22 +165,26 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       },
     });
     this.generationManager = new XmaxRealtimeGenerationManager(this.streamController);
+
     this.coordinator = new RealtimeCoordinator({
       errorHandler: this.errorHandler,
       cleanup: (scope, taskID) => this.performCleanup(scope, taskID),
     });
+
     this.streamController.setLocalVideoStatisticsListener((statistics) => {
       if (this.acceptsVideoStatistics) {
         this.localVideoStatistics = statistics ? Object.freeze({ ...statistics }) : undefined;
         this.notifyLocalVideoStatistics();
       }
     });
+
     this.streamController.setNetworkStatisticsListener((statistics) => {
       if (this.acceptsVideoStatistics) {
         this.networkStatistics = statistics ? Object.freeze({ ...statistics }) : undefined;
         this.notifyNetworkStatistics();
       }
     });
+
     this.streamController.setRemoteVideoStatisticsListener((statistics) => {
       if (this.acceptsVideoStatistics) {
         this.remoteVideoStatistics = statistics ? Object.freeze({ ...statistics }) : undefined;
@@ -163,15 +193,23 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     });
   }
 
-  /** 当前实时连接与生成状态。 */
+  /**
+   * 当前实时连接与生成状态。
+   */
   get currentState(): RealtimeState {
     return this.coordinator.currentState;
   }
 
+  /**
+   * 当前是否请求启用插帧；能力探测或运行期降级后可能为 false。
+   */
   get isFrameInterpolationEnabled(): boolean {
     return this.interpolationRequested;
   }
 
+  /**
+   * 串行更新插帧开关；开启前验证能力，不支持时抛错并保留原配置，不改变回传尺寸。
+   */
   async setFrameInterpolationEnabled(enabled: boolean): Promise<void> {
     await this.coordinator.run(RealtimeOperationKind.configuration, undefined, async (token) => {
       const format = this.cameraController.currentTrack?.videoFormat;
@@ -180,6 +218,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         token.ensureCurrent();
         throw new XmaxError(XmaxErrorCode.frameInterpolationUnsupported, "Frame interpolation is unavailable on this device or for this size");
       }
+
       token.ensureCurrent();
       // 插帧仅影响本地渲染；能力检查失败时保留已有配置，不调整回传尺寸。
       this.interpolationRequested = enabled;
@@ -188,6 +227,9 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     });
   }
 
+  /**
+   * 根据当前视频尺寸准备插帧，能力不可用时降级为原视频，并在应用前校验租约。
+   */
   private async prepareFrameInterpolation(format: ModelSize, token: RealtimeOperationToken): Promise<void> {
     let size: ModelSize | undefined;
     if (this.interpolationRequested) {
@@ -198,6 +240,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         XmaxLogger.render.warning(() => `插帧不可用 (Frame Interpolation Unavailable)\n└─ ${XmaxError.from(error).message}`);
       }
     }
+
     token.ensureCurrent();
     // 能力检测确认不可用时关闭功能；短暂缺帧不改变开关状态。
     if (this.interpolationRequested && !size) this.interpolationRequested = false;
@@ -205,21 +248,39 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     this.applyRemoteInterpolation();
   }
 
+  /**
+   * 在 5 秒预算内探测插帧能力；超时或探测失败返回 false，主动取消则拒绝。
+   */
   private checkInterpolationSupport(size: ModelSize | undefined, token: RealtimeOperationToken): Promise<boolean> {
     return new Promise((resolve, reject) => {
-      const finish = (supported: boolean) => { cleanup(); resolve(supported); };
-      const abort = () => { cleanup(); reject(RealtimeCoordinator.cancelledError()); };
+      const finish = (supported: boolean) => {
+        cleanup();
+        resolve(supported);
+      };
+      const abort = () => {
+        cleanup();
+        reject(RealtimeCoordinator.cancelledError());
+      };
+
       const timer = setTimeout(() => finish(false), 5_000);
       const cleanup = () => {
         clearTimeout(timer);
         token.signal.removeEventListener("abort", abort);
       };
+
       token.signal.addEventListener("abort", abort, { once: true });
-      if (token.signal.aborted) { abort(); return; }
+      if (token.signal.aborted) {
+        abort();
+        return;
+      }
+
       void this.supportsInterpolation(size).then(finish, () => finish(false));
     });
   }
 
+  /**
+   * 将当前插帧配置同步到远端绑定，并用版本号忽略旧管线的迟到失败。
+   */
   private applyRemoteInterpolation(): void {
     const revision = ++this.interpolationRevision;
     const size = this.interpolationSize;
@@ -232,6 +293,9 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     } : undefined);
   }
 
+  /**
+   * 关闭已失败的插帧配置并记录降级原因，保持原始视频渲染可用。
+   */
   private handleInterpolationFailure(error: unknown): void {
     this.interpolationRequested = false;
     this.interpolationSize = undefined;
@@ -239,12 +303,16 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     XmaxLogger.render.warning(() => `插帧已降级 (Frame Interpolation Disabled)\n└─ ${XmaxError.from(error).message}`);
   }
 
-  /** 当前本地媒体预览音量，取值范围为 `0...1`。 */
+  /**
+   * 当前本地媒体预览音量，取值范围为 `0...1`。
+   */
   get localAudioVolume(): number {
     return this.storedLocalAudioVolume;
   }
 
-  /** 当前远端生成音频播放音量，取值范围为 `0...1`。 */
+  /**
+   * 当前远端生成音频播放音量，取值范围为 `0...1`。
+   */
   get remoteAudioVolume(): number {
     return this.storedRemoteAudioVolume;
   }
@@ -258,23 +326,32 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     await this.coordinator.setStateListener(listener);
   }
 
-  /** 监听启动耗时；设置后立即回放，传 undefined 取消监听。 */
+  /**
+   * 监听启动耗时；设置后立即回放，传 undefined 取消监听。
+   */
   async setLaunchTimingListener(listener?: RealtimeLaunchTimingListener): Promise<void> {
     this.launchTimer.setListener(listener);
   }
 
-  /** 监听本地主视频流的实际运行统计；立即回放最新快照。 */
+  /**
+   * 监听本地主视频流的实际运行统计；立即回放最新快照。
+   */
   async setLocalVideoStatisticsListener(listener?: VideoStatisticsListener): Promise<void> {
     this.localVideoStatisticsListener = listener;
     this.notifyLocalVideoStatistics();
   }
 
-  /** 监听当前生成结果流的实际运行统计；立即回放最新快照。 */
+  /**
+   * 监听当前生成结果流的实际运行统计；立即回放最新快照。
+   */
   async setRemoteVideoStatisticsListener(listener?: RemoteVideoStatisticsListener): Promise<void> {
     this.remoteVideoStatisticsListener = listener;
     this.notifyRemoteVideoStatistics();
   }
 
+  /**
+   * 回放当前远端视频统计，隔离观察者的同步和异步异常。
+   */
   private notifyRemoteVideoStatistics(): void {
     try {
       void Promise.resolve(this.remoteVideoStatisticsListener?.(this.remoteVideoStatistics)).catch(() => {});
@@ -283,12 +360,17 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     }
   }
 
-  /** 网络统计立即回放最新快照，无数据或断开后为 undefined。 */
+  /**
+   * 网络统计立即回放最新快照，无数据或断开后为 undefined。
+   */
   async setNetworkStatisticsListener(listener?: NetworkStatisticsListener): Promise<void> {
     this.networkStatisticsListener = listener;
     this.notifyNetworkStatistics();
   }
 
+  /**
+   * 回放当前网络统计，隔离观察者的同步和异步异常。
+   */
   private notifyNetworkStatistics(): void {
     try {
       void Promise.resolve(this.networkStatisticsListener?.(this.networkStatistics)).catch(() => {});
@@ -297,6 +379,9 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     }
   }
 
+  /**
+   * 清除远端视频统计；原先存在数据时通知观察者数据已失效。
+   */
   private clearRemoteVideoStatistics(): void {
     const hadStatistics = this.remoteVideoStatistics !== undefined;
     this.remoteVideoStatistics = undefined;
@@ -305,6 +390,9 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     }
   }
 
+  /**
+   * 回放当前本地视频统计，隔离观察者的同步和异步异常。
+   */
   private notifyLocalVideoStatistics(): void {
     try {
       void Promise.resolve(this.localVideoStatisticsListener?.(this.localVideoStatistics)).catch(() => {});
@@ -313,12 +401,18 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     }
   }
 
+  /**
+   * 停止接收媒体统计并清空各类快照，仅对曾有数据的统计发出清空通知。
+   */
   private clearVideoStatistics(): void {
     this.acceptsVideoStatistics = false;
+
     const hadNetworkStatistics = this.networkStatistics !== undefined;
     this.networkStatistics = undefined;
     if (hadNetworkStatistics) this.notifyNetworkStatistics();
+
     this.clearRemoteVideoStatistics();
+
     const hadStatistics = this.localVideoStatistics !== undefined;
     this.localVideoStatistics = undefined;
     if (hadStatistics) {
@@ -362,6 +456,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    *
    * 将返回的轨道绑定到预览视图；收到有效帧且视图已绑定后进入 `ready`。
    *
+   * @param options.enableFrameValidation 是否在发布前检测帧亮度，默认 true；false 跳过检测及其等待。
    * @returns 包含本地相机视频轨道的媒体流。
    * @throws 模型不支持相机输入、配置无效、权限或采集启动失败时抛出错误。
    */
@@ -377,8 +472,10 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
           token,
         );
         token.ensureCurrent();
+
         const completeCamera = this.launchTimer.startCamera();
         this.clearVideoStatistics();
+
         let stream: RealtimeMediaStream;
         try {
           token.ensureCurrent();
@@ -387,18 +484,23 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
           this.launchTimer.cancel();
           throw error;
         }
+
         token.ensureCurrent();
         completeCamera();
+
         // 收到有效帧且预览视图绑定后进入 ready。
         this.cameraController.setPreviewReadyHandler((isCurrent) => {
           void this.coordinator.localPreviewDidBecomeReady(isCurrent);
         });
+
         return stream;
       },
     );
   }
 
-  /** 停止本地相机流并释放本地预览与 RTC 资源。 */
+  /**
+   * 停止本地相机流并释放本地预览与 RTC 资源。
+   */
   async stopLocalCameraStream(): Promise<void> {
     await this.coordinator.run(
       RealtimeOperationKind.media,
@@ -441,7 +543,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    * 使用当前 Manager 创建的本地流建立实时连接。
    *
    * 创建实时会话、加入 RTC 房间并发布本地流，成功后启动会话心跳。
-   * 发布前并行检查相机亮度，首张合格帧即放行；2 秒内未通过检查则
+   * 启用帧检测时，发布前并行检查相机亮度，首张合格帧即放行；2 秒内未通过检查则
    * 记录警告并按当前画面继续发布，不因环境较暗而阻断连接。
    * 返回的远端媒体流在生成开始后承载远端生成画面。
    *
@@ -510,7 +612,6 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         if (currentState.connectionState === RealtimeConnectionState.generating) {
           this.generationManager.update(currentState.taskID, {
             videoFormat,
-            targetSize: this.connectionManager.currentTargetSize,
             context: options.context,
           });
           return this.connectionManager.makeRemoteStream();
@@ -527,7 +628,9 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     );
   }
 
-  /** 断开实时连接并保留当前本地媒体预览。 */
+  /**
+   * 断开实时连接并保留当前本地媒体预览。
+   */
   async disconnect(): Promise<void> {
     this.launchTimer.cancel();
     this.clearVideoStatistics();
@@ -555,6 +658,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     localStream: RealtimeMediaStream,
     token: RealtimeOperationToken,
   ): Promise<RealtimeMediaStream> {
+    // 校验本地流归属与连接配置，避免无效请求改变连接状态。
     const localTrack = localStream.videoTrack;
     if (!localTrack || localTrack !== this.cameraController.currentTrack) {
       throw new XmaxError(
@@ -563,31 +667,44 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       );
     }
     this.connectionManager.validateConfiguration();
+
     token.setFailureScope(RealtimeTerminationScope.connection);
     await this.coordinator.commit(
       new RealtimeState({ connectionState: RealtimeConnectionState.connecting }),
       token,
     );
+
+    // 将帧检测绑定到本次连接操作；取消或退出连接流程时停止检测。
     const exposureController = new AbortController();
     const abortExposure = () => exposureController.abort();
     token.signal.addEventListener("abort", abortExposure, { once: true });
     if (token.signal.aborted) abortExposure();
+
     try {
-      const completeFrameValidation = this.launchTimer.startFrameValidation();
-      const cameraReady = this.cameraController.waitForValidCameraFrame(exposureController.signal).then(() => {
-        token.ensureCurrent();
-        completeFrameValidation();
-      });
-      // 检查与建连并行；进房前检查失败也要接住拒绝，发布屏障仍等待原始结果。
-      void cameraReady.catch(() => {});
+      let beforePublish: (() => Promise<void>) | undefined;
+      if (this.cameraController.isFrameValidationEnabled) {
+        const completeFrameValidation = this.launchTimer.startFrameValidation();
+        const cameraReady = this.cameraController.waitForValidCameraFrame(exposureController.signal).then(() => {
+          token.ensureCurrent();
+          completeFrameValidation();
+        });
+
+        // 检查与建连并行；进房前检查失败也要接住拒绝，发布屏障仍等待原始结果。
+        void cameraReady.catch(() => {});
+        beforePublish = () => cameraReady;
+      }
+
       const remote = await this.connectionManager.connect({
         localTrack,
         model: this.options.model,
         includeLocalAudio: this.cameraController.useMicrophone,
         ensureCurrent: () => token.ensureCurrent(),
-        onPublished: () => { this.acceptsVideoStatistics = true; },
-        beforePublish: () => cameraReady,
+        onPublished: () => {
+          this.acceptsVideoStatistics = true;
+        },
+        beforePublish,
       });
+
       await this.coordinator.commit(
         new RealtimeState({
           connectionState: RealtimeConnectionState.connected,
@@ -595,6 +712,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         }),
         token,
       );
+
       return remote;
     } finally {
       token.signal.removeEventListener("abort", abortExposure);
@@ -602,7 +720,9 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     }
   }
 
-  /** 编排插帧、首帧计时和生成状态，任务与确认由生成管理器负责。 */
+  /**
+   * 编排插帧、首帧计时和生成状态，任务与确认由生成管理器负责。
+   */
   private async performStartGeneration(
     token: RealtimeOperationToken,
     videoFormat: NonNullable<RealtimeVideoTrack["videoFormat"]>,
@@ -610,13 +730,14 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   ): Promise<RealtimeMediaStream> {
     token.setFailureScope(RealtimeTerminationScope.connection);
     await this.prepareFrameInterpolation(videoFormat, token);
+
     const completeFirstFrame = this.launchTimer.startFirstFrame();
     this.remoteFrameDisplayHandler = () => {
       if (!token.signal.aborted) completeFirstFrame();
     };
+
     const taskID = await this.generationManager.start({
       videoFormat,
-      targetSize: this.connectionManager.currentTargetSize,
       context,
       signal: token.signal,
       ensureCurrent: () => token.ensureCurrent(),
@@ -624,18 +745,23 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         REMOTE_FIRST_FRAME_TIMEOUT_MS, token.signal,
       ),
     });
+
     const sessionID = this.connectionManager.currentSessionID;
     if (!sessionID) {
       throw new XmaxError(XmaxErrorCode.sessionError, "Realtime session is unavailable");
     }
+
     await this.coordinator.commit(
       new RealtimeState({ connectionState: RealtimeConnectionState.generating, sessionID, taskID }),
       token,
     );
+
     return this.connectionManager.makeRemoteStream();
   }
 
-  /** 心跳失败或会话失效：结束当前连接生命周期并通过最终状态给出原因。 */
+  /**
+   * 心跳失败或会话失效：结束当前连接生命周期并通过最终状态给出原因。
+   */
   private async handleHeartbeatFailure(
     sessionID: string,
     error: XmaxError,
@@ -647,7 +773,9 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     );
   }
 
-  /** 统一清理顺序：停止心跳与生成，再断开连接；all 额外释放本地媒体。 */
+  /**
+   * 统一清理顺序：停止心跳与生成，再断开连接；all 额外释放本地媒体。
+   */
   private async performCleanup(
     scope: RealtimeTerminationScope,
     taskID: string,
@@ -655,9 +783,11 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     this.launchTimer.cancel();
     this.remoteFrameDisplayHandler = undefined;
     this.clearVideoStatistics();
+
     this.interpolationSize = undefined;
     this.applyRemoteInterpolation();
     this.connectionManager.clearRemoteMedia();
+
     this.connectionManager.stopHeartbeat();
     await this.generationManager.reset(taskID);
     const sessionID = await this.connectionManager.disconnect();
@@ -673,13 +803,16 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         );
       }
     }
+
     return {
       sessionID,
       hasLocalMedia: this.cameraController.currentTrack !== undefined,
     };
   }
 
-  /** 校验音量取值范围为 `0...1`。 */
+  /**
+   * 校验音量取值范围为 `0...1`。
+   */
   private static validateVolume(volume: number): void {
     if (!Number.isFinite(volume) || volume < 0 || volume > 1) {
       throw new XmaxError(

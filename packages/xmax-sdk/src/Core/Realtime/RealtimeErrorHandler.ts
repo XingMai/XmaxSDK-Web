@@ -7,10 +7,14 @@ import { RealtimeTerminationScope } from "./RealtimeCoordinator";
  * 当前为简化实现：记录日志并保留待上报错误。
  */
 export class RealtimeErrorHandler {
-  // 运行状态
+  /**
+   * 运行状态
+   */
   private pendingFailures: XmaxError[] = [];
 
-  /** 上报错误；当前通过日志输出，后续里程碑接入状态原因上报。 */
+  /**
+   * 上报错误；当前通过日志输出，后续里程碑接入状态原因上报。
+   */
   async report(error: XmaxError): Promise<void> {
     if (error.code === XmaxErrorCode.cancelled) {
       return;
@@ -23,7 +27,9 @@ export class RealtimeErrorHandler {
     );
   }
 
-  /** 清理仍属于已终止生命周期的后台故障。 */
+  /**
+   * 清理仍属于已终止生命周期的后台故障。
+   */
   invalidatePendingFailures(_target: RealtimeTerminationScope): void {
     this.pendingFailures = [];
   }

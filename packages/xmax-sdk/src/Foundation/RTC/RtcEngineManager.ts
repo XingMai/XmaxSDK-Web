@@ -1,21 +1,34 @@
 import type TRTC from "trtc-sdk-v5";
 import { XmaxError, XmaxErrorCode } from "../Errors/XmaxError";
 
-/** TRTC 引擎实例类型。 */
+/**
+ * TRTC 引擎实例类型。
+ */
 export type RtcEngine = TRTC;
 
 /**
  * 表示对共享 TRTC Engine 的独占使用权。
  */
 export class RtcEngineLease {
-  // RTC 资源
-  /** 租约持有的 TRTC 引擎实例。 */
+  /**
+   * RTC 资源
+   */
+  /**
+   * 租约持有的 TRTC 引擎实例。
+   */
   readonly engine: RtcEngine;
 
-  // 运行标识
-  /** 租约标识。 */
+  /**
+   * 运行标识
+   */
+  /**
+   * 租约标识。
+   */
   readonly id: string;
 
+  /**
+   * 为已创建的引擎生成独占租约标识，供引擎管理器核对释放请求。
+   */
   constructor(engine: RtcEngine) {
     this.engine = engine;
     this.id = `lease-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -39,16 +52,27 @@ interface EngineRequest {
  * 环境（如 SSR、测试）中正常导入。
  */
 export class RtcEngineManager {
-  /** 共享实例。 */
+  /**
+   * 共享管理入口
+   */
+  /**
+   * 共享实例。
+   */
   static readonly shared = new RtcEngineManager();
 
-  // 依赖
+  /**
+   * 依赖
+   */
   private readonly makeEngine: () => Promise<RtcEngine>;
 
-  // RTC 资源
+  /**
+   * RTC 资源
+   */
   private activeLease?: RtcEngineLease;
 
-  // 运行状态
+  /**
+   * 运行状态
+   */
   private requests: EngineRequest[] = [];
 
   /**
@@ -82,7 +106,9 @@ export class RtcEngineManager {
     });
   }
 
-  /** 释放有效租约、销毁 Engine，并把独占权交给下一个等待者。 */
+  /**
+   * 释放有效租约、销毁 Engine，并把独占权交给下一个等待者。
+   */
   release(lease: RtcEngineLease): void {
     if (this.activeLease?.id !== lease.id) {
       return;
@@ -96,7 +122,9 @@ export class RtcEngineManager {
     void this.fulfillNextRequest();
   }
 
-  /** 动态加载 TRTC SDK 并创建引擎实例。 */
+  /**
+   * 动态加载 TRTC SDK 并创建引擎实例。
+   */
   private static async defaultMakeEngine(): Promise<RtcEngine> {
     const module = await import("trtc-sdk-v5");
     // NONE：关闭 TRTC 自身的 console 输出；保留默认的诊断日志上传。
@@ -105,7 +133,9 @@ export class RtcEngineManager {
     return module.default.create();
   }
 
-  /** 创建新引擎租约。 */
+  /**
+   * 创建新引擎租约。
+   */
   private async createLease(): Promise<RtcEngineLease> {
     const engine = await this.makeEngine();
     if (!engine) {
@@ -117,7 +147,9 @@ export class RtcEngineManager {
     return new RtcEngineLease(engine);
   }
 
-  /** 满足下一个排队请求；创建失败时拒绝该请求并继续处理后续请求。 */
+  /**
+   * 满足下一个排队请求；创建失败时拒绝该请求并继续处理后续请求。
+   */
   private async fulfillNextRequest(): Promise<void> {
     while (!this.activeLease && this.requests.length > 0) {
       const request = this.requests.shift();

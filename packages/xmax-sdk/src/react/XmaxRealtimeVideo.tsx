@@ -10,19 +10,29 @@ import {
 } from "react";
 
 export interface XmaxRealtimeVideoProps {
-  /** 当前显示的本地视频轨道。 */
+  /**
+   * 当前显示的本地视频轨道。
+   */
   localTrack?: RealtimeVideoTrack;
 
-  /** 当前显示的远端生成视频轨道；首帧提交后自动渐入。 */
+  /**
+   * 当前显示的远端生成视频轨道；首帧提交后自动渐入。
+   */
   remoteTrack?: RealtimeVideoTrack;
 
-  /** 视频内容在容器中的显示模式，默认 fill。 */
+  /**
+   * 视频内容在容器中的显示模式，默认 fill。
+   */
   videoContentMode?: VideoContentMode;
 
-  /** 容器类名。 */
+  /**
+   * 容器类名。
+   */
   className?: string;
 
-  /** 容器样式。 */
+  /**
+   * 容器样式。
+   */
   style?: CSSProperties;
 }
 
@@ -38,6 +48,7 @@ export function XmaxRealtimeVideo(props: XmaxRealtimeVideoProps) {
     if (!container) {
       return;
     }
+
     const view = new XmaxRealtimeVideoView();
     view.element.style.width = "100%";
     view.element.style.height = "100%";

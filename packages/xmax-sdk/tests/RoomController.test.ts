@@ -10,6 +10,7 @@ import { RealtimeSessionConnection } from "../src/Service/Realtime/RealtimeSessi
 import { RealtimeVideoFormat } from "../src/Service/Realtime/RealtimeVideoFormat";
 import { RoomController } from "../src/Stream/Room/RoomController";
 import { RoomHeartbeat } from "../src/Stream/Room/RoomHeartbeat";
+import { RoomMessageCodec } from "../src/Stream/Room/RoomMessageCodec";
 import type { VideoEncodingConfiguration } from "../src/Foundation/RTC/VideoEncodingConfiguration";
 
 class RtcManagingStub implements RtcManaging {
@@ -285,6 +286,48 @@ describe("RoomController", () => {
     expect(received).toHaveLength(2);
     expect(received[0]?.[0]).toBe("bot001");
     expect(received[0]?.[1].event).toBe("tracks");
+  });
+
+  it.each([false, true])("parses each inbound payload only once (chunked: %s)", (chunked) => {
+    const { controller } = makeController();
+    const onRoomMessage = vi.fn();
+    controller.setListener({ onRoomMessage });
+    const payload = { event: "tracks", note: "x".repeat(chunked ? 1200 : 10) };
+    const raw = JSON.stringify(payload);
+    const packets = new RoomMessageCodec().encodeOutgoing(raw);
+    const parse = vi.spyOn(JSON, "parse");
+
+    try {
+      for (const packet of packets) {
+        controller.handleIncomingMessage("bot001", packet);
+      }
+
+      expect(onRoomMessage).toHaveBeenCalledOnce();
+      expect(onRoomMessage).toHaveBeenCalledWith("bot001", payload);
+      expect(parse.mock.calls.filter(([input]) => input === raw)).toHaveLength(1);
+      expect(parse).toHaveBeenCalledTimes(chunked ? packets.length + 1 : 1);
+    } finally {
+      parse.mockRestore();
+    }
+  });
+
+  it("ignores malformed JSON and non-object payloads while preserving warnings", () => {
+    const { controller } = makeController();
+    const onRoomMessage = vi.fn();
+    controller.setListener({ onRoomMessage });
+    const warning = vi.spyOn(XmaxLogger.room, "warning").mockImplementation(() => {});
+
+    try {
+      for (const raw of ["not-json", "null", "1", "true", '"text"']) {
+        controller.handleIncomingMessage("bot001", raw);
+      }
+
+      expect(onRoomMessage).not.toHaveBeenCalled();
+      expect(warning).toHaveBeenCalledOnce();
+      expect(warning.mock.calls[0]![0]()).toContain("Room Message Is Not Valid JSON");
+    } finally {
+      warning.mockRestore();
+    }
   });
 
   it("reassembles chunked inbound messages before dispatching", async () => {

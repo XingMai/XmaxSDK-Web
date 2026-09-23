@@ -5,11 +5,17 @@ import { XmaxEnvironment } from "../Runtime/XmaxEnvironment";
  */
 export enum XmaxLoggerOption {
   none = 0,
-  /** Room、API、Realtime、Storage 等业务运行日志。 */
+  /**
+   * Room、API、Realtime、Storage 等业务运行日志。
+   */
   business = 1 << 0,
-  /** RTC 网络质量和音视频运行统计，输出到 console.info。 */
+  /**
+   * RTC 网络质量和音视频运行统计，输出到 console.info。
+   */
   performance = 1 << 1,
-  /** 输出全部 XmaxSDK 日志。 */
+  /**
+   * 输出全部 XmaxSDK 日志。
+   */
   all = business | performance,
 }
 
@@ -32,10 +38,14 @@ const CONSOLE_METHOD: Record<XmaxLogLevel, "debug" | "info" | "warn" | "error"> 
   error: "error",
 };
 
-/** Xmax 品牌标签：蓝底白字。 */
+/**
+ * Xmax 品牌标签：蓝底白字。
+ */
 const BRAND_BADGE_STYLE = "background:#2563eb;color:#fff;border-radius:3px;padding:1px 4px;font-weight:600;";
 
-/** 业务域标签：使用深灰蓝，与 Xmax 品牌标签明确区分。 */
+/**
+ * 业务域标签：使用深灰蓝，与 Xmax 品牌标签明确区分。
+ */
 const CATEGORY_BADGE_STYLE = "background:#475569;color:#fff;border-radius:3px;padding:1px 4px;font-weight:600;";
 
 /**
@@ -44,7 +54,9 @@ const CATEGORY_BADGE_STYLE = "background:#475569;color:#fff;border-radius:3px;pa
  * 调用方不得传入 API Key、Token、Secret、Authorization 或完整敏感响应。
  */
 export class XmaxLogger {
-  // 分类日志
+  /**
+   * 分类日志
+   */
   static readonly realtime = new XmaxLogger("Realtime");
   static readonly rtc = new XmaxLogger("RTC");
   static readonly media = new XmaxLogger("Media");
@@ -56,9 +68,14 @@ export class XmaxLogger {
   static readonly interaction = new XmaxLogger("Interaction");
   static readonly permission = new XmaxLogger("Permission");
 
-  // 日志类别
+  /**
+   * 日志类别
+   */
   private readonly category: string;
 
+  /**
+   * 创建固定业务分类的日志入口，共享全局日志选项和语言配置。
+   */
   private constructor(category: string) {
     this.category = category;
   }
@@ -77,37 +94,51 @@ export class XmaxLogger {
     state.environment = environment;
   }
 
-  /** 选择日志细项文案；日志标题保持原有中英双语。 */
+  /**
+   * 选择日志细项文案；日志标题保持原有中英双语。
+   */
   static localized(chinese: string, english: string): string {
     return state.environment === XmaxEnvironment.china ? chinese : english;
   }
 
-  /** 判断指定日志类型是否已开启。 */
+  /**
+   * 判断指定日志类型是否已开启。
+   */
   static isEnabled(option: XmaxLoggerOption): boolean {
     return (state.options & option) !== 0;
   }
 
-  /** 输出调试日志。 */
+  /**
+   * 输出调试日志。
+   */
   debug(message: () => string, option: XmaxLoggerOption = XmaxLoggerOption.business): void {
     this.log("debug", message, option);
   }
 
-  /** 输出信息日志。 */
+  /**
+   * 输出信息日志。
+   */
   info(message: () => string, option: XmaxLoggerOption = XmaxLoggerOption.business): void {
     this.log("info", message, option);
   }
 
-  /** 输出警告日志。 */
+  /**
+   * 输出警告日志。
+   */
   warning(message: () => string, option: XmaxLoggerOption = XmaxLoggerOption.business): void {
     this.log("warning", message, option);
   }
 
-  /** 输出错误日志。 */
+  /**
+   * 输出错误日志。
+   */
   error(message: () => string, option: XmaxLoggerOption = XmaxLoggerOption.business): void {
     this.log("error", message, option);
   }
 
-  /** 按日志类型开关输出到控制台；未开启时不求值日志内容。 */
+  /**
+   * 按日志类型开关输出到控制台；未开启时不求值日志内容。
+   */
   private log(
     level: XmaxLogLevel,
     message: () => string,
@@ -116,6 +147,7 @@ export class XmaxLogger {
     if (!XmaxLogger.isEnabled(option)) {
       return;
     }
+
     const text = message();
     if (typeof window !== "undefined" && typeof document !== "undefined") {
       // 正文通过 %s 传入，避免其中的 %c / %s 等内容被当作控制台格式指令。
@@ -129,6 +161,7 @@ export class XmaxLogger {
       );
       return;
     }
+
     // SSR、Node 和其他非页面环境使用纯文本前缀。
     console[CONSOLE_METHOD[level]](`[Xmax][${this.category}] ${text}`);
   }

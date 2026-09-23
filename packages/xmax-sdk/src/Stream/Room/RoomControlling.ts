@@ -4,9 +4,13 @@ import type { RealtimeSessionConnection } from "../../Service/Realtime/RealtimeS
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import type { RoomEventTargetSize } from "./RoomEvent";
 
-/** 接收房间业务消息。 */
+/**
+ * 接收房间业务消息。
+ */
 export interface RoomListener {
-  /** 处理完整房间业务消息（已完成分片组包与目标用户过滤）。 */
+  /**
+   * 处理完整房间业务消息（已完成分片组包与目标用户过滤）。
+   */
   onRoomMessage(senderUserID: string, message: Record<string, unknown>): void;
 }
 
@@ -26,7 +30,9 @@ export interface RoomControlling {
     ensureActive: () => void,
   ): Promise<void>;
 
-  /** 停止房间心跳并离开当前 RTC 房间。 */
+  /**
+   * 停止房间心跳并离开当前 RTC 房间。
+   */
   leave(): Promise<void>;
 
   /**
@@ -65,13 +71,19 @@ export interface RoomControlling {
     ensureActive: () => void;
   }): void;
 
-  /** 尝试发送生成停止信令；未进房或任务标识为空时忽略。 */
+  /**
+   * 尝试发送生成停止信令；未进房或任务标识为空时忽略。
+   */
   stopGeneration(taskID: string): void;
 
-  /** 发送生成任务的交互轨迹；任务标识或轨迹为空时忽略。 */
+  /**
+   * 发送生成任务的交互轨迹；任务标识或轨迹为空时忽略。
+   */
   sendTracks(taskID: string, points: RealtimePoint[]): void;
 
-  /** 设置房间事件监听器，传入空值时清除监听器。 */
+  /**
+   * 设置房间事件监听器，传入空值时清除监听器。
+   */
   setListener(listener?: RoomListener): void;
 
   /**

@@ -1,17 +1,27 @@
 import type { StoredFile } from "./StoredFile";
 
-/** 上传图片的参数。 */
+/**
+ * 上传图片的参数。
+ */
 export interface StorageUploadOptions {
-  /** 图片数据。 */
+  /**
+   * 图片数据。
+   */
   data: Blob | ArrayBuffer | Uint8Array;
 
-  /** 文件名；用于对象键后缀和缺省内容类型推断。 */
+  /**
+   * 文件名；用于对象键后缀和缺省内容类型推断。
+   */
   fileName: string;
 
-  /** 图片 MIME 类型；缺省按文件名后缀推断。 */
+  /**
+   * 图片 MIME 类型；缺省按文件名后缀推断。
+   */
   contentType?: string;
 
-  /** 上传进度回调（已传字节数、总字节数）。 */
+  /**
+   * 上传进度回调（已传字节数、总字节数）。
+   */
   onProgress?: (transferred: number, total: number) => void;
 }
 

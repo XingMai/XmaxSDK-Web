@@ -1,8 +1,12 @@
 export interface RealtimePointInit {
-  /** 归一化横坐标。 */
+  /**
+   * 归一化横坐标。
+   */
   x: number;
 
-  /** 归一化纵坐标。 */
+  /**
+   * 归一化纵坐标。
+   */
   y: number;
 }
 
@@ -10,11 +14,17 @@ export interface RealtimePointInit {
  * 归一化坐标系中的二维点。
  */
 export class RealtimePoint {
-  // 坐标
-  /** 归一化横坐标。 */
+  /**
+   * 坐标
+   */
+  /**
+   * 归一化横坐标。
+   */
   readonly x: number;
 
-  /** 归一化纵坐标。 */
+  /**
+   * 归一化纵坐标。
+   */
   readonly y: number;
 
   /**

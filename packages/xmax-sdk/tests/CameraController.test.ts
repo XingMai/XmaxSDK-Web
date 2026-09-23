@@ -195,6 +195,47 @@ const defaultFormat = new RealtimeVideoFormat({
 });
 
 describe("CameraController", () => {
+  it.each([undefined, true, false])("uses per-stream frame validation option %s", async (enableFrameValidation) => {
+    const { controller } = makeController();
+    await controller.createLocalCameraStream({
+      videoFormat: defaultFormat, position: CameraPosition.front, useMicrophone: false, enableFrameValidation,
+    });
+    expect(controller.isFrameValidationEnabled).toBe(enableFrameValidation ?? true);
+    await controller.waitForValidCameraFrame(new AbortController().signal);
+    expect(waitForValidCameraFrame).toHaveBeenCalledTimes(enableFrameValidation === false ? 0 : 1);
+    await controller.stopLocalCameraStream();
+    expect(controller.isFrameValidationEnabled).toBe(false);
+  });
+
+  it("retains disabled validation across camera switches and restores the default for a new stream", async () => {
+    const { controller } = makeController();
+    const options = { videoFormat: defaultFormat, position: CameraPosition.front, useMicrophone: false };
+    await controller.createLocalCameraStream({ ...options, enableFrameValidation: false });
+    await controller.switchCamera();
+    expect(controller.isFrameValidationEnabled).toBe(false);
+    await controller.waitForValidCameraFrame(new AbortController().signal);
+    expect(waitForValidCameraFrame).not.toHaveBeenCalled();
+    await controller.stopLocalCameraStream();
+    await controller.createLocalCameraStream(options);
+    expect(controller.isFrameValidationEnabled).toBe(true);
+    await controller.waitForValidCameraFrame(new AbortController().signal);
+    expect(waitForValidCameraFrame).toHaveBeenCalledOnce();
+    await controller.stopLocalCameraStream();
+  });
+
+  it("keeps cancellation effective even when frame validation is disabled", async () => {
+    const { controller } = makeController();
+    await controller.createLocalCameraStream({
+      videoFormat: defaultFormat, position: CameraPosition.front, useMicrophone: false, enableFrameValidation: false,
+    });
+    const abort = new AbortController();
+    abort.abort();
+    await expect(controller.waitForValidCameraFrame(abort.signal))
+      .rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
+    expect(waitForValidCameraFrame).not.toHaveBeenCalled();
+    await controller.stopLocalCameraStream();
+  });
+
   it("checks exposure on the active captured track using the operation signal", async () => {
     const { controller } = makeController();
     const stream = await controller.createLocalCameraStream({

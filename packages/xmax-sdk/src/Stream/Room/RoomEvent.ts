@@ -4,27 +4,41 @@ import type { RealtimeContext } from "../../Service/Realtime/RealtimeContext";
 import type { RealtimePoint } from "../../Service/Realtime/RealtimePoint";
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 
-/** 生成或回传使用的整数像素尺寸。 */
+/**
+ * 生成或回传使用的整数像素尺寸。
+ */
 export interface RoomEventTargetSize {
   width: number;
   height: number;
 }
 
-/** 生成条件类信令的公共参数。 */
+/**
+ * 生成条件类信令的公共参数。
+ */
 export interface RoomEventGenerationOptions {
-  /** 业务用户标识。 */
+  /**
+   * 业务用户标识。
+   */
   userID: string;
 
-  /** 当前生成任务标识。 */
+  /**
+   * 当前生成任务标识。
+   */
   taskID: string;
 
-  /** 模型生成使用的视频规格。 */
+  /**
+   * 模型生成使用的视频规格。
+   */
   videoFormat: RealtimeVideoFormat;
 
-  /** 服务端生成后的回传尺寸；缺省时保持生成尺寸。 */
+  /**
+   * 服务端生成后的回传尺寸；缺省时保持生成尺寸。
+   */
   targetSize?: RoomEventTargetSize;
 
-  /** 当前生成条件。 */
+  /**
+   * 当前生成条件。
+   */
   context: RealtimeContext;
 }
 
@@ -35,7 +49,9 @@ export interface RoomEventGenerationOptions {
  * 编码失败时抛出 `internalError`。
  */
 export class RoomEvent {
-  /** 生成开始信令。 */
+  /**
+   * 生成开始信令。
+   */
   static start(options: RoomEventGenerationOptions): string {
     return RoomEvent.encode({
       event: "start",
@@ -45,7 +61,9 @@ export class RoomEvent {
     });
   }
 
-  /** 生成条件变更信令。 */
+  /**
+   * 生成条件变更信令。
+   */
   static changeCondition(options: RoomEventGenerationOptions): string {
     return RoomEvent.encode({
       event: "change_condition",
@@ -55,7 +73,9 @@ export class RoomEvent {
     });
   }
 
-  /** 回传尺寸调整信令。 */
+  /**
+   * 回传尺寸调整信令。
+   */
   static changeTargetSize(options: {
     userID: string;
     taskID: string;
@@ -74,7 +94,9 @@ export class RoomEvent {
     });
   }
 
-  /** 生成停止信令。 */
+  /**
+   * 生成停止信令。
+   */
   static stop(options: { userID: string; taskID: string }): string {
     return RoomEvent.encode({
       event: "stop",
@@ -83,7 +105,9 @@ export class RoomEvent {
     });
   }
 
-  /** 交互轨迹信令。 */
+  /**
+   * 交互轨迹信令。
+   */
   static tracks(options: {
     userID: string;
     taskID: string;
@@ -97,7 +121,9 @@ export class RoomEvent {
     });
   }
 
-  /** 房间心跳信令。 */
+  /**
+   * 房间心跳信令。
+   */
   static heartbeat(options: { userID: string }): string {
     return RoomEvent.encode({
       event: "heartbeat",
@@ -105,7 +131,9 @@ export class RoomEvent {
     });
   }
 
-  /** 生成条件参数：模型、生成尺寸、回传尺寸、文本与参考图路径。 */
+  /**
+   * 生成条件参数：模型、生成尺寸、回传尺寸、文本与参考图路径。
+   */
   private static generationParameters(
     options: RoomEventGenerationOptions,
   ): Record<string, unknown> {
@@ -123,7 +151,9 @@ export class RoomEvent {
     };
   }
 
-  /** 业务字段外加 `runtime` 运行环境信息并序列化为 JSON 文本。 */
+  /**
+   * 业务字段外加 `runtime` 运行环境信息并序列化为 JSON 文本。
+   */
   private static encode(payload: Record<string, unknown>): string {
     try {
       return JSON.stringify({ ...payload, runtime: RuntimeInfo.toJSON() });

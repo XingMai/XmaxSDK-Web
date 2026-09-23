@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
+import { XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import { RuntimeInfo, XMAX_SDK_VERSION } from "../src/Foundation/Runtime/RuntimeInfo";
 import { ApiService, type ApiFetch } from "../src/Service/Network/ApiService";
 import { ApiMethod } from "../src/Service/Network/ApiServicing";

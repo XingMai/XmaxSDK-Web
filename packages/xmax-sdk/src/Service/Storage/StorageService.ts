@@ -4,7 +4,9 @@ import type { ApiServicing } from "../Network/ApiServicing";
 import { StoredFile } from "./StoredFile";
 import type { StorageServicing, StorageUploadOptions } from "./StorageServicing";
 
-/** `/cos/sts` 返回的临时存储配置。 */
+/**
+ * `/cos/sts` 返回的临时存储配置。
+ */
 interface TemporaryStoragePayload {
   bucket?: string;
   region?: string;
@@ -17,7 +19,9 @@ interface TemporaryStoragePayload {
   };
 }
 
-/** 解析后的临时存储配置。 */
+/**
+ * 解析后的临时存储配置。
+ */
 interface TemporaryStorageConfiguration {
   bucket: string;
   region: string;
@@ -30,8 +34,13 @@ interface TemporaryStorageConfiguration {
   };
 }
 
-/** 对象存储直传客户端需要的最小接口。 */
+/**
+ * 对象存储直传客户端需要的最小接口。
+ */
 export interface StorageObjectClient {
+  /**
+   * 将文件直传到指定桶和对象键，通过回调报告错误或访问地址，并可上报上传进度。
+   */
   putObject(
     params: {
       Bucket: string;
@@ -48,26 +57,38 @@ export interface StorageObjectClient {
   ): void;
 }
 
-/** 对象存储客户端工厂；生产实现按临时凭证创建 COS 客户端。 */
+/**
+ * 对象存储客户端工厂；生产实现按临时凭证创建 COS 客户端。
+ */
 export type StorageObjectClientFactory = (
   configuration: TemporaryStorageConfiguration,
 ) => Promise<StorageObjectClient>;
 
 export interface StorageServiceOptions {
-  /** Xmax API 请求组件。 */
+  /**
+   * Xmax API 请求组件。
+   */
   apiService: ApiServicing;
 
-  /** 对象存储客户端工厂（可替换，测试用）。 */
+  /**
+   * 对象存储客户端工厂（可替换，测试用）。
+   */
   clientFactory?: StorageObjectClientFactory;
 
-  /** 时间来源（可替换，测试用）。 */
+  /**
+   * 时间来源（可替换，测试用）。
+   */
   dateGenerator?: () => Date;
 
-  /** 标识来源（可替换，测试用）。 */
+  /**
+   * 标识来源（可替换，测试用）。
+   */
   identifierGenerator?: () => string;
 }
 
-/** 文件后缀到内容类型的映射。 */
+/**
+ * 文件后缀到内容类型的映射。
+ */
 const CONTENT_TYPES: Record<string, string> = {
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
@@ -87,13 +108,19 @@ const CONTENT_TYPES: Record<string, string> = {
  * endpoint 或默认 COS 域名依次解析。
  */
 export class StorageService implements StorageServicing {
-  // 服务层组件
+  /**
+   * 服务层组件
+   */
   private readonly apiService: ApiServicing;
 
-  // 平台资源
+  /**
+   * 平台资源
+   */
   private readonly clientFactory: StorageObjectClientFactory;
 
-  // 标识生成
+  /**
+   * 标识生成
+   */
   private readonly dateGenerator: () => Date;
   private readonly identifierGenerator: () => string;
 
@@ -113,7 +140,9 @@ export class StorageService implements StorageServicing {
       options.identifierGenerator ?? (() => crypto.randomUUID().toLowerCase());
   }
 
-  /** 上传图片并返回访问地址。 */
+  /**
+   * 上传图片并返回访问地址。
+   */
   async uploadImage(options: StorageUploadOptions): Promise<StoredFile> {
     const startedAt = Date.now();
     try {
@@ -175,9 +204,12 @@ export class StorageService implements StorageServicing {
     }
   }
 
-  /** 获取临时存储配置；字段不完整时抛出 API 错误。 */
+  /**
+   * 获取临时存储配置；字段不完整时抛出 API 错误。
+   */
   private async fetchStorageConfiguration(): Promise<TemporaryStorageConfiguration> {
     const payload = await this.apiService.get<TemporaryStoragePayload>("/cos/sts");
+
     const message = "Invalid storage credential payload";
     const bucket = StorageService.nonEmpty(payload.bucket);
     const region = StorageService.nonEmpty(payload.region);
@@ -188,6 +220,7 @@ export class StorageService implements StorageServicing {
     if (!bucket || !region || !prefix || !accessKeyID || !secretAccessKey || !sessionToken) {
       throw new XmaxError(XmaxErrorCode.apiError, message);
     }
+
     return {
       bucket,
       region,
@@ -197,13 +230,17 @@ export class StorageService implements StorageServicing {
     };
   }
 
-  /** 生成对象键：`${prefix}${毫秒时间戳}_${标识}_${文件名}`。 */
+  /**
+   * 生成对象键：`${prefix}${毫秒时间戳}_${标识}_${文件名}`。
+   */
   private makeObjectKey(prefix: string, fileName: string): string {
     const milliseconds = Math.round(this.dateGenerator().getTime());
     return `${prefix}${milliseconds}_${this.identifierGenerator()}_${fileName}`;
   }
 
-  /** 生产环境 COS 客户端工厂：动态加载 cos-js-sdk-v5 并按临时凭证创建客户端。 */
+  /**
+   * 生产环境 COS 客户端工厂：动态加载 cos-js-sdk-v5 并按临时凭证创建客户端。
+   */
   private static async cosClientFactory(
     configuration: TemporaryStorageConfiguration,
   ): Promise<StorageObjectClient> {
@@ -216,7 +253,9 @@ export class StorageService implements StorageServicing {
     }) as unknown as StorageObjectClient;
   }
 
-  /** 调用对象存储上传并包装为 Promise。 */
+  /**
+   * 调用对象存储上传并包装为 Promise。
+   */
   private static putObject(
     client: StorageObjectClient,
     params: Parameters<StorageObjectClient["putObject"]>[0],
@@ -253,6 +292,7 @@ export class StorageService implements StorageServicing {
     if (/^https?:\/\//i.test(candidate)) {
       return candidate;
     }
+
     const endpoint = configuration.endpoint?.trim();
     if (endpoint) {
       const normalized = /^https?:\/\//i.test(endpoint)
@@ -260,10 +300,13 @@ export class StorageService implements StorageServicing {
         : `https://${endpoint}`;
       return `${normalized.replace(/\/+$/, "")}/${objectKey}`;
     }
+
     return `https://${configuration.bucket}.cos.${configuration.region}.myqcloud.com/${objectKey}`;
   }
 
-  /** 统一构造上传体。 */
+  /**
+   * 统一构造上传体。
+   */
   private static makeBody(
     data: StorageUploadOptions["data"],
     contentType: string,
@@ -275,7 +318,9 @@ export class StorageService implements StorageServicing {
     return new Blob([bytes as unknown as BlobPart], { type: contentType });
   }
 
-  /** 校验文件名非空且不包含路径分隔符。 */
+  /**
+   * 校验文件名非空且不包含路径分隔符。
+   */
   private static validateFileName(fileName: string): string {
     const safeName = fileName.trim();
     if (!safeName || safeName.includes("/") || safeName.includes("\\")) {
@@ -287,13 +332,17 @@ export class StorageService implements StorageServicing {
     return safeName;
   }
 
-  /** 按文件名后缀推断内容类型。 */
+  /**
+   * 按文件名后缀推断内容类型。
+   */
   private static inferContentType(fileName: string): string {
     const extension = fileName.split(".").pop()?.toLowerCase() ?? "";
     return CONTENT_TYPES[extension] ?? "application/octet-stream";
   }
 
-  /** 格式化字节数用于日志输出。 */
+  /**
+   * 格式化字节数用于日志输出。
+   */
   private static formatByteCount(bytes: number): string {
     if (bytes < 1024) {
       return `${bytes} B`;
@@ -304,7 +353,9 @@ export class StorageService implements StorageServicing {
     return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
   }
 
-  /** 归一化可选字符串：去除首尾空白后为空时返回 `undefined`。 */
+  /**
+   * 归一化可选字符串：去除首尾空白后为空时返回 `undefined`。
+   */
   private static nonEmpty(value?: string): string | undefined {
     const normalized = value?.trim();
     return normalized || undefined;

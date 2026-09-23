@@ -1,4 +1,6 @@
-// framegen 1.4.0 的 exports 未导出类型声明；限定本 SDK 使用的 texture API。
+/**
+ * framegen 1.4.0 的 exports 未导出类型声明；限定本 SDK 使用的 texture API。
+ */
 declare module "framegen" {
   export interface RT {
     prepPair(a: GPUTexture, b: GPUTexture): void;

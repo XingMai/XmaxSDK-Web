@@ -3,18 +3,28 @@ import type { RtcEventListener } from "./RtcEventListener";
 import type { RoomJoinConfiguration } from "./RoomJoinConfiguration";
 import type { VideoEncodingConfiguration } from "./VideoEncodingConfiguration";
 
-/** 摄像头采集参数。 */
+/**
+ * 摄像头采集参数。
+ */
 export interface RtcCameraCaptureOptions {
-  /** 期望的采集宽度（按模型规则调整后的尺寸）。 */
+  /**
+   * 期望的采集宽度（按模型规则调整后的尺寸）。
+   */
   width: number;
 
-  /** 期望的采集高度。 */
+  /**
+   * 期望的采集高度。
+   */
   height: number;
 
-  /** 期望的采集帧率。 */
+  /**
+   * 期望的采集帧率。
+   */
   frameRate: number;
 
-  /** 首次启动时使用的摄像头位置。 */
+  /**
+   * 首次启动时使用的摄像头位置。
+   */
   position: CameraPosition;
 }
 
@@ -26,13 +36,19 @@ export interface RtcCameraCaptureOptions {
  * （`publish: false`），建立连接时才发布本地流。
  */
 export interface RtcManaging {
-  /** RTC 引擎是否已初始化。 */
+  /**
+   * RTC 引擎是否已初始化。
+   */
   readonly isInitialized: boolean;
 
-  /** 初始化 RTC 引擎（不需要凭证，可在本地预览阶段调用）。 */
+  /**
+   * 初始化 RTC 引擎（不需要凭证，可在本地预览阶段调用）。
+   */
   initialize(): Promise<void>;
 
-  /** 销毁 RTC 引擎并释放资源。 */
+  /**
+   * 销毁 RTC 引擎并释放资源。
+   */
   destroy(): Promise<void>;
 
   /**
@@ -51,7 +67,9 @@ export interface RtcManaging {
    */
   switchCameraCapture(to: CameraPosition): Promise<MediaStreamTrack>;
 
-  /** 停止摄像头采集。 */
+  /**
+   * 停止摄像头采集。
+   */
   stopCameraCapture(): Promise<void>;
 
   /**
@@ -72,7 +90,9 @@ export interface RtcManaging {
    */
   joinRoom(configuration: RoomJoinConfiguration): Promise<void>;
 
-  /** 离开当前 RTC 房间；未在房间中时不产生效果。 */
+  /**
+   * 离开当前 RTC 房间；未在房间中时不产生效果。
+   */
   leaveRoom(): Promise<void>;
 
   /**
@@ -82,7 +102,9 @@ export interface RtcManaging {
    */
   publishLocalVideo(): Promise<void>;
 
-  /** 停止发布本地视频流；采集保持运行，本地预览不受影响。 */
+  /**
+   * 停止发布本地视频流；采集保持运行，本地预览不受影响。
+   */
   unpublishLocalVideo(): Promise<void>;
 
   /**
@@ -92,7 +114,9 @@ export interface RtcManaging {
    */
   publishLocalAudio(): Promise<void>;
 
-  /** 停止发布本地音频流；麦克风采集保持运行。 */
+  /**
+   * 停止发布本地音频流；麦克风采集保持运行。
+   */
   unpublishLocalAudio(): Promise<void>;
 
   /**
@@ -128,6 +152,8 @@ export interface RtcManaging {
    */
   sendRoomMessage(message: string): void;
 
-  /** 设置 RTC 事件监听器，传入空值时清除监听器。 */
+  /**
+   * 设置 RTC 事件监听器，传入空值时清除监听器。
+   */
   setEventListener(listener?: RtcEventListener): void;
 }

@@ -10,19 +10,29 @@ import {
 } from "react";
 
 export interface XmaxVideoProps {
-  /** 当前显示的视频轨道；置空时清空画面。 */
+  /**
+   * 当前显示的视频轨道；置空时清空画面。
+   */
   track?: RealtimeVideoTrack;
 
-  /** 视频内容在容器中的显示模式，默认 fill。 */
+  /**
+   * 视频内容在容器中的显示模式，默认 fill。
+   */
   videoContentMode?: VideoContentMode;
 
-  /** 是否镜像显示（仅影响显示，不影响发布流）。 */
+  /**
+   * 是否镜像显示（仅影响显示，不影响发布流）。
+   */
   mirrored?: boolean;
 
-  /** 容器类名。 */
+  /**
+   * 容器类名。
+   */
   className?: string;
 
-  /** 容器样式。 */
+  /**
+   * 容器样式。
+   */
   style?: CSSProperties;
 }
 
@@ -38,6 +48,7 @@ export function XmaxVideo(props: XmaxVideoProps) {
     if (!container) {
       return;
     }
+
     const view = new XmaxVideoView();
     view.element.style.width = "100%";
     view.element.style.height = "100%";

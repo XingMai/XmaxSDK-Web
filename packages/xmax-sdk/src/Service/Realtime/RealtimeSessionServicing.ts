@@ -5,12 +5,18 @@ import type {
 } from "./RealtimeSessionConnection";
 import type { RealtimeSession } from "./RealtimeSession";
 
-/** 实时会话心跳回调集合。 */
+/**
+ * 实时会话心跳回调集合。
+ */
 export interface RealtimeSessionHeartbeatHandlers {
-  /** 心跳失败或会话失效时调用（一次性，触发后心跳停止）。 */
+  /**
+   * 心跳失败或会话失效时调用（一次性，触发后心跳停止）。
+   */
   onFailure: RealtimeSessionHeartbeatFailureHandler;
 
-  /** 心跳成功后调用，携带包含最新 RTC 凭据的会话数据。 */
+  /**
+   * 心跳成功后调用，携带包含最新 RTC 凭据的会话数据。
+   */
   onRefresh?: RealtimeSessionHeartbeatRefreshHandler;
 }
 
@@ -38,7 +44,9 @@ export interface RealtimeSessionServicing {
     handlers: RealtimeSessionHeartbeatHandlers,
   ): void;
 
-  /** 停止当前心跳；已经失效的迟到结果不会再触发回调。 */
+  /**
+   * 停止当前心跳；已经失效的迟到结果不会再触发回调。
+   */
   stopHeartbeat(): void;
 
   /**

@@ -70,7 +70,7 @@ describe("XmaxRealtimeGenerationManager", () => {
     manager.update(taskID, { videoFormat, context: updated });
     expect(manager.validateContext()).toBe(updated);
     expect(stream.beginGeneration).toHaveBeenCalledOnce();
-    expect(stream.updateGeneration).toHaveBeenCalledWith({ taskID, videoFormat, targetSize: undefined, context: updated });
+    expect(stream.updateGeneration).toHaveBeenCalledWith({ taskID, videoFormat, context: updated });
     await manager.reset();
     await manager.reset();
     expect(stream.stopGeneration).toHaveBeenCalledOnce();
@@ -206,6 +206,50 @@ describe("XmaxRealtimeConnectionManager", () => {
     expect(() => manager.makeRemoteStream()).toThrow("unavailable");
     binding.frameDisplayHandler?.();
     expect(events.onFrameDisplayed).toHaveBeenCalledOnce();
+  });
+
+  it("updates the current render target without clearing it on a stale detach", async () => {
+    const { manager, events, options } = setup();
+    const remote = await manager.connect(options);
+    const binding = VideoRenderRegistry.binding(remote.videoTrack!)!;
+    const previous = { isMirrored: false, setMediaStream: vi.fn(), setFrameInterpolation: vi.fn() };
+    const current = { isMirrored: false, setMediaStream: vi.fn(), setFrameInterpolation: vi.fn() };
+
+    binding.attachHandler(previous, VideoContentMode.fit);
+    events.onRenderAttached.mockImplementation(() => manager.setFrameInterpolation(undefined));
+    binding.attachHandler(current, VideoContentMode.fit);
+    expect(previous.setFrameInterpolation).toHaveBeenCalledWith(undefined);
+    expect(current.setFrameInterpolation.mock.contexts).toEqual([current]);
+
+    binding.detachHandler(previous);
+    expect(events.onRenderDetached).not.toHaveBeenCalled();
+    current.isMirrored = false;
+    manager.updateRemoteMirror();
+    expect(current.isMirrored).toBe(true);
+    current.setMediaStream.mockClear();
+    manager.clearRemoteMedia();
+    expect(current.setMediaStream).toHaveBeenCalledOnce();
+    expect(current.setMediaStream).toHaveBeenCalledWith(null);
+    expect(current.setMediaStream.mock.contexts).toEqual([current]);
+
+    binding.detachHandler(current);
+    expect(events.onRenderDetached).toHaveBeenCalledOnce();
+    current.setMediaStream.mockClear();
+    manager.clearRemoteMedia();
+    expect(current.setMediaStream).not.toHaveBeenCalled();
+    await manager.disconnect();
+  });
+
+  it("supports render targets without frame interpolation", async () => {
+    const { manager, options } = setup();
+    const remote = await manager.connect(options);
+    const binding = VideoRenderRegistry.binding(remote.videoTrack!)!;
+    const view = { isMirrored: false, setMediaStream: vi.fn() };
+
+    binding.attachHandler(view, VideoContentMode.fit);
+    expect(() => manager.setFrameInterpolation(undefined)).not.toThrow();
+    binding.detachHandler(view);
+    await manager.disconnect();
   });
 
   it("retains a just-created session for cleanup if cancellation arrives during creation", async () => {

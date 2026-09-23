@@ -1,9 +1,13 @@
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
 
-/** 分片消息的固定事件名。 */
+/**
+ * 分片消息的固定事件名。
+ */
 const CHUNK_EVENT = "__trtc_chunk__";
 
-/** 未完成的组包记录。 */
+/**
+ * 未完成的组包记录。
+ */
 interface ChunkRecord {
   count: number;
   parts: Map<number, string>;
@@ -14,20 +18,30 @@ interface ChunkRecord {
  *
  * 出站：消息 UTF-8 字节长度超过 800 时按分片 JSON 拆包；
  * 入站：识别分片消息并按 `(发送方, eventId)` 乱序组包，
- * 未收齐时返回 `undefined`，收齐并校验 JSON 后返回完整消息。
+ * 未收齐时返回 `undefined`，收齐后返回解析后的完整业务消息。
  */
 export class RoomMessageCodec {
-  // 协议常量
-  /** 触发拆包的消息字节阈值。 */
+  /**
+   * 协议常量
+   */
+  /**
+   * 触发拆包的消息字节阈值。
+   */
   static readonly chunkThresholdBytes = 800;
 
-  /** 单个分片正文的字节预算，保证分片 JSON 自身不超过阈值。 */
+  /**
+   * 单个分片正文的字节预算，保证分片 JSON 自身不超过阈值。
+   */
   static readonly chunkDataBudgetBytes = 600;
 
-  /** 未完成组包记录的缓存上限（LRU）。 */
+  /**
+   * 未完成组包记录的缓存上限（LRU）。
+   */
   static readonly cacheLimit = 1000;
 
-  // 接收缓存
+  /**
+   * 接收缓存
+   */
   private readonly records = new Map<string, ChunkRecord>();
 
   /**
@@ -47,11 +61,13 @@ export class RoomMessageCodec {
       RoomMessageCodec.chunkDataBudgetBytes,
     );
     const count = slices.length;
+
     XmaxLogger.room.debug(
       () =>
         `房间消息拆包 (Chunking Room Message)\n` +
         `└─ eventId: ${eventId} · count: ${count} · bytes: ${RoomMessageCodec.byteLength(message)}`,
     );
+
     return slices.map((data, index) =>
       JSON.stringify({
         event: CHUNK_EVENT,
@@ -66,13 +82,21 @@ export class RoomMessageCodec {
   /**
    * 处理入站消息。
    *
-   * @returns 普通业务消息原样返回；分片未收齐或组包结果不是合法
-   * JSON 时返回 `undefined`；分片收齐后返回完整消息并从缓存移除。
+   * @returns 返回解析后的业务消息；分片未收齐或 JSON 非法时返回
+   * `undefined`；分片收齐后从缓存移除并解析完整消息。
    */
-  processIncoming(senderUserID: string, message: string): string | undefined {
-    const chunk = RoomMessageCodec.parseChunk(message);
+  processIncoming(senderUserID: string, message: string): unknown {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(message);
+    } catch {
+      XmaxLogger.room.warning(() => "房间消息不是合法 JSON (Room Message Is Not Valid JSON)");
+      return undefined;
+    }
+
+    const chunk = RoomMessageCodec.parseChunk(parsed);
     if (!chunk) {
-      return message;
+      return parsed;
     }
 
     const key = `${senderUserID}:${chunk.eventId}`;
@@ -82,6 +106,7 @@ export class RoomMessageCodec {
       this.records.set(key, record);
       this.evictOverflow();
     }
+
     record.parts.set(chunk.index, chunk.data);
 
     if (record.parts.size < record.count) {
@@ -97,36 +122,35 @@ export class RoomMessageCodec {
       }
       parts.push(part);
     }
+
     const joined = parts.join("");
     try {
-      JSON.parse(joined);
+      return JSON.parse(joined) as unknown;
     } catch {
       XmaxLogger.room.warning(
         () => `房间消息组包后不是合法 JSON (Reassembled Message Is Not Valid JSON)\n└─ eventId: ${chunk.eventId}`,
       );
       return undefined;
     }
-    return joined;
   }
 
-  /** 清空未完成的组包缓存。 */
+  /**
+   * 清空未完成的组包缓存。
+   */
   reset(): void {
     this.records.clear();
   }
 
-  /** 识别分片消息；字段不完整时按普通业务消息处理。 */
+  /**
+   * 从已解析的值识别分片消息；字段不完整时按普通业务消息处理。
+   */
   private static parseChunk(
-    message: string,
+    parsed: unknown,
   ): { eventId: string; index: number; count: number; data: string } | undefined {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(message);
-    } catch {
-      return undefined;
-    }
     if (typeof parsed !== "object" || parsed === null) {
       return undefined;
     }
+
     const record = parsed as Record<string, unknown>;
     if (
       record.event !== CHUNK_EVENT ||
@@ -137,15 +161,19 @@ export class RoomMessageCodec {
     ) {
       return undefined;
     }
+
     const index = record.index as number;
     const count = record.count as number;
     if (count < 1 || index < 0 || index >= count) {
       return undefined;
     }
+
     return { eventId: record.eventId, index, count, data: record.data };
   }
 
-  /** 淘汰最旧的未完成记录，保持缓存不超过上限。 */
+  /**
+   * 淘汰最旧的未完成记录，保持缓存不超过上限。
+   */
   private evictOverflow(): void {
     while (this.records.size > RoomMessageCodec.cacheLimit) {
       const oldest = this.records.keys().next().value;
@@ -156,11 +184,14 @@ export class RoomMessageCodec {
     }
   }
 
-  /** 按 UTF-8 字节预算切分字符串，不拆分多字节字符。 */
+  /**
+   * 按 UTF-8 字节预算切分字符串，不拆分多字节字符。
+   */
   private static sliceByByteBudget(message: string, budget: number): string[] {
     const slices: string[] = [];
     let current = "";
     let currentBytes = 0;
+
     for (const char of message) {
       const bytes = RoomMessageCodec.byteLength(char);
       if (currentBytes + bytes > budget && current.length > 0) {
@@ -171,18 +202,24 @@ export class RoomMessageCodec {
       current += char;
       currentBytes += bytes;
     }
+
     if (current.length > 0) {
       slices.push(current);
     }
+
     return slices;
   }
 
-  /** 计算字符串的 UTF-8 字节长度。 */
+  /**
+   * 计算字符串的 UTF-8 字节长度。
+   */
   private static byteLength(value: string): number {
     return new TextEncoder().encode(value).byteLength;
   }
 
-  /** 生成拆包事件标识（32 位十六进制）。 */
+  /**
+   * 生成拆包事件标识（32 位十六进制）。
+   */
   private static makeEventId(): string {
     if (typeof crypto !== "undefined" && crypto.randomUUID) {
       return crypto.randomUUID().replace(/-/g, "");

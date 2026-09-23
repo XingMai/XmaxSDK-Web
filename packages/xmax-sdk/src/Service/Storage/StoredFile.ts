@@ -2,13 +2,22 @@
  * 上传完成后返回的已存储文件信息。
  */
 export class StoredFile {
-  /** 文件的访问地址。 */
+  /**
+   * 存储结果
+   */
+  /**
+   * 文件的访问地址。
+   */
   readonly url: string;
 
-  /** 对象存储中的对象键。 */
+  /**
+   * 对象存储中的对象键。
+   */
   readonly objectKey: string;
 
-  /** 对象存储返回的 ETag；未返回时为空。 */
+  /**
+   * 对象存储返回的 ETag；未返回时为空。
+   */
   readonly etag?: string;
 
   /**

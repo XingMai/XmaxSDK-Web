@@ -1,17 +1,27 @@
 export interface RoomJoinConfigurationInit {
-  /** TRTC 房间号（字符串房间号）。 */
+  /**
+   * TRTC 房间号（字符串房间号）。
+   */
   roomID: string;
 
-  /** TRTC 登录身份（`rtc_user_id`）。 */
+  /**
+   * TRTC 登录身份（`rtc_user_id`）。
+   */
   userID: string;
 
-  /** TRTC SDKAppID（字符串形式，进房时转换为数值）。 */
+  /**
+   * TRTC SDKAppID（字符串形式，进房时转换为数值）。
+   */
   sdkAppID: string;
 
-  /** TRTC 登录签名。 */
+  /**
+   * TRTC 登录签名。
+   */
   userSig: string;
 
-  /** TRTC 进房鉴权字段（字符串房间号对应的 privateMapKey）。 */
+  /**
+   * TRTC 进房鉴权字段（字符串房间号对应的 privateMapKey）。
+   */
   privateMapKey: string;
 }
 
@@ -19,20 +29,32 @@ export interface RoomJoinConfigurationInit {
  * RTC 房间加入参数。
  */
 export class RoomJoinConfiguration {
-  // 进房参数
-  /** TRTC 房间号（字符串房间号）。 */
+  /**
+   * 进房参数
+   */
+  /**
+   * TRTC 房间号（字符串房间号）。
+   */
   readonly roomID: string;
 
-  /** TRTC 登录身份（`rtc_user_id`）。 */
+  /**
+   * TRTC 登录身份（`rtc_user_id`）。
+   */
   readonly userID: string;
 
-  /** TRTC SDKAppID（字符串形式，进房时转换为数值）。 */
+  /**
+   * TRTC SDKAppID（字符串形式，进房时转换为数值）。
+   */
   readonly sdkAppID: string;
 
-  /** TRTC 登录签名。 */
+  /**
+   * TRTC 登录签名。
+   */
   readonly userSig: string;
 
-  /** TRTC 进房鉴权字段（字符串房间号对应的 privateMapKey）。 */
+  /**
+   * TRTC 进房鉴权字段（字符串房间号对应的 privateMapKey）。
+   */
   readonly privateMapKey: string;
 
   /**

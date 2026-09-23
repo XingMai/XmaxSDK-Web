@@ -15,22 +15,34 @@ import type { RemoteVideoStatisticsListener, VideoStatisticsListener } from "../
  * 定义 SDK 对接入方提供的实时媒体与生成控制能力。
  */
 export interface XmaxRealtimeManaging {
-  /** 实时能力配置。 */
+  /**
+   * 实时能力配置。
+   */
   readonly options: RealtimeConfiguration;
 
-  /** 当前实时连接与生成状态。 */
+  /**
+   * 当前实时连接与生成状态。
+   */
   readonly currentState: RealtimeState;
 
-  /** 插帧功能开关；不随首帧等待、跳帧或视图挂载变化，不支持或故障降级时关闭。 */
+  /**
+   * 插帧功能开关；不随首帧等待、跳帧或视图挂载变化，不支持或故障降级时关闭。
+   */
   readonly isFrameInterpolationEnabled: boolean;
 
-  /** 切换客户端插帧，不改变回传分辨率或重启任务。不支持时抛错且保留配置。 */
+  /**
+   * 切换客户端插帧，不改变回传分辨率或重启任务。不支持时抛错且保留配置。
+   */
   setFrameInterpolationEnabled(enabled: boolean): Promise<void>;
 
-  /** 当前本地媒体预览音量，取值范围为 `0...1`。 */
+  /**
+   * 当前本地媒体预览音量，取值范围为 `0...1`。
+   */
   readonly localAudioVolume: number;
 
-  /** 当前远端生成音频播放音量，取值范围为 `0...1`。 */
+  /**
+   * 当前远端生成音频播放音量，取值范围为 `0...1`。
+   */
   readonly remoteAudioVolume: number;
 
   /**
@@ -92,9 +104,15 @@ export interface XmaxRealtimeManaging {
     videoFormat: RealtimeVideoFormat;
     position: CameraPosition;
     useMicrophone: boolean;
+    /**
+     * 是否在发布前检测相机帧亮度，默认 true；false 跳过检测及其等待，不产生检测耗时。
+     */
+    enableFrameValidation?: boolean;
   }): Promise<RealtimeMediaStream>;
 
-  /** 停止本地相机流并释放本地预览与 RTC 资源。 */
+  /**
+   * 停止本地相机流并释放本地预览与 RTC 资源。
+   */
   stopLocalCameraStream(): Promise<void>;
 
   /**
@@ -111,7 +129,7 @@ export interface XmaxRealtimeManaging {
    * 使用当前 Manager 创建的本地流建立实时连接。
    *
    * 创建实时会话、加入 RTC 房间并发布本地流，成功后启动会话心跳。
-   * 发布前并行检查相机亮度，首张合格帧即放行；2 秒内未通过检查则
+   * 启用帧检测时，发布前并行检查相机亮度，首张合格帧即放行；2 秒内未通过检查则
    * 记录警告并按当前画面继续发布，不因环境较暗而阻断连接。
    * 返回的远端媒体流在生成开始后承载远端生成画面。
    *
@@ -122,7 +140,9 @@ export interface XmaxRealtimeManaging {
    */
   connect(localStream: RealtimeMediaStream): Promise<RealtimeMediaStream>;
 
-  /** 断开实时连接并保留当前本地媒体预览。 */
+  /**
+   * 断开实时连接并保留当前本地媒体预览。
+   */
   disconnect(): Promise<void>;
 
   /**

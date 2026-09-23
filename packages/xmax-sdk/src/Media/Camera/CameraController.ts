@@ -23,31 +23,46 @@ import type { CameraControlling, CameraPreviewReadyHandler } from "./CameraContr
  * （M2 接入），当前仅维护配置与权限。
  */
 export class CameraController implements CameraControlling {
-  // 轨道标识
+  /**
+   * 轨道标识
+   */
   private static readonly localVideoTrackID = "video0";
 
-  // 基础层组件
+  /**
+   * 基础层组件
+   */
   private readonly permissionManager: PermissionManaging;
   private readonly rtcManager: RtcManaging;
 
-  // 服务层组件
+  /**
+   * 服务层组件
+   */
   private readonly mediaService: MediaServicing;
 
-  // 事件监听
+  /**
+   * 事件监听
+   */
   private readonly errorListener: XmaxErrorListener;
   private previewReadyHandler?: CameraPreviewReadyHandler;
 
-  // 本地资源
+  /**
+   * 本地资源
+   */
   private activeTrack?: RealtimeVideoTrack;
   private previewStream?: MediaStream;
   private previewMirrorApplier?: (mirrored: boolean) => void;
 
-  // 预览状态
+  /**
+   * 预览状态
+   */
   private hasCapturedFrame = false;
   private isPreviewAttached = false;
 
-  // 麦克风配置
+  /**
+   * 当前相机流配置
+   */
   private storedUseMicrophone = false;
+  private storedFrameValidationEnabled = true;
 
   /**
    * 创建相机控制器。
@@ -69,27 +84,47 @@ export class CameraController implements CameraControlling {
     this.errorListener = options?.errorListener ?? (() => {});
   }
 
-  /** 当前活动的本地相机视频轨道；尚未创建时为空。 */
+  /**
+   * 当前活动的本地相机视频轨道；尚未创建时为空。
+   */
   get currentTrack(): RealtimeVideoTrack | undefined {
     return this.activeTrack;
   }
 
-  /** 当前相机流是否配置为使用麦克风。 */
+  /**
+   * 当前相机流是否配置为使用麦克风。
+   */
   get useMicrophone(): boolean {
     return this.activeTrack !== undefined && this.storedUseMicrophone;
   }
 
+  /**
+   * 当前活动相机流是否启用发布前亮度检测；没有活动流时为 false。
+   */
+  get isFrameValidationEnabled(): boolean {
+    return this.activeTrack !== undefined && this.storedFrameValidationEnabled;
+  }
+
+  /**
+   * 等待当前轨道首张合格帧或超时放行；禁用时跳过，取消或轨道被替换时拒绝。
+   */
   async waitForValidCameraFrame(signal: AbortSignal): Promise<void> {
     const track = this.activeTrack;
     const mediaTrack = track?.mediaStreamTrack;
     if (!mediaTrack) throw new XmaxError(XmaxErrorCode.mediaError, "Camera capture is not running");
+    if (signal.aborted) throw new XmaxError(XmaxErrorCode.cancelled, "Camera frame validation cancelled");
+    if (!this.isFrameValidationEnabled) return;
+
     await waitForValidCameraFrame(mediaTrack, signal);
+
     if (this.activeTrack !== track || track.mediaStreamTrack !== mediaTrack) {
       throw new XmaxError(XmaxErrorCode.cancelled, "Camera track changed during exposure check");
     }
   }
 
-  /** 设置当前相机流的一次性内部就绪处理；条件为已收到有效帧且预览已绑定。 */
+  /**
+   * 设置当前相机流的一次性内部就绪处理；条件为已收到有效帧且预览已绑定。
+   */
   setPreviewReadyHandler(handler?: CameraPreviewReadyHandler): void {
     this.previewReadyHandler = handler;
     const track = this.activeTrack;
@@ -104,6 +139,7 @@ export class CameraController implements CameraControlling {
    * @param options.videoFormat 期望的输出尺寸、帧率和编码配置；尺寸按模型规则调整。
    * @param options.position 首次启动时使用的摄像头位置。
    * @param options.useMicrophone 是否申请麦克风权限并允许实时连接时启动音频采集。
+   * @param options.enableFrameValidation 是否在发布前检测帧亮度，默认 true；false 跳过检测及其等待。
    * @returns 包含本地相机视频轨道的媒体流。
    * @throws 已有活动相机流、格式无效、权限不足或采集启动失败时抛出错误。
    */
@@ -111,6 +147,7 @@ export class CameraController implements CameraControlling {
     videoFormat: RealtimeVideoFormat;
     position: CameraPosition;
     useMicrophone: boolean;
+    enableFrameValidation?: boolean;
   }): Promise<RealtimeMediaStream> {
     if (this.activeTrack) {
       throw new XmaxError(
@@ -118,6 +155,7 @@ export class CameraController implements CameraControlling {
         "Stop the current local camera stream before creating another one",
       );
     }
+
     const resolvedFormat = this.resolveVideoFormat(options.videoFormat);
     const track = new RealtimeVideoTrack({
       id: CameraController.localVideoTrackID,
@@ -130,10 +168,12 @@ export class CameraController implements CameraControlling {
       if (options.useMicrophone) {
         await this.permissionManager.ensureMicrophonePermission();
       }
+
       await this.rtcManager.initialize();
 
       this.activeTrack = track;
       this.storedUseMicrophone = options.useMicrophone;
+      this.storedFrameValidationEnabled = options.enableFrameValidation ?? true;
       this.hasCapturedFrame = false;
       this.isPreviewAttached = false;
       this.registerPreviewBinding(track);
@@ -147,6 +187,7 @@ export class CameraController implements CameraControlling {
       track.mediaStreamTrack = mediaTrack;
       this.previewStream = new MediaStream([mediaTrack]);
       this.observeMediaTrack(track, mediaTrack);
+
       return new RealtimeMediaStream({ id: StreamID.local, videoTrack: track });
     } catch (error) {
       await this.stopLocalCameraStream();
@@ -154,19 +195,24 @@ export class CameraController implements CameraControlling {
     }
   }
 
-  /** 停止相机采集并销毁 RTC 引擎，释放当前轨道及本地预览资源。 */
+  /**
+   * 停止相机采集并销毁 RTC 引擎，释放当前轨道及本地预览资源。
+   */
   async stopLocalCameraStream(): Promise<void> {
     const track = this.activeTrack;
     this.activeTrack = undefined;
     this.previewReadyHandler = undefined;
     this.previewStream = undefined;
     this.previewMirrorApplier = undefined;
+
     this.storedUseMicrophone = false;
+    this.storedFrameValidationEnabled = true;
     this.hasCapturedFrame = false;
     this.isPreviewAttached = false;
 
     await this.rtcManager.stopCameraCapture();
     await this.rtcManager.destroy();
+
     if (track) {
       VideoRenderRegistry.unregister(track);
       track.mediaStreamTrack = undefined;
@@ -191,14 +237,17 @@ export class CameraController implements CameraControlling {
         "Local camera preview is not started",
       );
     }
+
     const nextPosition =
       position === CameraPosition.front ? CameraPosition.back : CameraPosition.front;
 
     // 采集切换失败时旧设备保持不变。
     const mediaTrack = await this.rtcManager.switchCameraCapture(nextPosition);
+
     const previousTrack = track.mediaStreamTrack;
     track.updatePosition(nextPosition);
     track.mediaStreamTrack = mediaTrack;
+
     if (this.previewStream) {
       if (previousTrack) {
         this.previewStream.removeTrack(previousTrack);
@@ -207,10 +256,13 @@ export class CameraController implements CameraControlling {
     }
     this.previewMirrorApplier?.(nextPosition === CameraPosition.front);
     this.observeMediaTrack(track, mediaTrack);
+
     return new RealtimeMediaStream({ id: StreamID.local, videoTrack: track });
   }
 
-  /** 为相机轨道注册预览渲染绑定：attach 时挂流、镜像并标记预览已绑定。 */
+  /**
+   * 为相机轨道注册预览渲染绑定：attach 时挂流、镜像并标记预览已绑定。
+   */
   private registerPreviewBinding(track: RealtimeVideoTrack): void {
     VideoRenderRegistry.register(track, {
       attachHandler: (view) => {
@@ -221,11 +273,13 @@ export class CameraController implements CameraControlling {
             "Camera capture is not running",
           );
         }
+
         view.isMirrored = track.position === CameraPosition.front;
         view.setMediaStream(stream);
         this.previewMirrorApplier = (mirrored) => {
           view.isMirrored = mirrored;
         };
+
         this.isPreviewAttached = true;
         this.notifyPreviewReady(track);
       },
@@ -237,7 +291,9 @@ export class CameraController implements CameraControlling {
     });
   }
 
-  /** 监听媒体轨首帧与意外结束：首帧推进预览就绪，意外结束上报错误。 */
+  /**
+   * 监听媒体轨首帧与意外结束：首帧推进预览就绪，意外结束上报错误。
+   */
   private observeMediaTrack(
     track: RealtimeVideoTrack,
     mediaTrack: MediaStreamTrack,
@@ -273,7 +329,9 @@ export class CameraController implements CameraControlling {
     });
   }
 
-  /** 满足"已收到有效帧且预览已绑定"时触发一次性就绪回调。 */
+  /**
+   * 满足"已收到有效帧且预览已绑定"时触发一次性就绪回调。
+   */
   private notifyPreviewReady(track: RealtimeVideoTrack): void {
     if (
       this.activeTrack !== track ||
@@ -288,7 +346,9 @@ export class CameraController implements CameraControlling {
     handler(() => this.activeTrack === track);
   }
 
-  /** 按模型输入规则校验并解析目标视频规格。 */
+  /**
+   * 按模型输入规则校验并解析目标视频规格。
+   */
   private resolveVideoFormat(videoFormat: RealtimeVideoFormat): RealtimeVideoFormat {
     videoFormat.validate();
     const targetSize = this.mediaService.resolveModelInputSize({
