@@ -74,14 +74,6 @@ export class ReferenceLibrary {
       item.mode === mode ? { ...item, is_selected: item.id === remembered } : item));
   }
 
-  /** 该模式记住的选中项 id；条目已删除时视为没有。 */
-  selectedFor(mode: ExampleModeKey): string | undefined {
-    const id = this.selectedIds.get(mode);
-    return id && this.items.some((item) => item.id === id && item.mode === mode)
-      ? id
-      : undefined;
-  }
-
   /** 每次进入生成页都从角色替换的第一张预置图开始，不受之前上传和选中项影响。 */
   async selectInitialReference(apply: ApplyReference): Promise<void> {
     const first = this.items.find((item) => item.mode === "charx" && !item.file);
@@ -116,8 +108,7 @@ export class ReferenceLibrary {
     for (const [mode, selectedId] of this.selectedIds) {
       if (selectedId === id) this.selectedIds.delete(mode);
     }
-    if (this.previews.has(item.thumbnail)) {
-      this.previews.delete(item.thumbnail);
+    if (this.previews.delete(item.thumbnail)) {
       URL.revokeObjectURL(item.thumbnail);
     }
     this.update(this.items.filter((entry) => entry.id !== id));

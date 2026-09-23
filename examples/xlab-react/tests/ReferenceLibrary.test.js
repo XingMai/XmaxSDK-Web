@@ -62,10 +62,11 @@ describe("ReferenceLibrary", () => {
     // 切回角色替换，A 的选中态恢复，且不影响虚拟试衣的记住项。
     library.setMode("charx");
     expect(library.snapshot.find((item) => item.id === charxA.id).is_selected).toBe(true);
-    expect(library.selectedFor("clothx")).toBe(clothA.id);
+    expect(library.snapshot.find((item) => item.id === clothA.id).is_selected).toBe(true);
     // 同模式内改选 B 后，记住项更新为 B。
     await library.select(charxB.id, apply);
     library.setMode("clothx");
+    expect(library.snapshot.find((item) => item.id === clothA.id).is_selected).toBe(true);
     library.setMode("charx");
     expect(library.snapshot.find((item) => item.id === charxB.id).is_selected).toBe(true);
     expect(library.snapshot.find((item) => item.id === charxA.id).is_selected).toBe(false);
@@ -314,11 +315,12 @@ describe("ReferenceLibrary.clearOtherModes", () => {
 
     library.clearOtherModes("free");
 
-    expect(library.selectedFor("charx")).toBeUndefined();
-    expect(library.selectedFor("clothx")).toBeUndefined();
-    expect(library.selectedFor("free")).toBe(freeId);
+    // 切回各模式，确认旧选中不会恢复，自由模式仍保留选中项。
+    library.setMode("charx");
     expect(library.snapshot.find((item) => item.id === charxA.id).is_selected).toBe(false);
+    library.setMode("clothx");
     expect(library.snapshot.find((item) => item.id === clothA.id).is_selected).toBe(false);
+    library.setMode("free");
     expect(library.snapshot.find((item) => item.id === freeId).is_selected).toBe(true);
   });
 });

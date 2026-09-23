@@ -1,4 +1,5 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useState } from "react";
+import { usePopoverInteraction } from "./usePopoverInteraction";
 
 interface RemoteVolumeControlProps {
   volume: number;
@@ -8,49 +9,29 @@ interface RemoteVolumeControlProps {
 
 export function RemoteVolumeControl({ volume, disabled = false, onChange }: RemoteVolumeControlProps) {
   const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const buttonRef = useRef<HTMLButtonElement>(null);
-  const sliderRef = useRef<HTMLInputElement>(null);
   const id = useId();
   const percent = Math.round(volume * 100);
+  const expanded = open && !disabled;
+  const { rootRef, buttonRef, onBlur } = usePopoverInteraction({
+    open: expanded,
+    initialFocus: 'input[type="range"]',
+    onOpenChange: setOpen,
+  });
 
   useEffect(() => {
     if (disabled) setOpen(false);
   }, [disabled]);
 
-  useEffect(() => {
-    if (!open) return;
-    sliderRef.current?.focus();
-    const closeOutside = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      setOpen(false);
-      buttonRef.current?.focus();
-    };
-    document.addEventListener("pointerdown", closeOutside);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOutside);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [open]);
-
   return (
-    <div className="remoteVolumeControl" ref={rootRef} onBlur={(event) => {
-      // 原生滑杆交互时可能暂时失焦且 relatedTarget 为 null，不能据此关闭。
-      // 只有焦点明确移到控件外才收起；外部点击由 pointerdown 处理。
-      if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget as Node)) setOpen(false);
-    }}>
+    <div className="remoteVolumeControl" ref={rootRef} onBlur={onBlur}>
       <button
         ref={buttonRef}
         type="button"
         className={`remoteVolumeButton${percent > 0 ? " active" : ""}`}
         disabled={disabled}
         aria-label={`远端音量：${percent === 0 ? "静音" : `${percent}%`}`}
-        aria-expanded={open}
-        aria-controls={open ? id : undefined}
+        aria-expanded={expanded}
+        aria-controls={expanded ? id : undefined}
         aria-haspopup="dialog"
         title="调整远端播放音量"
         onClick={() => setOpen((value) => !value)}
@@ -63,13 +44,13 @@ export function RemoteVolumeControl({ volume, disabled = false, onChange }: Remo
           </>}
         </svg>
       </button>
-      {open && !disabled && (
+      {expanded && (
         <div className="remoteVolumePopover" id={id} role="dialog" aria-label="远端播放音量">
           <div className="remoteVolumeHeading">
             <label htmlFor={`${id}-slider`}>远端音量</label>
             <output htmlFor={`${id}-slider`}>{percent === 0 ? "静音" : `${percent}%`}</output>
           </div>
-          <input ref={sliderRef} id={`${id}-slider`} type="range" min="0" max="100" step="1"
+          <input id={`${id}-slider`} type="range" min="0" max="100" step="1"
             value={percent} aria-valuetext={percent === 0 ? "静音" : `${percent}%`}
             style={{ backgroundImage: `linear-gradient(to right, var(--accent) ${percent}%, #e9ebef ${percent}%)` }}
             onChange={(event) => onChange(Number(event.currentTarget.value) / 100)} />
