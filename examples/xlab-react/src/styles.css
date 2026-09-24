@@ -94,7 +94,7 @@ button:disabled {
 
 .brandLogo {
   display: block;
-  height: 34px;
+  height: clamp(31px, 0.75vw + 22px, 48px);
   width: auto;
 }
 
@@ -115,8 +115,8 @@ button:disabled {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  width: 36px;
-  height: 36px;
+  width: clamp(35px, 0.55vw + 26px, 48px);
+  height: clamp(35px, 0.55vw + 26px, 48px);
   padding: 0;
   border: 1px solid #e2e5ea;
   border-radius: 999px;
@@ -195,21 +195,24 @@ button:disabled {
 /* ── 初始页（图一） ─────────────────────── */
 
 .hero {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   text-align: center;
-  padding-top: 8vh;
 }
 
 .hero h1 {
-  font-size: 44px;
+  font-size: clamp(29px, 1.1vw + 19px, 50px);
   font-weight: 500;
   letter-spacing: -0.03em;
-  margin: 0 0 40px;
+  margin: 0 0 clamp(26px, 1.1vw + 17px, 40px);
 }
 
 .heroStage {
   position: relative;
-  max-width: 720px;
-  margin: 0 auto;
+  width: min(100%, clamp(580px, 45vw, 940px));
   aspect-ratio: 1920 / 1024;
   border-radius: 24px;
   background:
@@ -226,10 +229,10 @@ button:disabled {
   border: none;
   background: var(--accent);
   color: #fff;
-  font-size: 17px;
+  font-size: clamp(15px, 0.3vw + 12px, 18px);
   font-weight: 600;
   border-radius: 999px;
-  padding: 14px 34px;
+  padding: clamp(12px, 0.28vw + 9px, 16px) clamp(25px, 0.75vw + 18px, 40px);
   box-shadow: 0 10px 30px rgba(47, 70, 226, 0.35);
 }
 
@@ -274,7 +277,7 @@ button:disabled {
   backdrop-filter: blur(6px);
   border-radius: 999px;
   padding: 6px 7px 6px 14px;
-  font-size: 12px;
+  font-size: clamp(12px, 0.28vw + 9.5px, 15px);
   color: rgba(255, 255, 255, 0.55);
   transition:
     color 0.15s ease,
@@ -319,7 +322,7 @@ button:disabled {
   bottom: 18px;
   left: 0;
   right: 0;
-  font-size: 12px;
+  font-size: clamp(12px, 0.28vw + 9.5px, 15px);
   color: #9ca3af;
 }
 
@@ -337,7 +340,7 @@ button:disabled {
 .copyright {
   margin: 16px 0 0;
   text-align: center;
-  font-size: 12px;
+  font-size: clamp(11.5px, 0.28vw + 9px, 14px);
   color: var(--text-secondary);
 }
 
@@ -530,6 +533,11 @@ button:disabled {
   gap: 24px;
 }
 
+/* 会话页整页垂直居中：顶栏、双屏画面、页签与参考图作为整体居中。 */
+.sessionPage {
+  justify-content: center;
+}
+
 .stage {
   position: relative;
   aspect-ratio: 1920 / 1024;
@@ -654,6 +662,9 @@ button:disabled {
 .promptBar {
   margin: 4px auto 0;
   max-width: 880px;
+  /* 与参考图列表等高（三行 282px 减去上边距），切换页签时整体布局不跳动。 */
+  height: 278px;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -666,9 +677,10 @@ button:disabled {
 .promptBar textarea {
   display: block;
   width: 100%;
+  flex: 1;
   min-height: 84px;
-  max-height: 240px;
-  resize: vertical;
+  max-height: none;
+  resize: none;
   border: none;
   background: transparent;
   font-size: 15px;
@@ -846,11 +858,13 @@ button:disabled {
 .presetRow {
   min-width: 0;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-content: flex-start;
   gap: 14px;
-  overflow-x: auto;
-  padding-bottom: 8px;
+  /* 固定为完整三行的高度：不同模式的参考图行数不同也不影响整体布局，超出部分纵向滚动，不显示滚动条。 */
+  height: 282px;
+  overflow-y: auto;
   scrollbar-width: none;
   cursor: grab;
   user-select: none;
@@ -875,11 +889,6 @@ button:disabled {
 .presetRow.dragging {
   cursor: grabbing;
   scroll-behavior: auto;
-}
-
-.presetLine {
-  display: flex;
-  gap: 14px;
 }
 
 .presetItem {
@@ -994,11 +1003,66 @@ button:disabled {
 
 /* ── 错误提示 ─────────────────────────── */
 
-.error {
-  margin: 16px auto 0;
-  max-width: 640px;
-  font-size: 13px;
-  color: var(--danger);
+/* 错误 toast：顶部居中浮出，随页面切换保持可见。 */
+.toast {
+  position: fixed;
+  top: 84px;
+  left: 50%;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(560px, calc(100vw - 56px));
+  padding: 12px 14px 12px 16px;
+  border: 1px solid rgba(17, 19, 24, 0.08);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 12px 32px rgba(17, 19, 24, 0.14);
+  color: rgba(17, 19, 24, 0.9);
+  font-size: 14px;
+  line-height: 1.5;
+  animation: toastIn 0.3s ease both;
+}
+
+.toast > svg {
+  flex-shrink: 0;
+  color: #e5484d;
+}
+
+.toastText {
+  min-width: 0;
+}
+
+.toastClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(17, 19, 24, 0.45);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.toastClose:hover {
+  background: rgba(17, 19, 24, 0.06);
+  color: rgba(17, 19, 24, 0.85);
+}
+
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -10px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
 }
 
 /* ── 页脚 ─────────────────────────────── */
@@ -1019,8 +1083,8 @@ button:disabled {
 }
 
 .footerSocial svg {
-  width: 26px;
-  height: 26px;
+  width: clamp(19px, 0.4vw + 14px, 28px);
+  height: clamp(19px, 0.4vw + 14px, 28px);
 }
 
 .footerSocial a,
@@ -1076,8 +1140,8 @@ button:disabled {
 .footerLinks {
   display: flex;
   align-items: center;
-  gap: 30px;
-  font-size: 15px;
+  gap: clamp(20px, 0.8vw + 10px, 28px);
+  font-size: clamp(12px, 0.28vw + 9.5px, 15px);
 }
 
 .footerLinks a {

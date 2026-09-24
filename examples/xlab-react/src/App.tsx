@@ -68,7 +68,6 @@ export function App() {
   const [useMicrophone, setUseMicrophone] = useState(true);
   const [prompt, setPrompt] = useState("");
   const [activeModeKey, setActiveModeKey] = useState<ExampleModeKey>("charx");
-  const [presetLineCapacity, setPresetLineCapacity] = useState(0);
   const [localStream, setLocalStream] = useState<RealtimeMediaStream | undefined>();
   const [remoteStream, setRemoteStream] = useState<RealtimeMediaStream | undefined>();
   const [stateText, setStateText] = useState<RealtimeConnectionState>(
@@ -90,6 +89,13 @@ export function App() {
   const wechatRef = useRef<HTMLDivElement>(null);
   const keyFieldRef = useRef<HTMLDivElement>(null);
   const presetRowRef = useRef<HTMLDivElement>(null);
+
+  // 错误提示以 toast 展示，6 秒后自动消失；新错误会重置计时。
+  useEffect(() => {
+    if (!errorText) return;
+    const timer = setTimeout(() => setErrorText(""), 6000);
+    return () => clearTimeout(timer);
+  }, [errorText]);
 
   // 点击微信图标外部时收起二维码弹层。
   useEffect(() => {
@@ -191,24 +197,17 @@ export function App() {
     EXAMPLE_MODES[0]!;
   const submitPrompt = activeMode.key === "free" ? prompt : selectedReference?.prompt ?? activeMode.prompt;
 
-  // 预设列表滚动：纵向滚轮映射为横向滚动，左键按住可拖拽滚动。
+  // 预设列表滚动：滚轮与触控板纵向滚动为原生行为，左键按住可上下拖拽滚动。
   useEffect(() => {
     const row = presetRowRef.current;
     if (!row) {
       return;
     }
 
-    const handleWheel = (event: WheelEvent) => {
-      if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
-        event.preventDefault();
-        row.scrollLeft += event.deltaY;
-      }
-    };
-
     let dragging = false;
     let moved = false;
-    let startX = 0;
-    let startScrollLeft = 0;
+    let startY = 0;
+    let startScrollTop = 0;
 
     const handlePointerDown = (event: PointerEvent) => {
       if (event.button !== 0) {
@@ -216,21 +215,21 @@ export function App() {
       }
       dragging = true;
       moved = false;
-      startX = event.clientX;
-      startScrollLeft = row.scrollLeft;
+      startY = event.clientY;
+      startScrollTop = row.scrollTop;
     };
     const handlePointerMove = (event: PointerEvent) => {
       if (!dragging) {
         return;
       }
-      const deltaX = event.clientX - startX;
-      if (Math.abs(deltaX) > 4) {
+      const deltaY = event.clientY - startY;
+      if (Math.abs(deltaY) > 4) {
         moved = true;
         row.classList.add("dragging");
         // 真正拖动后才捕获指针，否则普通点击会被重定向到容器，无法选中图片。
         if (!row.hasPointerCapture(event.pointerId)) row.setPointerCapture(event.pointerId);
       }
-      row.scrollLeft = startScrollLeft - deltaX;
+      row.scrollTop = startScrollTop - deltaY;
     };
     const handlePointerEnd = (event: PointerEvent) => {
       dragging = false;
@@ -247,33 +246,13 @@ export function App() {
       }
     };
 
-    row.addEventListener("wheel", handleWheel, { passive: false });
     row.addEventListener("pointerdown", handlePointerDown);
     row.addEventListener("pointermove", handlePointerMove);
     row.addEventListener("pointerup", handlePointerEnd);
     row.addEventListener("pointercancel", handlePointerEnd);
     row.addEventListener("click", handleClickCapture, true);
 
-    // 测量可视宽度能容纳的预设个数，用于决定第一行填多少再换行。
-    const measureCapacity = () => {
-      // 页面隐藏（display: none）时宽度为 0，跳过测量以免覆盖正确容量。
-      if (row.clientWidth === 0) return;
-      const item = row.querySelector<HTMLElement>(".presetItem");
-      if (!item) {
-        return;
-      }
-      const pitch = item.getBoundingClientRect().width + 14;
-      setPresetLineCapacity(
-        Math.max(1, Math.floor((row.clientWidth + 14) / pitch)),
-      );
-    };
-    const resizeObserver = new ResizeObserver(measureCapacity);
-    resizeObserver.observe(row);
-    measureCapacity();
-
     return () => {
-      resizeObserver.disconnect();
-      row.removeEventListener("wheel", handleWheel);
       row.removeEventListener("pointerdown", handlePointerDown);
       row.removeEventListener("pointermove", handlePointerMove);
       row.removeEventListener("pointerup", handlePointerEnd);
@@ -452,7 +431,7 @@ export function App() {
     setErrorText("");
     try {
       const uploading = references.addFile(file, submitPrompt, applyReference);
-      if (presetRowRef.current) presetRowRef.current.scrollLeft = 0;
+      if (presetRowRef.current) presetRowRef.current.scrollTop = 0;
       await uploading;
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : String(error));
@@ -718,7 +697,6 @@ export function App() {
           <p className="copyright">
             Copyright © 2026 XMAX.AI PTE.LTD. All rights reserved.
           </p>
-          {errorText && <div className="error">{errorText}</div>}
         </main>
         {footer}
         </div>
@@ -728,7 +706,7 @@ export function App() {
         className={sessionActive ? "pageView active" : "pageView"}
         aria-hidden={!sessionActive}
       >
-    <div className="page">
+    <div className="page sessionPage">
       <header className="topbar">
         <div className="brand">
           <img className="brandLogo" src="/xmax-wordmark.png" alt="Xmax" />
@@ -757,9 +735,9 @@ export function App() {
           <span className="stageLabel">Local</span>
           <div className="localStatistics" id="local-statistics" hidden={!statisticsVisible}>
             <StatisticsPanel className="launchTiming" label="启动耗时统计" rows={[
-              { label: "打开摄像头", value: formatLaunchTiming(launchTiming.cameraMs) },
-              { label: "建立连接", value: formatLaunchTiming(launchTiming.connectionMs) },
-              { label: "亮度检测", value: formatLaunchTiming(launchTiming.frameValidationMs), title: "与建立连接并行，未计入连接耗时" },
+              { label: "摄像头授权", value: formatLaunchTiming(launchTiming.cameraMs), title: "含系统授权等待与摄像头硬件启动" },
+              { label: "建立连接", value: formatLaunchTiming(launchTiming.connectionMs), title: "含 200ms 相机预热等待" },
+              { label: "发布本地流", value: formatLaunchTiming(launchTiming.publishMs) },
               { label: "首帧到达", value: formatLaunchTiming(launchTiming.firstFrameMs) },
               { label: "完整启动耗时", value: formatLaunchTiming(launchTiming.totalMs), className: "launchTimingTotal" },
             ]} />
@@ -895,17 +873,46 @@ export function App() {
           <ReferenceList
             items={activeReferences}
             rowRef={presetRowRef}
-            lineCapacity={presetLineCapacity}
             disabled={busy || !apiKey}
             onUpload={() => fileInputRef.current?.click()}
             onSelect={(item) => void handleSelectReference(item)}
           />
         )}
       </div>
-
-      {errorText && <div className="error">{errorText}</div>}
     </div>
       </div>
+
+      {errorText && (
+        <div className="toast" role="alert" key={errorText}>
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
+            <line x1="12" x2="12" y1="9" y2="13" />
+            <line x1="12" x2="12.01" y1="17" y2="17" />
+          </svg>
+          <span className="toastText">{errorText}</span>
+          <button
+            type="button"
+            className="toastClose"
+            aria-label="Dismiss"
+            onClick={() => setErrorText("")}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+              <line x1="5" x2="19" y1="5" y2="19" />
+              <line x1="19" x2="5" y1="5" y2="19" />
+            </svg>
+          </button>
+        </div>
+      )}
     </div>
   );
 }
