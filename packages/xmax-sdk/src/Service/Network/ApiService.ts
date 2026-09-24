@@ -22,6 +22,7 @@ export type ApiFetch = (
     headers: Record<string, string>;
     body?: string;
     signal?: AbortSignal;
+    keepalive?: boolean;
   },
 ) => Promise<{
   status: number;
@@ -95,11 +96,13 @@ export class ApiService implements ApiServicing {
 
   /**
    * 发送请求并返回统一响应中的数据。
+   *
+   * @param options.keepalive 为 true 时请求可存活于页面卸载之后。
    */
-  async request<T>(method: ApiMethod, path: string, body?: unknown): Promise<T> {
+  async request<T>(method: ApiMethod, path: string, body?: unknown, options?: { keepalive?: boolean }): Promise<T> {
     this.validateConfiguration();
 
-    const request = this.makeRequest(method, path, body);
+    const request = this.makeRequest(method, path, body, options);
     const startedAt = Date.now();
 
     let status: number;
@@ -153,8 +156,8 @@ export class ApiService implements ApiServicing {
   /**
    * 发送 DELETE 请求。
    */
-  delete<T>(path: string): Promise<T> {
-    return this.request<T>(ApiMethod.delete, path);
+  delete<T>(path: string, options?: { keepalive?: boolean }): Promise<T> {
+    return this.request<T>(ApiMethod.delete, path, undefined, options);
   }
 
   /**
@@ -194,7 +197,17 @@ export class ApiService implements ApiServicing {
     method: ApiMethod,
     path: string,
     body?: unknown,
-  ): { url: string; init: { method: string; headers: Record<string, string>; body?: string; signal?: AbortSignal } } {
+    options?: { keepalive?: boolean },
+  ): {
+    url: string;
+    init: {
+      method: string;
+      headers: Record<string, string>;
+      body?: string;
+      signal?: AbortSignal;
+      keepalive?: boolean;
+    };
+  } {
     const normalizedPath = path.trim();
     if (
       normalizedPath.length === 0 ||
@@ -248,6 +261,7 @@ export class ApiService implements ApiServicing {
         },
         body: encodedBody,
         signal: AbortSignal.timeout(this.timeoutMs),
+        ...(options?.keepalive ? { keepalive: true } : {}),
       },
     };
   }

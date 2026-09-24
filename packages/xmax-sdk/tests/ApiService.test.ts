@@ -11,6 +11,7 @@ interface RecordedRequest {
     headers: Record<string, string>;
     body?: string;
     signal?: AbortSignal;
+    keepalive?: boolean;
   };
 }
 
@@ -118,6 +119,22 @@ describe("ApiService", () => {
     await expect(service.get("/session/active")).rejects.toMatchObject({
       code: XmaxErrorCode.timeout,
     });
+  });
+
+  it("sends DELETE with keepalive when requested", async () => {
+    const { service, requests } = makeApiService();
+    await service.delete("/session/ums-001", { keepalive: true });
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.init.method).toBe(ApiMethod.delete);
+    expect(requests[0]!.init.keepalive).toBe(true);
+  });
+
+  it("omits keepalive by default", async () => {
+    const { service, requests } = makeApiService();
+    await service.delete("/session/ums-001");
+
+    expect(requests[0]!.init.keepalive).toBeUndefined();
   });
 
   it("rejects empty API key before sending", async () => {

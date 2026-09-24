@@ -116,12 +116,13 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
   }
 
   /**
-   * 关闭指定实时会话。
+   * 关闭指定实时会话；请求带 keepalive，页面卸载后仍能发出。
    */
   async closeSession(sessionID: string): Promise<void> {
     try {
       await this.apiService.delete<Record<string, never>>(
         `/session/${sessionID}`,
+        { keepalive: true },
       );
     } catch (error) {
       throw XmaxError.from(error);

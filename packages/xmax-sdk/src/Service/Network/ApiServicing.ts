@@ -43,6 +43,9 @@ export interface ApiServicing {
 
   /**
    * 发送 DELETE 请求。
+   *
+   * @param options.keepalive 为 true 时请求可存活于页面卸载之后，
+   * 用于刷新或关闭页签时的清理请求。
    */
-  delete<T>(path: string): Promise<T>;
+  delete<T>(path: string, options?: { keepalive?: boolean }): Promise<T>;
 }

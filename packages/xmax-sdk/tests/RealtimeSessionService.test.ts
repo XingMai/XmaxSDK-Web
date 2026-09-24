@@ -18,13 +18,13 @@ const trtcModelExtra = {
 };
 
 class ApiServicingStub implements ApiServicing {
-  requests: { method: ApiMethod; path: string; body?: unknown }[] = [];
+  requests: { method: ApiMethod; path: string; body?: unknown; keepalive?: boolean }[] = [];
   postResponses: Array<unknown | Error> = [];
   putResponses: Array<unknown | Error> = [];
   deleteResponses: Array<unknown | Error> = [];
 
-  request<T>(method: ApiMethod, path: string, body?: unknown): Promise<T> {
-    this.requests.push({ method, path, body });
+  request<T>(method: ApiMethod, path: string, body?: unknown, options?: { keepalive?: boolean }): Promise<T> {
+    this.requests.push({ method, path, body, keepalive: options?.keepalive });
     const queue =
       method === ApiMethod.post
         ? this.postResponses
@@ -55,8 +55,8 @@ class ApiServicingStub implements ApiServicing {
     return this.request<T>(ApiMethod.put, path, body);
   }
 
-  delete<T>(path: string): Promise<T> {
-    return this.request<T>(ApiMethod.delete, path);
+  delete<T>(path: string, options?: { keepalive?: boolean }): Promise<T> {
+    return this.request<T>(ApiMethod.delete, path, undefined, options);
   }
 }
 
@@ -216,7 +216,7 @@ describe("RealtimeSessionService", () => {
     expect(refreshCount).toBe(countAtStop);
   });
 
-  it("closes the session through DELETE", async () => {
+  it("closes the session through DELETE with keepalive", async () => {
     const api = new ApiServicingStub();
     api.deleteResponses = [{}];
     const service = makeService(api);
@@ -225,6 +225,7 @@ describe("RealtimeSessionService", () => {
     expect(api.requests[0]).toMatchObject({
       method: ApiMethod.delete,
       path: "/session/ums-001",
+      keepalive: true,
     });
   });
 });
