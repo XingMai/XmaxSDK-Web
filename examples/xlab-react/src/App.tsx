@@ -858,72 +858,75 @@ export function App() {
           onChange={handleReferenceChange}
         />
 
-        {activeMode.key === "free" && (
-          <div className="promptBar">
-            <textarea
-              rows={3}
-              aria-label="Describe how you want the video to change"
-              placeholder="Describe how you want the video to change"
-              value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
-            />
-            <div className="promptActions">
-              {uploadedReference ? (
-                <span
-                  className="uploadedThumb"
-                  title={uploadedReference.error ?? uploadedReference.name}
-                >
-                  <img src={uploadedReference.thumbnail} alt={uploadedReference.name} />
-                  {uploadedReference.upload_status === "uploading" && (
-                    <span className="uploadedThumbOverlay">
-                      <span className="presetSpinner" />
-                    </span>
-                  )}
-                  <button
-                    className="uploadedRemove"
-                    onClick={() => references.remove(uploadedReference.id)}
-                    disabled={busy}
-                    title="Remove reference"
+        {/* 隐形等高容器：高度对齐三行参考图列表，切换页签时下方布局不跳动。 */}
+        <div className="modeBody">
+          {activeMode.key === "free" && (
+            <div className="promptBar">
+              <textarea
+                rows={3}
+                aria-label="Describe how you want the video to change"
+                placeholder="Describe how you want the video to change"
+                value={prompt}
+                onChange={(event) => setPrompt(event.target.value)}
+              />
+              <div className="promptActions">
+                {uploadedReference ? (
+                  <span
+                    className="uploadedThumb"
+                    title={uploadedReference.error ?? uploadedReference.name}
                   >
-                    ×
+                    <img src={uploadedReference.thumbnail} alt={uploadedReference.name} />
+                    {uploadedReference.upload_status === "uploading" && (
+                      <span className="uploadedThumbOverlay">
+                        <span className="presetSpinner" />
+                      </span>
+                    )}
+                    <button
+                      className="uploadedRemove"
+                      onClick={() => references.remove(uploadedReference.id)}
+                      disabled={busy}
+                      title="Remove reference"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ) : (
+                  <button
+                    className="uploadButton"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={busy || !apiKey}
+                    title="Upload your own reference image"
+                    aria-label="Upload reference image"
+                  >
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                      <path d="M12 4v16M4 12h16" />
+                    </svg>
                   </button>
-                </span>
-              ) : (
+                )}
                 <button
-                  className="uploadButton"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={busy || !apiKey}
-                  title="Upload your own reference image"
-                  aria-label="Upload reference image"
+                  className="submitButton"
+                  onClick={handleSubmitPrompt}
+                  disabled={busy || !apiKey || referenceUploading}
+                  title={apiKey ? "" : "Generation requires an API Key"}
+                  aria-label="Submit prompt"
                 >
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                    <path d="M12 4v16M4 12h16" />
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M4 12h16m-6-6 6 6-6 6" />
                   </svg>
                 </button>
-              )}
-              <button
-                className="submitButton"
-                onClick={handleSubmitPrompt}
-                disabled={busy || !apiKey || referenceUploading}
-                title={apiKey ? "" : "Generation requires an API Key"}
-                aria-label="Submit prompt"
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M4 12h16m-6-6 6 6-6 6" />
-                </svg>
-              </button>
+              </div>
             </div>
-          </div>
-        )}
-        {activeMode.key !== "free" && (
-          <ReferenceList
-            items={activeReferences}
-            rowRef={presetRowRef}
-            disabled={busy || !apiKey}
-            onUpload={() => fileInputRef.current?.click()}
-            onSelect={(item) => void handleSelectReference(item)}
-          />
-        )}
+          )}
+          {activeMode.key !== "free" && (
+            <ReferenceList
+              items={activeReferences}
+              rowRef={presetRowRef}
+              disabled={busy || !apiKey}
+              onUpload={() => fileInputRef.current?.click()}
+              onSelect={(item) => void handleSelectReference(item)}
+            />
+          )}
+        </div>
       </div>
     </div>
       </div>

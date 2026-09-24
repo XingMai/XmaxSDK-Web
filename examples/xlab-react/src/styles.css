@@ -113,6 +113,7 @@ button:disabled {
 
 .keyButton,
 .modelButton {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -139,6 +140,20 @@ button:disabled {
   max-width: 320px;
   padding: 0 14px;
   color: var(--text);
+}
+
+/* 移动端隐藏 key 文本时用角标标示已保存。 */
+.keyButton.filled::after {
+  content: "";
+  display: none;
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #34c759;
+  border: 1.5px solid #fff;
 }
 
 .keyButton:not(:disabled):hover,
@@ -669,9 +684,6 @@ button:disabled {
 .promptBar {
   margin: 4px auto 0;
   max-width: 880px;
-  /* 与参考图列表等高（三行 282px 减去上边距），切换页签时整体布局不跳动。 */
-  height: 278px;
-  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -814,6 +826,13 @@ button:disabled {
 
 .modeSection {
   margin-top: 34px;
+}
+
+/* 隐形等高容器：与三行参考图列表同高，切换页签时下方布局不跳动，
+   自由输入框本身保持自然高度。flow-root 阻止子元素 margin 塌陷造成的高度差。 */
+.modeBody {
+  display: flow-root;
+  min-height: 282px;
 }
 
 .modeTabs {
@@ -998,14 +1017,17 @@ button:disabled {
     color 0.15s ease;
 }
 
-.uploadItem:not(:disabled):hover .uploadCircle {
-  border-color: var(--accent);
-  color: var(--accent);
-}
+/* 触屏设备没有真正的 hover，包一层媒体查询避免点按后高亮粘住。 */
+@media (hover: hover) {
+  .uploadItem:not(:disabled):hover .uploadCircle {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
 
-/* hover 高亮不覆盖选中态的描边。 */
-.presetItem:not(:disabled):not(.active):hover img {
-  border-color: #c7d0f8;
+  /* hover 高亮不覆盖选中态的描边。 */
+  .presetItem:not(:disabled):not(.active):hover img {
+    border-color: #c7d0f8;
+  }
 }
 
 /* ── 错误提示 ─────────────────────────── */
@@ -1200,6 +1222,10 @@ button:disabled {
     padding: 0;
   }
 
+  .topbarRight .keyButton.filled::after {
+    display: block;
+  }
+
   .topbarRight .keyValue {
     display: none;
   }
@@ -1299,8 +1325,12 @@ button:disabled {
     display: inline;
   }
 
-  /* 自由输入条与单行参考图列表等高（54 图 + 6 间距 + 12 标签 + 4 内边距 = 76px），
-     切换页签时整体布局不跳动。 */
+  /* 隐形等高容器在移动端对齐单行参考图列表高度；
+     自由输入条自身固定 76px（54 图 + 6 间距 + 12 标签 + 4 内边距），切换页签时整体布局不跳动。 */
+  .modeBody {
+    min-height: 76px;
+  }
+
   .promptBar {
     height: 76px;
     margin-top: 0;
@@ -1311,7 +1341,8 @@ button:disabled {
   .promptBar textarea {
     min-height: 0;
     padding: 2px 4px;
-    font-size: 12px;
+    /* 移动端也不能小于 16px，否则 iOS 聚焦时自动放大页面；两行 45px 仍在 76px 高度内。 */
+    font-size: 16px;
     line-height: 1.4;
   }
 
