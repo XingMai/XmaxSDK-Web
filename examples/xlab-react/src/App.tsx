@@ -82,6 +82,10 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [remoteAudioVolume, setRemoteAudioVolume] = useState(0);
   const [statisticsVisible, setStatisticsVisible] = useState(true);
+  // 窄屏（移动端）会话页为画中画布局，上行统计并入大画面左上角。
+  const [isMobileLayout, setIsMobileLayout] = useState(
+    () => window.matchMedia("(max-width: 720px)").matches,
+  );
 
   const realtimeRef = useRef<XmaxRealtimeManaging | undefined>(undefined);
   const generationBusyRef = useRef(false);
@@ -96,6 +100,14 @@ export function App() {
     const timer = setTimeout(() => setErrorText(""), 6000);
     return () => clearTimeout(timer);
   }, [errorText]);
+
+  // 监听窄屏断点，切换会话页统计面板的归属位置。
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 720px)");
+    const update = () => setIsMobileLayout(query.matches);
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
 
   // 点击微信图标外部时收起二维码弹层。
   useEffect(() => {
@@ -206,8 +218,9 @@ export function App() {
 
     let dragging = false;
     let moved = false;
-    let startY = 0;
-    let startScrollTop = 0;
+    let horizontal = false;
+    let startPos = 0;
+    let startScroll = 0;
 
     const handlePointerDown = (event: PointerEvent) => {
       if (event.button !== 0) {
@@ -215,21 +228,27 @@ export function App() {
       }
       dragging = true;
       moved = false;
-      startY = event.clientY;
-      startScrollTop = row.scrollTop;
+      // 移动端为横向单列滚动，桌面端为纵向多行滚动。
+      horizontal = getComputedStyle(row).flexWrap === "nowrap";
+      startPos = horizontal ? event.clientX : event.clientY;
+      startScroll = horizontal ? row.scrollLeft : row.scrollTop;
     };
     const handlePointerMove = (event: PointerEvent) => {
       if (!dragging) {
         return;
       }
-      const deltaY = event.clientY - startY;
-      if (Math.abs(deltaY) > 4) {
+      const delta = (horizontal ? event.clientX : event.clientY) - startPos;
+      if (Math.abs(delta) > 4) {
         moved = true;
         row.classList.add("dragging");
         // 真正拖动后才捕获指针，否则普通点击会被重定向到容器，无法选中图片。
         if (!row.hasPointerCapture(event.pointerId)) row.setPointerCapture(event.pointerId);
       }
-      row.scrollTop = startScrollTop - deltaY;
+      if (horizontal) {
+        row.scrollLeft = startScroll - delta;
+      } else {
+        row.scrollTop = startScroll - delta;
+      }
     };
     const handlePointerEnd = (event: PointerEvent) => {
       dragging = false;
@@ -431,7 +450,10 @@ export function App() {
     setErrorText("");
     try {
       const uploading = references.addFile(file, submitPrompt, applyReference);
-      if (presetRowRef.current) presetRowRef.current.scrollTop = 0;
+      if (presetRowRef.current) {
+        presetRowRef.current.scrollTop = 0;
+        presetRowRef.current.scrollLeft = 0;
+      }
       await uploading;
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : String(error));
@@ -552,6 +574,29 @@ export function App() {
         </a>
       </nav>
     </footer>
+  );
+
+  // 上行统计面板组：桌面端在本地预览画面左上角，移动端并入远端大画面左上角。
+  const localStatisticsPanels = (
+    <>
+      <StatisticsPanel className="launchTiming" label="启动耗时统计" rows={[
+        { label: "摄像头授权", value: formatLaunchTiming(launchTiming.cameraMs), title: "含系统授权等待与摄像头硬件启动" },
+        { label: "建立连接", value: formatLaunchTiming(launchTiming.connectionMs), title: "含 200ms 相机预热等待" },
+        { label: "发布本地流", value: formatLaunchTiming(launchTiming.publishMs) },
+        { label: "首帧到达", value: formatLaunchTiming(launchTiming.firstFrameMs) },
+        { label: "完整启动耗时", value: formatLaunchTiming(launchTiming.totalMs), className: "launchTimingTotal" },
+      ]} />
+      <StatisticsPanel label="上行视频统计" rows={[
+        { label: "上行分辨率", value: formatVideoResolution(localVideoStatistics) },
+        { label: "上行帧率", value: formatVideoMetric(localVideoStatistics?.frameRate, "fps") },
+        { label: "上行码率", value: formatVideoMetric(localVideoStatistics?.bitrateKbps, "kbps") },
+      ]} />
+      <StatisticsPanel label="上行网络与延迟统计" rows={[
+        { label: "上行丢包率", value: formatVideoMetric(remoteVideoStatistics?.uplinkLossPercent, "%"), title: "本端 SDK → TRTC 云端的上行丢包率，不是本地预览丢包率" },
+        { label: "上行网络质量", value: formatNetworkQuality(networkStatistics?.uplinkQuality) },
+        { label: "上行 RTT", value: formatVideoMetric(networkStatistics?.uplinkRttMs, "ms"), title: "本端上行连接到 TRTC 云端的往返延迟，不是单程耗时" },
+      ]} />
+    </>
   );
 
   return (
@@ -721,7 +766,7 @@ export function App() {
             onClick={handleStop}
             disabled={busy}
           >
-            ■ Stop Session
+            ■ <span className="stopLabelFull">Stop Session</span><span className="stopLabelShort">Stop</span>
           </button>
         </div>
       </header>
@@ -733,25 +778,11 @@ export function App() {
             style={{ width: "100%", height: "100%" }}
           />
           <span className="stageLabel">Local</span>
-          <div className="localStatistics" id="local-statistics" hidden={!statisticsVisible}>
-            <StatisticsPanel className="launchTiming" label="启动耗时统计" rows={[
-              { label: "摄像头授权", value: formatLaunchTiming(launchTiming.cameraMs), title: "含系统授权等待与摄像头硬件启动" },
-              { label: "建立连接", value: formatLaunchTiming(launchTiming.connectionMs), title: "含 200ms 相机预热等待" },
-              { label: "发布本地流", value: formatLaunchTiming(launchTiming.publishMs) },
-              { label: "首帧到达", value: formatLaunchTiming(launchTiming.firstFrameMs) },
-              { label: "完整启动耗时", value: formatLaunchTiming(launchTiming.totalMs), className: "launchTimingTotal" },
-            ]} />
-            <StatisticsPanel label="上行视频统计" rows={[
-              { label: "上行分辨率", value: formatVideoResolution(localVideoStatistics) },
-              { label: "上行帧率", value: formatVideoMetric(localVideoStatistics?.frameRate, "fps") },
-              { label: "上行码率", value: formatVideoMetric(localVideoStatistics?.bitrateKbps, "kbps") },
-            ]} />
-            <StatisticsPanel label="上行网络与延迟统计" rows={[
-              { label: "上行丢包率", value: formatVideoMetric(remoteVideoStatistics?.uplinkLossPercent, "%"), title: "本端 SDK → TRTC 云端的上行丢包率，不是本地预览丢包率" },
-              { label: "上行网络质量", value: formatNetworkQuality(networkStatistics?.uplinkQuality) },
-              { label: "上行 RTT", value: formatVideoMetric(networkStatistics?.uplinkRttMs, "ms"), title: "本端上行连接到 TRTC 云端的往返延迟，不是单程耗时" },
-            ]} />
-          </div>
+          {!isMobileLayout && (
+            <div className="localStatistics" id="local-statistics" hidden={!statisticsVisible}>
+              {localStatisticsPanels}
+            </div>
+          )}
         </div>
         <div className="stage">
           {remoteStream && (
@@ -764,6 +795,7 @@ export function App() {
           )}
           <span className="stageLabel">Result</span>
           <div className="remoteStatistics" id="remote-statistics" hidden={!statisticsVisible}>
+            {isMobileLayout && localStatisticsPanels}
             <StatisticsPanel label="下行视频统计" rows={[
               { label: "下行分辨率", value: formatVideoResolution(remoteVideoStatistics) },
               { label: "下行帧率", value: formatVideoMetric(remoteVideoStatistics?.frameRate, "fps") },

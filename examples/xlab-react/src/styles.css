@@ -527,6 +527,11 @@ button:disabled {
     inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
+/* 移动端窄屏显示短文案。 */
+.stopLabelShort {
+  display: none;
+}
+
 .stageRow {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1157,6 +1162,28 @@ button:disabled {
 /* ── 窄屏适配 ──────────────────────────── */
 
 @media (max-width: 720px) {
+  .agreement {
+    display: none;
+  }
+
+  /* 启动按钮与麦克风开关收窄。 */
+  .startButton {
+    gap: 8px;
+    padding: 10px 20px;
+    font-size: 13px;
+  }
+
+  .startButton svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .micToggle {
+    gap: 6px;
+    padding: 5px 6px 5px 12px;
+    font-size: 11px;
+  }
+
   .topbarRight {
     min-width: 0;
     gap: 8px;
@@ -1179,8 +1206,165 @@ button:disabled {
     width: min(220px, calc(100vw - 80px));
   }
 
+  /* 会话页改为画中画：大画面远端结果宽度与页面内容两侧对齐，
+     高度占满屏幕剩余空间（内容 FILL 裁切，容器不锁宽高比）；
+     本地预览小画面 9:16 固定在大画面右下角。 */
+  .sessionPage {
+    justify-content: flex-start;
+    height: 100vh;
+    height: 100dvh;
+  }
+
   .stageRow {
-    grid-template-columns: 1fr;
+    display: block;
+    position: relative;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .stageRow > .stage:last-child {
+    width: 100%;
+    height: 100%;
+    aspect-ratio: auto;
+  }
+
+  .stageRow > .stage:first-child {
+    position: absolute;
+    right: 10px;
+    bottom: 10px;
+    z-index: 3;
+    width: 25%;
+    max-width: 110px;
+    aspect-ratio: 9 / 16;
+    border-radius: 14px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  }
+
+  /* 小画面放不下角标，移动端隐藏；上行统计面板由 JS 并入大画面左上角。 */
+  .stageRow > .stage:first-child .stageLabel {
+    display: none;
+  }
+
+  /* 页面两侧间距收窄。 */
+  .page {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  /* 顶栏整体收紧，避免会话控件溢出换行。 */
+  .topbar {
+    padding: 4px 0 14px;
+  }
+
+  .brandLogo {
+    height: 26px;
+  }
+
+  .sessionControls {
+    gap: 7px;
+  }
+
+  .remoteVolumeButton,
+  .statisticsToggle {
+    width: 30px;
+    height: 30px;
+  }
+
+  .remoteVolumeButton svg,
+  .statisticsToggle svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .sessionTimer {
+    height: 30px;
+    padding: 0 10px;
+    font-size: 12px;
+  }
+
+  .stopButton {
+    height: 30px;
+    padding: 0 12px;
+    gap: 5px;
+    font-size: 12px;
+  }
+
+  .stopLabelFull {
+    display: none;
+  }
+
+  .stopLabelShort {
+    display: inline;
+  }
+
+  /* 模式页签收窄并禁止换行，放不下时横向滑动。 */
+  .modeSection {
+    margin-top: 20px;
+  }
+
+  .modeTabs {
+    margin-bottom: 18px;
+  }
+
+  .modeTabsInner {
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .modeTabsInner::-webkit-scrollbar {
+    display: none;
+  }
+
+  .modeTab {
+    height: 30px;
+    padding: 0 13px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  /* 参考图改为横向单列滑动，不再换行占位；
+     列表全宽出血，首尾元素用外边距留白，避免在页面 padding 处被裁切。 */
+  .presetRow {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    height: auto;
+    margin-left: -16px;
+    margin-right: -16px;
+    padding: 2px 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .presetRow > .presetItem:first-child {
+    margin-left: 16px;
+  }
+
+  .presetRow > .presetItem:last-child {
+    margin-right: 16px;
+  }
+
+  .presetItem {
+    width: 64px;
+    flex: 0 0 auto;
+  }
+
+  .presetItem img,
+  .presetItem .presetThumbnail,
+  .uploadItem .uploadCircle {
+    width: 54px;
+    height: 54px;
+  }
+
+  .uploadItem .uploadCircle {
+    font-size: 20px;
+  }
+
+  .presetItem span {
+    font-size: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .siteFooter {
