@@ -37,7 +37,7 @@ export function ReferenceList({ items, rowRef, disabled, onUpload, onSelect }: R
             {item.upload_status === "uploading" && (
               <span className="presetUploadOverlay" role="status">
                 <span className="presetSpinner" />
-                {item.upload_progress ? `${item.upload_progress}%` : "Uploading…"}
+                {item.upload_progress ? `${item.upload_progress}%` : null}
               </span>
             )}
             {item.upload_status === "error" && (

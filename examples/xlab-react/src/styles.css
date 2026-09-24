@@ -15,6 +15,8 @@
 
 * {
   box-sizing: border-box;
+  /* 去掉移动端点按时的反白高亮。 */
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
@@ -1297,6 +1299,51 @@ button:disabled {
     display: inline;
   }
 
+  /* 自由输入条与单行参考图列表等高（54 图 + 6 间距 + 12 标签 + 4 内边距 = 76px），
+     切换页签时整体布局不跳动。 */
+  .promptBar {
+    height: 76px;
+    margin-top: 0;
+    padding: 8px;
+    border-radius: 14px;
+  }
+
+  .promptBar textarea {
+    min-height: 0;
+    padding: 2px 4px;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  .promptActions {
+    gap: 7px;
+  }
+
+  .uploadButton,
+  .submitButton {
+    width: 32px;
+    height: 32px;
+  }
+
+  .uploadButton svg,
+  .submitButton svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .uploadedThumb {
+    width: 32px;
+    height: 32px;
+  }
+
+  .uploadedRemove {
+    top: -4px;
+    right: -4px;
+    width: 15px;
+    height: 15px;
+    font-size: 10px;
+  }
+
   /* 模式页签收窄并禁止换行，放不下时横向滑动。 */
   .modeSection {
     margin-top: 20px;
@@ -1362,6 +1409,7 @@ button:disabled {
 
   .presetItem span {
     font-size: 10px;
+    line-height: 12px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

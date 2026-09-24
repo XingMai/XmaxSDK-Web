@@ -30,12 +30,15 @@ import { compressReferenceImage } from "./compressReferenceImage";
 
 const API_KEY_STORAGE = "xmax.xlab.apiKey";
 
-/** 相机采集格式：横屏 1920×1024（x2.0 受像素上限约束会自动等比缩小）。 */
-const CAMERA_VIDEO_FORMAT = new RealtimeVideoFormat({
-  width: 1920,
-  height: 1024,
-  fps: 30,
-});
+/** 相机采集格式：桌面横屏 1920×1024，窄屏竖屏 1024×1920（x2.0 受像素上限约束会自动等比缩小）。 */
+function cameraVideoFormat(): RealtimeVideoFormat {
+  const portrait = window.matchMedia("(max-width: 720px)").matches;
+  return new RealtimeVideoFormat(
+    portrait
+      ? { width: 1024, height: 1920, fps: 30 }
+      : { width: 1920, height: 1024, fps: 30 },
+  );
+}
 
 /** 会话计时的显示文案（mm:ss）。 */
 function formatElapsed(totalSeconds: number): string {
@@ -81,7 +84,9 @@ export function App() {
   const [errorText, setErrorText] = useState("");
   const [busy, setBusy] = useState(false);
   const [remoteAudioVolume, setRemoteAudioVolume] = useState(0);
-  const [statisticsVisible, setStatisticsVisible] = useState(true);
+  const [statisticsVisible, setStatisticsVisible] = useState(
+    () => !window.matchMedia("(max-width: 720px)").matches,
+  );
   // 窄屏（移动端）会话页为画中画布局，上行统计并入大画面左上角。
   const [isMobileLayout, setIsMobileLayout] = useState(
     () => window.matchMedia("(max-width: 720px)").matches,
@@ -199,6 +204,15 @@ export function App() {
       realtimeRef.current = undefined;
       void realtime?.close();
     };
+  }, []);
+
+  // 页面刷新或关闭页签时尽力清理会话；关闭请求带 keepalive，卸载后仍能发出。
+  useEffect(() => {
+    const handlePageHide = () => {
+      void realtimeRef.current?.close().catch(() => {});
+    };
+    window.addEventListener("pagehide", handlePageHide);
+    return () => window.removeEventListener("pagehide", handlePageHide);
   }, []);
 
   const sessionActive = localStream !== undefined;
@@ -356,7 +370,7 @@ export function App() {
         }
       });
       const stream = await realtime.createLocalCameraStream({
-        videoFormat: CAMERA_VIDEO_FORMAT,
+        videoFormat: cameraVideoFormat(),
         position: CameraPosition.front,
         useMicrophone,
         enableFrameValidation: true
