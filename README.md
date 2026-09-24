@@ -243,7 +243,7 @@ const localStream = await realtime.createLocalCameraStream({
   videoFormat: new RealtimeVideoFormat({ width: 1024, height: 1920, fps: 30 }),
   position: CameraPosition.front,
   useMicrophone: false,
-  enableFrameValidation: true, // Optional; false skips the startup brightness check and its wait.
+  enableFrameValidation: true, // Optional; waits a fixed 200ms camera warmup before publishing; false skips it.
 });
 
 const videoView = new XmaxRealtimeVideoView({

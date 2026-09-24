@@ -53,7 +53,7 @@ export enum XmaxErrorCode {
   cameraPermissionDenied = "CAMERA_PERMISSION_DENIED",
 
   /**
-   * @deprecated 为兼容保留；相机亮度检查超时现仅记录警告并继续流程，不再抛出此错误。
+   * @deprecated 为兼容保留；相机预热改为固定等待，不再抛出此错误。
    */
   cameraExposureTimeout = "CAMERA_EXPOSURE_TIMEOUT",
 

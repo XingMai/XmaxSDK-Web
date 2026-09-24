@@ -23,12 +23,12 @@ export interface CameraControlling {
   readonly useMicrophone: boolean;
 
   /**
-   * 当前相机流是否启用发布前的帧亮度检测。
+   * 当前相机流是否启用发布前的预热等待。
    */
   readonly isFrameValidationEnabled: boolean;
 
   /**
-   * 发布前等待当前相机首张亮度合格帧；超时放行，取消或采样失败时拒绝。
+   * 发布前等待当前相机预热完成（固定 200ms）；取消或轨道被替换时拒绝。
    */
   waitForValidCameraFrame(signal: AbortSignal): Promise<void>;
 

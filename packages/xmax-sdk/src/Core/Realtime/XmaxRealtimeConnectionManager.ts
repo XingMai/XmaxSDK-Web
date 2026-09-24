@@ -59,7 +59,8 @@ export class XmaxRealtimeConnectionManager {
 
   /**
    * 创建会话、配置编码、进房并发布本地媒体，启动心跳后返回远端占位流。
-   * 进房结束即记录连接耗时；可选 beforePublish 检查只阻塞发布，不计入连接耗时。
+   * 进房结束即记录连接耗时；可选 beforePublish 检查阻塞发布，计入连接耗时；
+   * 发布本地流单独计时。
    * @throws 会话、进房、发布失败或操作租约已失效时抛出错误，由上层统一清理。
    */
   async connect(options: {
@@ -99,16 +100,18 @@ export class XmaxRealtimeConnectionManager {
     await streamController.setVideoEncoderConfig(videoFormat);
     options.ensureCurrent();
 
+    let completePublish: (() => void) | undefined;
     await streamController.connect(connection, options.includeLocalAudio, () => {
       options.ensureCurrent();
     }, async () => {
       options.ensureCurrent();
-      // 进房配置已完成，停止连接计时；亮度等待及发布不属于会话/进房耗时。
-      completeConnection();
-      options.ensureCurrent();
+      // 进房配置完成；预热等待计入连接耗时，发布后单独计时。
       await options.beforePublish?.();
+      completeConnection();
+      completePublish = this.dependencies.timing.startPublish();
     });
     options.ensureCurrent();
+    completePublish?.();
     options.onPublished();
 
     sessionService.startHeartbeat(session.id, {

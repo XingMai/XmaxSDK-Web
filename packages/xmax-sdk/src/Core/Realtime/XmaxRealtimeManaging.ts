@@ -105,7 +105,7 @@ export interface XmaxRealtimeManaging {
     position: CameraPosition;
     useMicrophone: boolean;
     /**
-     * 是否在发布前检测相机帧亮度，默认 true；false 跳过检测及其等待，不产生检测耗时。
+     * 是否在发布前等待相机预热（固定 200ms），默认 true；false 跳过等待，不产生预热耗时。
      */
     enableFrameValidation?: boolean;
   }): Promise<RealtimeMediaStream>;
@@ -129,8 +129,7 @@ export interface XmaxRealtimeManaging {
    * 使用当前 Manager 创建的本地流建立实时连接。
    *
    * 创建实时会话、加入 RTC 房间并发布本地流，成功后启动会话心跳。
-   * 启用帧检测时，发布前并行检查相机亮度，首张合格帧即放行；2 秒内未通过检查则
-   * 记录警告并按当前画面继续发布，不因环境较暗而阻断连接。
+   * 启用帧检测时，发布前并行等待相机预热（固定 200ms），避免把黑帧推给 RTC。
    * 返回的远端媒体流在生成开始后承载远端生成画面。
    *
    * @param localStream 由 `createLocalCameraStream` 创建的本地媒体流。

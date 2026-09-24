@@ -1,6 +1,7 @@
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
 import { CameraPosition } from "../../Foundation/Media/Camera/CameraPosition";
+import { watchMediaPermissionPrompt } from "../../Foundation/Permissions/MediaPermissionWatch";
 import { RtcManager } from "../../Foundation/RTC/RtcManager";
 import type { RtcManaging } from "../../Foundation/RTC/RtcManaging";
 import type { NetworkStatistics, NetworkStatisticsListener } from "../../Foundation/RTC/NetworkStatistics";
@@ -77,6 +78,11 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    */
   private readonly launchTimer = new RealtimeLaunchTimer();
   private remoteFrameDisplayHandler?: () => void;
+
+  /**
+   * 媒体权限弹窗观察
+   */
+  private permissionWatchDispose?: () => void;
 
   /**
    * 本地、远端和网络统计快照及观察者
@@ -456,7 +462,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    *
    * 将返回的轨道绑定到预览视图；收到有效帧且视图已绑定后进入 `ready`。
    *
-   * @param options.enableFrameValidation 是否在发布前检测帧亮度，默认 true；false 跳过检测及其等待。
+   * @param options.enableFrameValidation 是否在发布前等待相机预热（固定 200ms），默认 true；false 跳过等待。
    * @returns 包含本地相机视频轨道的媒体流。
    * @throws 模型不支持相机输入、配置无效、权限或采集启动失败时抛出错误。
    */
@@ -476,11 +482,22 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         const completeCamera = this.launchTimer.startCamera();
         this.clearVideoStatistics();
 
+        // 系统弹出授权请求时单独统计用户授权耗时；已授权或未弹窗不记录。
+        // 麦克风可能在连接建立时才弹窗，观察器存活到相机流停止。
+        this.disposePermissionWatch();
+        const permissionWatch = await watchMediaPermissionPrompt(options?.useMicrophone ?? false);
+        if (permissionWatch) {
+          const completePermission = this.launchTimer.startPermission();
+          void permissionWatch.decided.then(() => completePermission()).catch(() => {});
+          this.permissionWatchDispose = permissionWatch.dispose;
+        }
+
         let stream: RealtimeMediaStream;
         try {
           token.ensureCurrent();
           stream = await this.cameraController.createLocalCameraStream(options);
         } catch (error) {
+          this.disposePermissionWatch();
           this.launchTimer.cancel();
           throw error;
         }
@@ -499,6 +516,14 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   }
 
   /**
+   * 移除媒体权限弹窗观察；授权决定已记录或不再需要观察时调用。
+   */
+  private disposePermissionWatch(): void {
+    this.permissionWatchDispose?.();
+    this.permissionWatchDispose = undefined;
+  }
+
+  /**
    * 停止本地相机流并释放本地预览与 RTC 资源。
    */
   async stopLocalCameraStream(): Promise<void> {
@@ -508,6 +533,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       async (token) => {
         this.launchTimer.cancel();
         this.clearVideoStatistics();
+        this.disposePermissionWatch();
         await this.cameraController.stopLocalCameraStream();
         token.ensureCurrent();
         await this.coordinator.commit(
@@ -543,8 +569,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    * 使用当前 Manager 创建的本地流建立实时连接。
    *
    * 创建实时会话、加入 RTC 房间并发布本地流，成功后启动会话心跳。
-   * 启用帧检测时，发布前并行检查相机亮度，首张合格帧即放行；2 秒内未通过检查则
-   * 记录警告并按当前画面继续发布，不因环境较暗而阻断连接。
+   * 启用帧检测时，发布前并行等待相机预热（固定 200ms），避免把黑帧推给 RTC。
    * 返回的远端媒体流在生成开始后承载远端生成画面。
    *
    * @param localStream 由 `createLocalCameraStream` 创建的本地媒体流。
@@ -674,22 +699,20 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       token,
     );
 
-    // 将帧检测绑定到本次连接操作；取消或退出连接流程时停止检测。
-    const exposureController = new AbortController();
-    const abortExposure = () => exposureController.abort();
-    token.signal.addEventListener("abort", abortExposure, { once: true });
-    if (token.signal.aborted) abortExposure();
+    // 将预热等待绑定到本次连接操作；取消或退出连接流程时停止等待。
+    const warmupController = new AbortController();
+    const abortWarmup = () => warmupController.abort();
+    token.signal.addEventListener("abort", abortWarmup, { once: true });
+    if (token.signal.aborted) abortWarmup();
 
     try {
       let beforePublish: (() => Promise<void>) | undefined;
       if (this.cameraController.isFrameValidationEnabled) {
-        const completeFrameValidation = this.launchTimer.startFrameValidation();
-        const cameraReady = this.cameraController.waitForValidCameraFrame(exposureController.signal).then(() => {
+        // 预热与建连并行，耗时计入连接；进房前预热失败也要接住拒绝，发布屏障仍等待原始结果。
+        const cameraReady = this.cameraController.waitForValidCameraFrame(warmupController.signal).then(() => {
           token.ensureCurrent();
-          completeFrameValidation();
         });
 
-        // 检查与建连并行；进房前检查失败也要接住拒绝，发布屏障仍等待原始结果。
         void cameraReady.catch(() => {});
         beforePublish = () => cameraReady;
       }
@@ -715,8 +738,8 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
 
       return remote;
     } finally {
-      token.signal.removeEventListener("abort", abortExposure);
-      abortExposure();
+      token.signal.removeEventListener("abort", abortWarmup);
+      abortWarmup();
     }
   }
 
@@ -793,6 +816,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     const sessionID = await this.connectionManager.disconnect();
 
     if (scope === RealtimeTerminationScope.all) {
+      this.disposePermissionWatch();
       try {
         await this.cameraController.stopLocalCameraStream();
       } catch (error) {

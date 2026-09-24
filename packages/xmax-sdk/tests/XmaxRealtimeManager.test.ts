@@ -578,7 +578,7 @@ describe("XmaxRealtimeManager launch timing", () => {
     useMicrophone: false,
   };
 
-  it.each([80, 300, 2_000])("并行亮度检测 %s ms 不计入连接，也不重复叠加总耗时", async (validationMs) => {
+  it.each([80, 300, 2_000])("并行预热 %s ms 计入连接耗时，不重复叠加总耗时", async (validationMs) => {
     let now = 0;
     vi.spyOn(performance, "now").mockImplementation(() => now);
     const { manager, camera, session, stream } = makeManager();
@@ -596,7 +596,7 @@ describe("XmaxRealtimeManager launch timing", () => {
     const originalConnect = stream.connect.bind(stream);
     vi.spyOn(stream, "connect").mockImplementation(async (...args) => {
       await originalConnect(...args);
-      now += 25; // 发布发生在进房和亮度检查之后，不污染连接耗时。
+      now += 25; // 发布本地流的耗时，单独计时。
     });
     const localStream = await manager.createLocalCameraStream(cameraOptions);
     const pending = manager.startGeneration({ localStream, context: testContext });
@@ -604,33 +604,36 @@ describe("XmaxRealtimeManager launch timing", () => {
     if (validationMs < 150) {
       now = 50 + validationMs;
       validationReady.resolve();
-      await vi.waitFor(() => expect(snapshots.at(-1)?.frameValidationMs).toBe(validationMs));
       expect(snapshots.at(-1)?.connectionMs).toBeUndefined();
       now = 200;
       sessionReady.resolve(session.session);
+      await vi.waitFor(() => expect(snapshots.at(-1)?.connectionMs).toBe(150));
     } else {
       now = 200;
       sessionReady.resolve(session.session);
-      await vi.waitFor(() => expect(snapshots.at(-1)?.connectionMs).toBe(150));
-      expect(snapshots.at(-1)?.frameValidationMs).toBeUndefined();
+      // 会话已就绪但预热未完成，发布屏障未放行，连接耗时尚未记录。
+      await vi.waitFor(() => expect(stream.connectCalls).toHaveLength(1));
+      expect(snapshots.at(-1)?.connectionMs).toBeUndefined();
       expect(stream.beginCalls).toHaveLength(0);
       now = 50 + validationMs;
       validationReady.resolve();
+      await vi.waitFor(() => expect(snapshots.at(-1)?.connectionMs).toBe(validationMs));
     }
+    await vi.waitFor(() => expect(snapshots.at(-1)?.publishMs).toBe(25));
     await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
     stream.confirmationDeferreds[0]!.resolve();
     const remote = await pending;
     now += 100;
     VideoRenderRegistry.binding(remote.videoTrack!)!.frameDisplayHandler!();
     expect(snapshots.at(-1)).toEqual({
-      cameraMs: 50, connectionMs: 150, frameValidationMs: validationMs, firstFrameMs: 100,
+      cameraMs: 50, connectionMs: Math.max(150, validationMs), publishMs: 25, firstFrameMs: 100,
       totalMs: 50 + Math.max(150, validationMs) + 25 + 100,
     });
     await manager.close();
   });
 
-  it("取消后的迟到检测结果不更新检测耗时", async () => {
-    const { manager, camera } = makeManager();
+  it("取消后的迟到预热结果不提交连接耗时", async () => {
+    const { manager, camera, stream } = makeManager();
     const snapshots: RealtimeLaunchTiming[] = [];
     await manager.setLaunchTimingListener((timing) => snapshots.push(timing));
     const ready = makeDeferred<void>();
@@ -638,15 +641,66 @@ describe("XmaxRealtimeManager launch timing", () => {
     const localStream = await manager.createLocalCameraStream(cameraOptions);
     const pending = manager.connect(localStream);
     const rejected = expect(pending).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
-    await vi.waitFor(() => expect(snapshots.at(-1)?.connectionMs).toBeDefined());
+    await vi.waitFor(() => expect(stream.connectCalls).toHaveLength(1));
     const closing = manager.close();
     ready.resolve();
     await closing;
     await rejected;
-    expect(snapshots.at(-1)?.frameValidationMs).toBeUndefined();
+    expect(snapshots.at(-1)?.connectionMs).toBeUndefined();
   });
 
-  it("分阶段回调：连接包含会话、编码和进房，亮度检测独立计时", async () => {
+  it("系统弹出授权请求时统计用户授权耗时", async () => {
+    let now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const cameraStatus = {
+      state: "prompt" as string,
+      onchange: null as (() => void) | null,
+    };
+    vi.stubGlobal("navigator", {
+      permissions: { query: vi.fn(async () => cameraStatus) },
+    });
+    try {
+      const { manager, camera } = makeManager();
+      const snapshots: RealtimeLaunchTiming[] = [];
+      await manager.setLaunchTimingListener((timing) => snapshots.push(timing));
+      const originalCreate = camera.createLocalCameraStream.bind(camera);
+      vi.spyOn(camera, "createLocalCameraStream").mockImplementation(async (options) => {
+        // 用户在系统弹窗上停留 800ms 后点击允许；不触发 onchange，
+        // 模拟 Safari 只能靠重新查询发现授权决定。
+        now = 800;
+        cameraStatus.state = "granted";
+        return originalCreate(options);
+      });
+
+      await manager.createLocalCameraStream(cameraOptions);
+      expect(snapshots.at(-1)?.cameraMs).toBe(800);
+      await vi.waitFor(() => expect(snapshots.at(-1)?.permissionMs).toBe(800));
+      await manager.close();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("浏览器已授权时授权耗时立即完成", async () => {
+    vi.stubGlobal("navigator", {
+      permissions: {
+        query: vi.fn(async () => ({ state: "granted", onchange: null })),
+      },
+    });
+    try {
+      const { manager } = makeManager();
+      const snapshots: RealtimeLaunchTiming[] = [];
+      await manager.setLaunchTimingListener((timing) => snapshots.push(timing));
+      await manager.createLocalCameraStream(cameraOptions);
+      expect(snapshots.at(-1)?.cameraMs).toEqual(expect.any(Number));
+      expect(snapshots.at(-1)?.permissionMs).toEqual(expect.any(Number));
+      await manager.close();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("分阶段回调：连接包含会话、编码、进房和预热等待", async () => {
     let now = 100;
     vi.spyOn(performance, "now").mockImplementation(() => now);
     const { manager, camera, session, stream } = makeManager();
@@ -678,13 +732,13 @@ describe("XmaxRealtimeManager launch timing", () => {
 
     // 即使没有挂载视图，生成仍能返回；此时不能伪报首帧和总耗时。
     expect(snapshots).toEqual([
-      {}, {}, { cameraMs: 250 }, { cameraMs: 250, frameValidationMs: 120 },
-      { cameraMs: 250, frameValidationMs: 120, connectionMs: 500 },
+      {}, {}, { cameraMs: 250 }, { cameraMs: 250, connectionMs: 500 },
+      { cameraMs: 250, connectionMs: 500, publishMs: 0 },
     ]);
     const onFrame = VideoRenderRegistry.binding(remote.videoTrack!)!.frameDisplayHandler!;
     now = 1250;
     onFrame();
-    expect(snapshots.at(-1)).toEqual({ cameraMs: 250, frameValidationMs: 120, connectionMs: 500, firstFrameMs: 400, totalMs: 1150 });
+    expect(snapshots.at(-1)).toEqual({ cameraMs: 250, connectionMs: 500, publishMs: 0, firstFrameMs: 400, totalMs: 1150 });
     expect(Object.isFrozen(snapshots.at(-1))).toBe(true);
 
     now = 1500;
@@ -732,7 +786,7 @@ describe("XmaxRealtimeManager launch timing", () => {
     const localStream = await manager.createLocalCameraStream(cameraOptions);
     stream.failConnect = new XmaxError(XmaxErrorCode.rtcError, "join failed");
     await expect(manager.startGeneration({ localStream, context: testContext })).rejects.toThrow("join failed");
-    expect(listener.mock.calls.at(-1)![0]).toEqual({ cameraMs: expect.any(Number), frameValidationMs: expect.any(Number) });
+    expect(listener.mock.calls.at(-1)![0]).toEqual({ cameraMs: expect.any(Number) });
     await manager.close();
   });
 
@@ -751,7 +805,7 @@ describe("XmaxRealtimeManager launch timing", () => {
     stream.confirmationDeferreds[0]!.resolve();
     await stopping;
     await rejected;
-    expect(listener.mock.calls.at(-1)![0]).toEqual({ cameraMs: expect.any(Number), frameValidationMs: expect.any(Number), connectionMs: expect.any(Number) });
+    expect(listener.mock.calls.at(-1)![0]).toEqual({ cameraMs: expect.any(Number), connectionMs: expect.any(Number), publishMs: expect.any(Number) });
     await manager.close();
   });
 
@@ -767,7 +821,7 @@ describe("XmaxRealtimeManager launch timing", () => {
 });
 
 describe("XmaxRealtimeManager connect", () => {
-  it.each([undefined, true, false])("相机流检测开关 %s 控制生成和重连，不伪造禁用时的检测耗时", async (enableFrameValidation) => {
+  it.each([undefined, true, false])("相机预热开关 %s 控制生成和重连，禁用时预热不参与连接", async (enableFrameValidation) => {
     const { manager, camera, stream } = makeManager();
     const snapshots: RealtimeLaunchTiming[] = [];
     await manager.setLaunchTimingListener((timing) => snapshots.push(timing));
@@ -784,11 +838,10 @@ describe("XmaxRealtimeManager connect", () => {
     await pending;
     if (enableFrameValidation === false) {
       expect(camera.waitForValidCameraFrame).not.toHaveBeenCalled();
-      expect(snapshots.every((timing) => timing.frameValidationMs === undefined)).toBe(true);
     } else {
       expect(camera.waitForValidCameraFrame).toHaveBeenCalledOnce();
-      expect(snapshots.at(-1)?.frameValidationMs).toEqual(expect.any(Number));
     }
+    expect(snapshots.at(-1)?.connectionMs).toEqual(expect.any(Number));
     await manager.disconnect();
     await manager.connect(localStream);
     expect(camera.waitForValidCameraFrame).toHaveBeenCalledTimes(enableFrameValidation === false ? 0 : 2);

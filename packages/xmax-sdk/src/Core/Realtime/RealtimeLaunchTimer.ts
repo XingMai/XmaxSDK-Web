@@ -44,17 +44,26 @@ export class RealtimeLaunchTimer {
   }
 
   /**
+   * 开始等待用户授权系统媒体权限，返回授权决定时调用的记录函数。
+   * 仅在系统弹出授权请求时使用；已授权或未弹窗不记录该阶段。
+   */
+  startPermission(): () => void {
+    return this.measure("permissionMs", performance.now());
+  }
+
+  /**
    * 开始会话与进房计时，返回连接阶段完成时调用的记录函数。
+   * 相机预热等待计入连接耗时。
    */
   startConnection(): () => void {
     return this.measure("connectionMs", performance.now());
   }
 
   /**
-   * 开始亮度检测计时；合格帧到达或超时放行时调用返回的记录函数。
+   * 开始发布本地流计时，返回发布完成时调用的记录函数。
    */
-  startFrameValidation(): () => void {
-    return this.measure("frameValidationMs", performance.now());
+  startPublish(): () => void {
+    return this.measure("publishMs", performance.now());
   }
 
   /**
@@ -76,7 +85,7 @@ export class RealtimeLaunchTimer {
    * 创建当前周期的一次性计时回调；周期失效或该阶段已记录时忽略调用。
    */
   private measure(
-    key: "cameraMs" | "connectionMs" | "frameValidationMs" | "firstFrameMs",
+    key: "cameraMs" | "permissionMs" | "connectionMs" | "publishMs" | "firstFrameMs",
     startedAt: number,
   ): () => void {
     const sequence = this.sequence;

@@ -9,13 +9,18 @@ export interface RealtimeLaunchTiming {
    */
   readonly cameraMs?: number;
   /**
-   * 开始创建会话到 RTC 进房配置完成；不含等待亮度检测及发布本地流。
+   * 确认相机与麦克风权限可用的耗时；系统弹窗时统计到用户完成授权。
+   * 权限被拒绝或浏览器不支持观察时不记录。
+   */
+  readonly permissionMs?: number;
+  /**
+   * 开始创建会话到 RTC 进房配置与相机预热等待完成；不含发布本地流。
    */
   readonly connectionMs?: number;
   /**
-   * 相机亮度检测开始到首张合格帧或超时放行；与建立连接并行，不可直接相加。禁用检测时为 undefined。
+   * 发布本地流到 RTC 房间的耗时。
    */
-  readonly frameValidationMs?: number;
+  readonly publishMs?: number;
   /**
    * 开始发送生成信令到 SDK 远端视图首次呈现视频帧。
    */

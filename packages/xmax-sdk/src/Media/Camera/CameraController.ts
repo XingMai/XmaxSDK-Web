@@ -99,14 +99,14 @@ export class CameraController implements CameraControlling {
   }
 
   /**
-   * 当前活动相机流是否启用发布前亮度检测；没有活动流时为 false。
+   * 当前活动相机流是否启用发布前预热等待；没有活动流时为 false。
    */
   get isFrameValidationEnabled(): boolean {
     return this.activeTrack !== undefined && this.storedFrameValidationEnabled;
   }
 
   /**
-   * 等待当前轨道首张合格帧或超时放行；禁用时跳过，取消或轨道被替换时拒绝。
+   * 等待当前轨道预热完成（固定 200ms）；禁用时跳过，取消或轨道被替换时拒绝。
    */
   async waitForValidCameraFrame(signal: AbortSignal): Promise<void> {
     const track = this.activeTrack;
@@ -118,7 +118,7 @@ export class CameraController implements CameraControlling {
     await waitForValidCameraFrame(mediaTrack, signal);
 
     if (this.activeTrack !== track || track.mediaStreamTrack !== mediaTrack) {
-      throw new XmaxError(XmaxErrorCode.cancelled, "Camera track changed during exposure check");
+      throw new XmaxError(XmaxErrorCode.cancelled, "Camera track changed during warmup");
     }
   }
 
@@ -139,7 +139,7 @@ export class CameraController implements CameraControlling {
    * @param options.videoFormat 期望的输出尺寸、帧率和编码配置；尺寸按模型规则调整。
    * @param options.position 首次启动时使用的摄像头位置。
    * @param options.useMicrophone 是否申请麦克风权限并允许实时连接时启动音频采集。
-   * @param options.enableFrameValidation 是否在发布前检测帧亮度，默认 true；false 跳过检测及其等待。
+   * @param options.enableFrameValidation 是否在发布前等待相机预热（固定 200ms），默认 true；false 跳过等待。
    * @returns 包含本地相机视频轨道的媒体流。
    * @throws 已有活动相机流、格式无效、权限不足或采集启动失败时抛出错误。
    */
