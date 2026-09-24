@@ -12,6 +12,7 @@ import type { NetworkQualityLevel } from "./NetworkStatistics";
 import type { RoomJoinConfiguration } from "./RoomJoinConfiguration";
 import type { RtcCameraCaptureOptions, RtcManaging } from "./RtcManaging";
 import { RtcStatsLogger } from "./RtcStatsLogger";
+import { rtcOrientedVideoSize } from "./RtcVideoOrientation";
 import {
   RtcVideoEncoderPreference,
   type VideoEncodingConfiguration,
@@ -203,13 +204,18 @@ export class RtcManager implements RtcManaging {
       );
     }
     try {
+      // 移动端竖屏时 TRTC 会转置输出宽高，这里反向转置使上行方向与请求一致。
+      const captureSize = rtcOrientedVideoSize({
+        width: options.width,
+        height: options.height,
+      });
       await engine.startLocalVideo({
         publish: false,
         option: {
           useFrontCamera: options.position === CameraPosition.front,
           profile: {
-            width: options.width,
-            height: options.height,
+            width: captureSize.width,
+            height: captureSize.height,
             frameRate: options.frameRate,
             bitrate: CAPTURE_PLACEHOLDER_BITRATE,
           },
@@ -353,11 +359,16 @@ export class RtcManager implements RtcManaging {
       );
     }
     try {
+      // 与采集一致：移动端竖屏时反向转置编码宽高。
+      const encodingSize = rtcOrientedVideoSize({
+        width: configuration.width,
+        height: configuration.height,
+      });
       await engine.updateLocalVideo({
         option: {
           profile: {
-            width: configuration.width,
-            height: configuration.height,
+            width: encodingSize.width,
+            height: encodingSize.height,
             frameRate: configuration.frameRate,
             bitrate: configuration.maximumBitrate,
           },
