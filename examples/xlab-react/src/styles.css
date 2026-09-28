@@ -96,7 +96,7 @@ button:disabled {
 
 .brandLogo {
   display: block;
-  height: clamp(31px, 0.75vw + 22px, 48px);
+  height: clamp(34px, 0.8vw + 24px, 52px);
   width: auto;
 }
 
@@ -221,7 +221,7 @@ button:disabled {
 }
 
 .hero h1 {
-  font-size: clamp(29px, 1.1vw + 19px, 50px);
+  font-size: clamp(27px, 1vw + 18px, 45px);
   font-weight: 500;
   letter-spacing: -0.03em;
   margin: 0 0 clamp(26px, 1.1vw + 17px, 40px);
@@ -828,11 +828,11 @@ button:disabled {
   margin-top: 34px;
 }
 
-/* 隐形等高容器：与三行参考图列表同高，切换页签时下方布局不跳动，
+/* 隐形等高容器：与两行参考图列表同高，切换页签时下方布局不跳动，
    自由输入框本身保持自然高度。flow-root 阻止子元素 margin 塌陷造成的高度差。 */
 .modeBody {
   display: flow-root;
-  min-height: 282px;
+  min-height: 190px;
 }
 
 .modeTabs {
@@ -888,8 +888,8 @@ button:disabled {
   justify-content: center;
   align-content: flex-start;
   gap: 14px;
-  /* 固定为完整三行的高度：不同模式的参考图行数不同也不影响整体布局，超出部分纵向滚动，不显示滚动条。 */
-  height: 282px;
+  /* 固定为完整两行的高度：不同模式的参考图行数不同也不影响整体布局，超出部分纵向滚动，不显示滚动条。 */
+  height: 190px;
   overflow-y: auto;
   scrollbar-width: none;
   cursor: grab;
@@ -939,6 +939,7 @@ button:disabled {
   display: block;
   margin-top: 6px;
   font-size: 11px;
+  line-height: 14px;
   color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1285,7 +1286,7 @@ button:disabled {
   }
 
   .brandLogo {
-    height: 26px;
+    height: 28px;
   }
 
   .sessionControls {
@@ -1331,19 +1332,33 @@ button:disabled {
     min-height: 76px;
   }
 
+  /* 移动端输入条改为单行横排：单行输入框 + 按钮垂直居中，
+     避免多行文本在 76px 固定高度内被裁切。 */
   .promptBar {
     height: 76px;
     margin-top: 0;
-    padding: 8px;
+    padding: 8px 12px;
     border-radius: 14px;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
   }
 
-  .promptBar textarea {
-    min-height: 0;
-    padding: 2px 4px;
-    /* 移动端也不能小于 16px，否则 iOS 聚焦时自动放大页面；两行 45px 仍在 76px 高度内。 */
+  .promptBar .promptInput {
+    flex: 1;
+    min-width: 0;
+    height: 40px;
+    padding: 0 4px;
+    border: none;
+    background: transparent;
+    color: var(--text);
+    /* 不能小于 16px，否则 iOS 聚焦时自动放大页面。 */
     font-size: 16px;
     line-height: 1.4;
+  }
+
+  .promptBar .promptInput:focus {
+    outline: none;
   }
 
   .promptActions {
@@ -1458,6 +1473,6 @@ button:disabled {
   }
 
   .hero h1 {
-    font-size: 30px;
+    font-size: 28px;
   }
 }

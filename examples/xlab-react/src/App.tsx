@@ -858,17 +858,32 @@ export function App() {
           onChange={handleReferenceChange}
         />
 
-        {/* 隐形等高容器：高度对齐三行参考图列表，切换页签时下方布局不跳动。 */}
+        {/* 隐形等高容器：高度对齐两行参考图列表，切换页签时下方布局不跳动。 */}
         <div className="modeBody">
           {activeMode.key === "free" && (
             <div className="promptBar">
-              <textarea
-                rows={3}
-                aria-label="Describe how you want the video to change"
-                placeholder="Describe how you want the video to change"
-                value={prompt}
-                onChange={(event) => setPrompt(event.target.value)}
-              />
+              {isMobileLayout ? (
+                <input
+                  type="text"
+                  className="promptInput"
+                  aria-label="Describe how you want the video to change"
+                  placeholder="Describe how you want the video to change"
+                  value={prompt}
+                  enterKeyHint="send"
+                  onChange={(event) => setPrompt(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") handleSubmitPrompt();
+                  }}
+                />
+              ) : (
+                <textarea
+                  rows={3}
+                  aria-label="Describe how you want the video to change"
+                  placeholder="Describe how you want the video to change"
+                  value={prompt}
+                  onChange={(event) => setPrompt(event.target.value)}
+                />
+              )}
               <div className="promptActions">
                 {uploadedReference ? (
                   <span
