@@ -582,7 +582,7 @@ export function App() {
         </a>
       </div>
       <nav className="footerLinks">
-        <a href="mailto:contact@xmax.ai">Contact us</a>
+        <a href="mailto:contact@xmax.ai">Contact Us</a>
         <a href="https://platform.xmaxai.com" target="_blank" rel="noreferrer">
           API Platform
         </a>
