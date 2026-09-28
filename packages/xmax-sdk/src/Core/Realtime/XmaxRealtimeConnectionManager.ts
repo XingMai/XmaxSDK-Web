@@ -38,7 +38,6 @@ export class XmaxRealtimeConnectionManager {
       sessionService?: RealtimeSessionServicing;
       streamController: StreamControlling;
       timing: RealtimeLaunchTimer;
-      isMirrored: () => boolean;
       remoteAudioVolume: () => number;
       onHeartbeatFailure: (sessionID: string, error: XmaxError) => void;
       onFrameDisplayed: () => void;
@@ -225,7 +224,6 @@ export class XmaxRealtimeConnectionManager {
       attachHandler: (view) => {
         this.remoteTarget?.setFrameInterpolation?.(undefined);
 
-        view.isMirrored = this.dependencies.isMirrored();
         this.remoteTarget = view;
         this.dependencies.onRenderAttached();
 
@@ -241,15 +239,6 @@ export class XmaxRealtimeConnectionManager {
         view.setMediaStream(null);
       },
     });
-  }
-
-  /**
-   * 同步远端结果画面的镜像状态：与当前本地摄像头位置保持一致。
-   */
-  updateRemoteMirror(): void {
-    if (this.remoteTarget) {
-      this.remoteTarget.isMirrored = this.dependencies.isMirrored();
-    }
   }
 
   /**

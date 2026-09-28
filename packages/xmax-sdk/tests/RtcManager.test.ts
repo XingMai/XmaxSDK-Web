@@ -474,6 +474,31 @@ describe("RtcManager", () => {
     expect(engine.stopLocalVideoCalls).toBe(0);
   });
 
+  it("mirrors the published encode for the front camera only", async () => {
+    const { manager, engine } = makeManager();
+    await manager.initialize();
+
+    await manager.startCameraCapture({
+      width: 832,
+      height: 1472,
+      frameRate: 30,
+      position: CameraPosition.front,
+    });
+    expect(engine.startLocalVideoCalls[0]).toMatchObject({
+      option: { useFrontCamera: true, mirror: "publish" },
+    });
+
+    await manager.switchCameraCapture(CameraPosition.back);
+    expect(engine.updateLocalVideoCalls[0]).toMatchObject({
+      option: { useFrontCamera: false, mirror: false },
+    });
+
+    await manager.switchCameraCapture(CameraPosition.front);
+    expect(engine.updateLocalVideoCalls[1]).toMatchObject({
+      option: { useFrontCamera: true, mirror: "publish" },
+    });
+  });
+
   it("starts microphone capture on first audio publish and unpublishes afterwards", async () => {
     const { manager, engine } = makeManager();
     await manager.initialize();

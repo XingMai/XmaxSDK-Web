@@ -214,6 +214,9 @@ export class RtcManager implements RtcManaging {
         publish: false,
         option: {
           useFrontCamera: options.position === CameraPosition.front,
+          // 本地预览由 SDK 渲染层做 CSS 镜像；这里让上行编码同步镜像，
+          // 保证对端收到的画面与用户看到的预览一致，生成结果无需再翻转。
+          mirror: options.position === CameraPosition.front ? "publish" : false,
           profile: {
             width: captureSize.width,
             height: captureSize.height,
@@ -252,7 +255,11 @@ export class RtcManager implements RtcManaging {
     }
     try {
       await engine.updateLocalVideo({
-        option: { useFrontCamera: to === CameraPosition.front },
+        option: {
+          useFrontCamera: to === CameraPosition.front,
+          // 与启动采集一致：前置时上行编码镜像，后置不镜像。
+          mirror: to === CameraPosition.front ? "publish" : false,
+        },
       });
       const track = engine.getVideoTrack();
       if (!track) {

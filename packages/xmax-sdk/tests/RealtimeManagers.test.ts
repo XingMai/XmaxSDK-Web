@@ -173,7 +173,7 @@ describe("XmaxRealtimeConnectionManager", () => {
     const events = { onHeartbeatFailure: vi.fn(), onFrameDisplayed: vi.fn(), onRenderAttached: vi.fn(), onRenderDetached: vi.fn() };
     const manager = new XmaxRealtimeConnectionManager({
       sessionService: service, streamController: controller, timing: new RealtimeLaunchTimer(),
-      isMirrored: () => true, remoteAudioVolume: () => 0.25, ...events,
+      remoteAudioVolume: () => 0.25, ...events,
     });
     const op = operation();
     const options = {
@@ -195,7 +195,7 @@ describe("XmaxRealtimeConnectionManager", () => {
     const binding = VideoRenderRegistry.binding(track)!;
     const view = { isMirrored: false, setMediaStream: vi.fn(), setFrameInterpolation: vi.fn() };
     binding.attachHandler(view, VideoContentMode.fit);
-    expect(view.isMirrored).toBe(true);
+    expect(view.isMirrored).toBe(false);
     expect(events.onRenderAttached).toHaveBeenCalledOnce();
     binding.frameDisplayHandler?.();
     expect(events.onFrameDisplayed).toHaveBeenCalledOnce();
@@ -223,9 +223,6 @@ describe("XmaxRealtimeConnectionManager", () => {
 
     binding.detachHandler(previous);
     expect(events.onRenderDetached).not.toHaveBeenCalled();
-    current.isMirrored = false;
-    manager.updateRemoteMirror();
-    expect(current.isMirrored).toBe(true);
     current.setMediaStream.mockClear();
     manager.clearRemoteMedia();
     expect(current.setMediaStream).toHaveBeenCalledOnce();
