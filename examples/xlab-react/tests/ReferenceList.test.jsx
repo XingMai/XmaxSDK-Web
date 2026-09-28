@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { ReferenceList } from "../src/ReferenceList";
 
 function render(items) {
-  return renderToStaticMarkup(<ReferenceList items={items} rowRef={createRef()} lineCapacity={4}
+  return renderToStaticMarkup(<ReferenceList items={items} rowRef={createRef()}
     disabled={false} onUpload={() => {}} onSelect={() => {}} />);
 }
 
@@ -14,32 +14,35 @@ function item(name, status = "ready") {
 
 it("puts Upload in the first grid cell, followed by uploaded images and then presets", () => {
   const html = render([item("Newest"), item("Earlier"), item("Preset")]);
-  expect(html.indexOf('class="presetLine"')).toBeLessThan(html.indexOf("uploadItem"));
   expect(html.indexOf("uploadItem")).toBeLessThan(html.indexOf('alt="Newest"'));
   expect(html.indexOf('alt="Newest"')).toBeLessThan(html.indexOf('alt="Earlier"'));
   expect(html.indexOf('alt="Earlier"')).toBeLessThan(html.indexOf('alt="Preset"'));
   expect(html.match(/uploadItem/g)).toHaveLength(1);
 });
 
-it("shows the loading local preview after Upload", () => {
+it("shows the uploading overlay with a spinner after Upload", () => {
   const html = render([item("Local", "uploading")]);
   expect(html.indexOf(">Upload<")).toBeLessThan(html.indexOf('alt="Local"'));
   expect(html).toContain('aria-busy="true"');
-  expect(html).toContain("Uploading…");
+  expect(html).toContain("presetSpinner");
+});
+
+it("shows the upload progress percentage when available", () => {
+  const uploading = { ...item("Local", "uploading"), upload_progress: 42 };
+  const html = render([uploading]);
+  expect(html).toContain("42%");
 });
 
 it("keeps Upload available when the reference list is empty", () => {
   const html = render([]);
   expect(html).toContain(">Upload<");
-  expect(html.match(/class="presetLine"/g)).toHaveLength(1);
+  expect(html.match(/<button/g)).toHaveLength(1);
 });
 
-it("counts Upload in row capacity and starts the second row with an image, not a blank cell", () => {
+it("renders all items in a single wrapping row container", () => {
   const html = render([item("A"), item("B"), item("C"), item("D"), item("E")]);
-  const lines = html.split('<div class="presetLine">').slice(1);
-  expect(lines).toHaveLength(2);
-  expect(lines[0].match(/<button/g)).toHaveLength(4);
-  expect(lines[1]).toMatch(/^<button[^>]*>/);
-  expect(lines[1]).toContain('alt="D"');
-  expect(lines[1]).not.toContain("uploadItem");
+  // CSS flex-wrap 负责换行，标记保持一层面板容器加全部条目。
+  expect(html.match(/class="presetRow"/g)).toHaveLength(1);
+  expect(html.match(/<button/g)).toHaveLength(6);
+  expect(html).toContain('alt="E"');
 });
