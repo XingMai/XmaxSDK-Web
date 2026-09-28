@@ -474,7 +474,9 @@ describe("RtcManager", () => {
     expect(engine.stopLocalVideoCalls).toBe(0);
   });
 
-  it("mirrors the published encode for the front camera only", async () => {
+  it("never enables TRTC encode mirroring, which routes through its canvas pipeline", async () => {
+    // mirror: "publish" 会让 TRTC 用内部 canvas 重采每一帧：
+    // iOS 上帧率暴跌且竖屏几何异常。镜像只由渲染层 CSS 和服务端处理。
     const { manager, engine } = makeManager();
     await manager.initialize();
 
@@ -485,17 +487,14 @@ describe("RtcManager", () => {
       position: CameraPosition.front,
     });
     expect(engine.startLocalVideoCalls[0]).toMatchObject({
-      option: { useFrontCamera: true, mirror: "publish" },
+      option: { useFrontCamera: true },
     });
+    const captureOption = (engine.startLocalVideoCalls[0] as { option: object }).option;
+    expect(captureOption).not.toHaveProperty("mirror");
 
     await manager.switchCameraCapture(CameraPosition.back);
-    expect(engine.updateLocalVideoCalls[0]).toMatchObject({
-      option: { useFrontCamera: false, mirror: false },
-    });
-
-    await manager.switchCameraCapture(CameraPosition.front);
-    expect(engine.updateLocalVideoCalls[1]).toMatchObject({
-      option: { useFrontCamera: true, mirror: "publish" },
+    expect(engine.updateLocalVideoCalls[0]).toEqual({
+      option: { useFrontCamera: false },
     });
   });
 
