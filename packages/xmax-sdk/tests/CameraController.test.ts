@@ -128,6 +128,7 @@ class RtcManagingStub implements RtcManaging {
     return undefined;
   }
   async subscribeRemoteAudio(): Promise<void> {}
+  readonly supportsRemoteAudioVolumeControl = true;
   setRemoteAudioVolume(): void {}
   sendRoomMessage(): void {}
   setEventListener(): void {}

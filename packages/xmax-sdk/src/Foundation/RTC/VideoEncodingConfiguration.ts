@@ -16,8 +16,8 @@ export enum RtcVideoEncoderPreference {
 /**
  * 下发给 RTC 引擎的视频编码参数。
  *
- * TRTC 只接受单一目标码率：以 `maximumBitrate` 作为目标码率，
- * `minimumBitrate` 仅用于上层码率区间校验，不下发给引擎。
+ * TRTC 只接受单一目标码率：以 `minimumBitrate`（流畅优先档）作为目标码率，
+ * `maximumBitrate` 仅用于上层码率区间校验，不下发给引擎。
  */
 export interface VideoEncodingConfiguration {
   /**
@@ -36,12 +36,12 @@ export interface VideoEncodingConfiguration {
   frameRate: number;
 
   /**
-   * 最低上传码率，单位为 kbps；仅参与区间校验。
+   * 最低上传码率，单位为 kbps；作为引擎目标码率。
    */
   minimumBitrate: number;
 
   /**
-   * 最高上传码率，单位为 kbps；作为引擎目标码率。
+   * 最高上传码率，单位为 kbps；仅参与区间校验。
    */
   maximumBitrate: number;
 

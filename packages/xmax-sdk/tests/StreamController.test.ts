@@ -94,6 +94,7 @@ class RtcManagingStub implements RtcManaging {
   async subscribeRemoteAudio(userID: string, subscribe: boolean): Promise<void> {
     this.subscribeRemoteAudioCalls.push([userID, subscribe]);
   }
+  supportsRemoteAudioVolumeControl = true;
   setRemoteAudioVolume(volume: number, userID: string): void {
     this.volumeCalls.push([volume, userID]);
   }
@@ -473,6 +474,38 @@ describe("StreamController", () => {
     controller.setRemoteAudioVolume(0.65);
     expect(rtc.volumeCalls.at(-1)).toEqual([65, "bot001"]);
     expect(subscribeAudio).toHaveBeenCalledOnce();
+    await controller.disconnect();
+  });
+
+  it("subscribes before applying volume when the platform lacks volume control", async () => {
+    const { controller, rtc } = makeStream();
+    rtc.supportsRemoteAudioVolumeControl = false;
+    const setVolume = vi.spyOn(rtc, "setRemoteAudioVolume");
+    const subscribeAudio = vi.spyOn(rtc, "subscribeRemoteAudio");
+    controller.setRemoteAudioVolume(0);
+    await controller.connect(connection, false, noopEnsureActive);
+
+    await expect(controller.activateRemoteAudio()).rejects.toMatchObject({
+      code: XmaxErrorCode.rtcError,
+    });
+
+    const confirmation = controller.beginGeneration({
+      taskID: "task-001",
+      videoFormat,
+      context,
+    });
+    emitRemoteVideo(rtc, "bot001", true);
+    await confirmation;
+
+    expect(subscribeAudio).not.toHaveBeenCalled();
+    await controller.activateRemoteAudio();
+    expect(rtc.subscribeRemoteAudioCalls).toEqual([["bot001", true]]);
+    expect(rtc.volumeCalls).toContainEqual([0, "bot001"]);
+    // iOS 上音量降级为播放/静音：必须先订阅（恢复播放）再按需静音。
+    expect(subscribeAudio.mock.invocationCallOrder[0]).toBeLessThan(
+      setVolume.mock.invocationCallOrder[0]!,
+    );
+
     await controller.disconnect();
   });
 

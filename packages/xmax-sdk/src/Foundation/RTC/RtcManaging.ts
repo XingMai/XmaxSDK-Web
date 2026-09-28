@@ -138,6 +138,14 @@ export interface RtcManaging {
   subscribeRemoteAudio(userID: string, subscribe: boolean): Promise<void>;
 
   /**
+   * 当前平台是否支持远端音量控制。
+   *
+   * iOS Safari/WKWebView 不支持，该平台上音量设置降级为播放/静音二值控制，
+   * 订阅远端音频后需要重新应用一次音量状态。
+   */
+  readonly supportsRemoteAudioVolumeControl: boolean;
+
+  /**
    * 设置指定远端用户的音频播放音量。
    *
    * @param volume 音量，取值范围为 `0...100`。

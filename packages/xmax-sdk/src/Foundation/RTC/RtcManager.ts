@@ -13,6 +13,7 @@ import type { RoomJoinConfiguration } from "./RoomJoinConfiguration";
 import type { RtcCameraCaptureOptions, RtcManaging } from "./RtcManaging";
 import { RtcStatsLogger } from "./RtcStatsLogger";
 import { rtcOrientedVideoSize } from "./RtcVideoOrientation";
+import { canControlRemoteAudioVolume } from "./RemoteAudioVolumeControl";
 import {
   RtcVideoEncoderPreference,
   type VideoEncodingConfiguration,
@@ -343,7 +344,7 @@ export class RtcManager implements RtcManaging {
   /**
    * 配置本地视频编码参数。
    *
-   * TRTC 只接受单一目标码率，以 `maximumBitrate` 作为目标码率；
+   * TRTC 只接受单一目标码率，以 `minimumBitrate`（流畅优先档）作为目标码率；
    * 编码策略偏好映射为 TRTC 弱网偏好。
    *
    * @throws 摄像头采集未启动或编码参数配置失败时抛出错误。
@@ -370,7 +371,7 @@ export class RtcManager implements RtcManaging {
             width: encodingSize.width,
             height: encodingSize.height,
             frameRate: configuration.frameRate,
-            bitrate: configuration.maximumBitrate,
+            bitrate: configuration.minimumBitrate,
           },
           qosPreference: QOS_PREFERENCE_MAP[configuration.encoderPreference],
         },
@@ -499,13 +500,35 @@ export class RtcManager implements RtcManaging {
   }
 
   /**
+   * 当前平台是否支持远端音量控制（iOS Safari/WKWebView 不支持）。
+   */
+  get supportsRemoteAudioVolumeControl(): boolean {
+    return canControlRemoteAudioVolume();
+  }
+
+  /**
    * 设置指定远端用户的音频播放音量。
+   *
+   * iOS Safari/WKWebView 不允许 JS 修改媒体元素音量（TRTC 官方标注
+   * `setRemoteAudioVolume` 不支持 iOS Safari），该平台上降级为
+   * 播放/静音二值控制：音量为 0 时停止播放该路音频，非 0 时恢复播放；
+   * 恢复播放需要重新拉流，会有短暂缓冲。
    *
    * @param volume 音量，取值范围为 `0...100`，越界时收敛到边界。
    */
   setRemoteAudioVolume(volume: number, userID: string): void {
     const engine = this.requireEngine();
     const normalized = Math.min(Math.max(Math.round(volume), 0), 100);
+    if (!canControlRemoteAudioVolume()) {
+      void engine.muteRemoteAudio(userID, normalized === 0).catch((error: unknown) => {
+        XmaxLogger.rtc.warning(
+          () =>
+            `远端音频播放状态切换失败 (Failed to Toggle Remote Audio Playback)\n` +
+            `└─ ${XmaxLogger.localized("原因：", "Reason: ")}${XmaxError.from(error).message}`,
+        );
+      });
+      return;
+    }
     engine.setRemoteAudioVolume(userID, normalized);
   }
 

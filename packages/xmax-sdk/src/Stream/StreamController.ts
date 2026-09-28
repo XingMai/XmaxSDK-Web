@@ -628,14 +628,23 @@ export class StreamController implements StreamControlling {
   }
 
   /**
-   * 订阅远端音频：先应用当前音量再订阅。
+   * 订阅远端音频并按平台能力应用当前音量。
+   *
+   * 支持音量控制的平台先设音量再订阅，避免以默认音量短暂出声；
+   * iOS 上音量降级为播放/静音二值控制，必须先完成订阅（恢复播放）
+   * 再按需静音，否则订阅的恢复播放会覆盖音量 0 的静音状态。
    */
   private async subscribeRemoteAudio(userID: string): Promise<void> {
     if (this.state.subscribedRemoteAudioUserIDs.has(userID)) {
       return;
     }
-    this.rtcManager.setRemoteAudioVolume(this.remoteAudioVolumePercentage, userID);
-    await this.rtcManager.subscribeRemoteAudio(userID, true);
+    if (this.rtcManager.supportsRemoteAudioVolumeControl) {
+      this.rtcManager.setRemoteAudioVolume(this.remoteAudioVolumePercentage, userID);
+      await this.rtcManager.subscribeRemoteAudio(userID, true);
+    } else {
+      await this.rtcManager.subscribeRemoteAudio(userID, true);
+      this.rtcManager.setRemoteAudioVolume(this.remoteAudioVolumePercentage, userID);
+    }
     this.state.subscribedRemoteAudioUserIDs.add(userID);
   }
 

@@ -532,6 +532,40 @@ describe("RtcManager", () => {
     ]);
   });
 
+  describe("iOS remote volume fallback", () => {
+    const IPHONE_UA =
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("detects remote audio volume control capability by platform", async () => {
+      const { manager } = makeManager();
+      await manager.initialize();
+      expect(manager.supportsRemoteAudioVolumeControl).toBe(true);
+
+      vi.stubGlobal("navigator", { userAgent: IPHONE_UA, maxTouchPoints: 5 });
+      expect(manager.supportsRemoteAudioVolumeControl).toBe(false);
+    });
+
+    it("falls back to mute control on iOS where remote volume is unsupported", async () => {
+      vi.stubGlobal("navigator", { userAgent: IPHONE_UA, maxTouchPoints: 5 });
+      const { manager, engine } = makeManager();
+      await manager.initialize();
+
+      manager.setRemoteAudioVolume(0, "bot001");
+      manager.setRemoteAudioVolume(80, "bot001");
+
+      // iOS 不走音量接口：0 降级为静音，非 0 恢复播放。
+      expect(engine.volumeCalls).toEqual([]);
+      expect(engine.muteRemoteAudioCalls).toEqual([
+        ["bot001", true],
+        ["bot001", false],
+      ]);
+    });
+  });
+
   it("sends room messages as cmdId 1 custom messages", async () => {
     const { manager, engine } = makeManager();
     await manager.initialize();
