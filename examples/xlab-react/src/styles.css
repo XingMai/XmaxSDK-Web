@@ -1231,6 +1231,11 @@ button:disabled {
     display: none;
   }
 
+  /* key 输入框字号提到 16px，避免 iOS 聚焦时自动放大页面。 */
+  .keyPopover input {
+    font-size: 16px;
+  }
+
   .modelPopover {
     width: min(220px, calc(100vw - 80px));
   }
@@ -1326,18 +1331,17 @@ button:disabled {
     display: inline;
   }
 
-  /* 隐形等高容器在移动端对齐单行参考图列表高度；
-     自由输入条自身固定 76px（54 图 + 6 间距 + 12 标签 + 4 内边距），切换页签时整体布局不跳动。 */
+  /* 隐形等高容器在移动端对齐单行参考图列表高度（76px），切换页签时整体布局不跳动；
+     自由输入条自身按内容取自然高度。 */
   .modeBody {
     min-height: 76px;
   }
 
-  /* 移动端输入条改为单行横排：单行输入框 + 按钮垂直居中，
-     避免多行文本在 76px 固定高度内被裁切。 */
+  /* 移动端输入条为单行横排：单行输入框 + 按钮垂直居中。
+     高度由内容决定：上下内边距与 placeholder 左缩进一致（12 + 4 = 16px）。 */
   .promptBar {
-    height: 76px;
     margin-top: 0;
-    padding: 8px 12px;
+    padding: 12px;
     border-radius: 14px;
     flex-direction: row;
     align-items: center;
@@ -1347,8 +1351,7 @@ button:disabled {
   .promptBar .promptInput {
     flex: 1;
     min-width: 0;
-    height: 40px;
-    padding: 0 4px;
+    padding: 4px;
     border: none;
     background: transparent;
     color: var(--text);
@@ -1472,7 +1475,9 @@ button:disabled {
     gap: 16px;
   }
 
+  /* 标语一行展示：字号随屏宽缩放并禁止换行，桌面端不受影响。 */
   .hero h1 {
-    font-size: 28px;
+    font-size: clamp(16px, 5vw, 28px);
+    white-space: nowrap;
   }
 }
