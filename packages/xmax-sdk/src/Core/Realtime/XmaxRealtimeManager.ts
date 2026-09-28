@@ -1,5 +1,6 @@
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
+import { CameraPosition } from "../../Foundation/Media/Camera/CameraPosition";
 import { watchMediaPermissionPrompt } from "../../Foundation/Permissions/MediaPermissionWatch";
 import { RtcManager } from "../../Foundation/RTC/RtcManager";
 import type { RtcManaging } from "../../Foundation/RTC/RtcManaging";
@@ -160,6 +161,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       sessionService,
       streamController: this.streamController,
       timing: this.launchTimer,
+      isMirrored: () => this.cameraController.currentTrack?.position === CameraPosition.front,
       remoteAudioVolume: () => this.storedRemoteAudioVolume,
       onHeartbeatFailure: (sessionID, error) => { void this.handleHeartbeatFailure(sessionID, error); },
       onFrameDisplayed: () => this.remoteFrameDisplayHandler?.(),
@@ -557,6 +559,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       async (token) => {
         const stream = await this.cameraController.switchCamera();
         token.ensureCurrent();
+        this.connectionManager.updateRemoteMirror();
         return stream;
       },
     );
