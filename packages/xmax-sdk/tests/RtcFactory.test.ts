@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { RealtimeConfiguration } from "../src/Core/Realtime/RealtimeConfiguration";
 import { createRtcManager } from "../src/Foundation/RTC/RtcFactory";
 import { RtcProvider } from "../src/Foundation/RTC/RtcProvider";
-import { TrtcRtcManager } from "../src/Foundation/RTC/TrtcRtcManager";
+import { TrtcRtcManager } from "../src/Foundation/RTC/TRTC/TrtcRtcManager";
 import { AgoraRtcManager } from "../src/Foundation/RTC/Agora/AgoraRtcManager";
 import { XmaxEnvironment } from "../src/Foundation/Runtime/XmaxEnvironment";
 import { RealtimeModel } from "../src/Service/Realtime/RealtimeModel";

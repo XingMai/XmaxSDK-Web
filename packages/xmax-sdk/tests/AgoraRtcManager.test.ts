@@ -57,6 +57,7 @@ function setup(environment = XmaxEnvironment.china) {
 afterEach(async () => {
   for (const manager of managers.splice(0)) await manager.destroy();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe("AgoraRtcManager", () => {
@@ -93,7 +94,7 @@ describe("AgoraRtcManager", () => {
     expect(s.sdk.createClient).not.toHaveBeenCalled();
   });
 
-  it("captures without publishing and preserves portrait dimensions", async () => {
+  it("captures without publishing and preserves requested dimensions without a mobile orientation", async () => {
     const s = setup();
     await s.manager.initialize();
     expect(await s.manager.startCameraCapture({ width: 1024, height: 1920, frameRate: 30, position: CameraPosition.front })).toBe(s.native);
@@ -109,6 +110,39 @@ describe("AgoraRtcManager", () => {
     expect(s.camera.close).not.toHaveBeenCalled();
     await s.manager.stopCameraCapture();
     expect(s.camera.close).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { name: "iPhone portrait", userAgent: "iPhone", maxTouchPoints: 5, orientation: "portrait-primary", transpose: true },
+    { name: "Android portrait", userAgent: "Android", maxTouchPoints: 5, orientation: "portrait-secondary", transpose: true },
+    { name: "iPad desktop UA portrait", userAgent: "Macintosh", maxTouchPoints: 5, orientation: "portrait-primary", transpose: true },
+    { name: "mobile landscape", userAgent: "iPhone", maxTouchPoints: 5, orientation: "landscape-primary", transpose: false },
+    { name: "desktop", userAgent: "Macintosh", maxTouchPoints: 0, orientation: "portrait-primary", transpose: false },
+  ])("applies capture and encoding orientation consistently on $name", async ({ userAgent, maxTouchPoints, orientation, transpose }) => {
+    vi.stubGlobal("navigator", { userAgent, maxTouchPoints });
+    vi.stubGlobal("window", { screen: { orientation: { type: orientation } } });
+    const s = setup();
+    await s.manager.initialize();
+
+    const requestedSize = { width: 1024, height: 1920 };
+    const expectedSize = transpose ? { width: 1920, height: 1024 } : requestedSize;
+    const capture = { ...requestedSize, frameRate: 30, position: CameraPosition.front };
+    expect(await s.manager.startCameraCapture(capture)).toBe(s.native);
+    expect(s.sdk.createCameraVideoTrack).toHaveBeenCalledWith({
+      facingMode: "user",
+      encoderConfig: { ...expectedSize, frameRate: 30 },
+    });
+    expect(s.client.publish).not.toHaveBeenCalled();
+
+    const encoding = { ...requestedSize, frameRate: 30, minimumBitrate: 3000, maximumBitrate: 6000,
+      encoderPreference: RtcVideoEncoderPreference.maintainFramerate };
+    await s.manager.configureVideoEncoding(encoding);
+    expect(s.camera.setEncoderConfiguration).toHaveBeenCalledWith({
+      ...expectedSize, frameRate: 30, bitrateMin: 3000, bitrateMax: 6000,
+    });
+    expect(s.camera.setOptimizationMode).toHaveBeenCalledWith("motion");
+    expect(capture).toMatchObject(requestedSize);
+    expect(encoding).toMatchObject(requestedSize);
   });
 
   it("closes late capture instead of retaining a camera after destroy", async () => {

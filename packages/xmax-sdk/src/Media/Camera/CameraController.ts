@@ -4,7 +4,7 @@ import { XmaxError, XmaxErrorCode, type XmaxErrorListener } from "../../Foundati
 import type { PermissionManaging } from "../../Foundation/Permissions/PermissionManaging";
 import { PermissionManager } from "../../Foundation/Permissions/PermissionManager";
 import type { RtcManaging } from "../../Foundation/RTC/RtcManaging";
-import { TrtcRtcManager } from "../../Foundation/RTC/TrtcRtcManager";
+import { TrtcRtcManager } from "../../Foundation/RTC/TRTC/TrtcRtcManager";
 import { VideoRenderRegistry } from "../../Service/Realtime/VideoRenderBinding";
 import type { MediaServicing } from "../../Service/Media/MediaServicing";
 import { MediaService } from "../../Service/Media/MediaService";

@@ -1,5 +1,5 @@
 import type TRTC from "trtc-sdk-v5";
-import { XmaxError, XmaxErrorCode } from "../Errors/XmaxError";
+import { XmaxError, XmaxErrorCode } from "../../Errors/XmaxError";
 
 /**
  * TRTC 引擎实例类型。

@@ -1,23 +1,23 @@
-import { XmaxError, XmaxErrorCode } from "../Errors/XmaxError";
+import { XmaxError, XmaxErrorCode } from "../../Errors/XmaxError";
 import type { NetworkQuality, TRTCStatistics } from "trtc-sdk-v5";
-import { XmaxLogger } from "../Logging/XmaxLogger";
-import { CameraPosition } from "../Media/Camera/CameraPosition";
+import { XmaxLogger } from "../../Logging/XmaxLogger";
+import { CameraPosition } from "../../Media/Camera/CameraPosition";
 import {
   RtcEngineManager,
   type RtcEngine,
   type RtcEngineLease,
 } from "./RtcEngineManager";
-import type { RtcEventListener } from "./RtcEventListener";
-import type { NetworkQualityLevel } from "./NetworkStatistics";
-import type { RtcRoomJoinConfiguration } from "./RoomJoinConfiguration";
-import type { RtcCameraCaptureOptions, RtcManaging } from "./RtcManaging";
-import { RtcStatsLogger } from "./RtcStatsLogger";
-import { rtcOrientedVideoSize } from "./RtcVideoOrientation";
-import { canControlRemoteAudioVolume } from "./RemoteAudioVolumeControl";
+import type { RtcEventListener } from "../RtcEventListener";
+import type { NetworkQualityLevel } from "../NetworkStatistics";
+import type { RtcRoomJoinConfiguration } from "../RoomJoinConfiguration";
+import type { RtcCameraCaptureOptions, RtcManaging } from "../RtcManaging";
+import { RtcStatsLogger } from "../RtcStatsLogger";
+import { rtcOrientedVideoSize } from "../RtcVideoOrientation";
+import { canControlTrtcRemoteAudioVolume } from "./TrtcAudioVolumeSupport";
 import {
   RtcVideoEncoderPreference,
   type VideoEncodingConfiguration,
-} from "./VideoEncodingConfiguration";
+} from "../VideoEncodingConfiguration";
 
 /**
  * TRTC 事件名（字符串字面量，避免在非浏览器环境引用 TRTC 运行时常量）。
@@ -506,7 +506,7 @@ export class TrtcRtcManager implements RtcManaging {
    * 当前平台是否支持远端音量控制（iOS Safari/WKWebView 不支持）。
    */
   get supportsRemoteAudioVolumeControl(): boolean {
-    return canControlRemoteAudioVolume();
+    return canControlTrtcRemoteAudioVolume();
   }
 
   /**
@@ -522,7 +522,7 @@ export class TrtcRtcManager implements RtcManaging {
   setRemoteAudioVolume(volume: number, userID: string): void {
     const engine = this.requireEngine();
     const normalized = Math.min(Math.max(Math.round(volume), 0), 100);
-    if (!canControlRemoteAudioVolume()) {
+    if (!canControlTrtcRemoteAudioVolume()) {
       void engine.muteRemoteAudio(userID, normalized === 0).catch((error: unknown) => {
         XmaxLogger.rtc.warning(
           () =>

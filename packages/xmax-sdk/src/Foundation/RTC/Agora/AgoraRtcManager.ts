@@ -8,6 +8,7 @@ import type { RtcEventListener } from "../RtcEventListener";
 import type { RtcRoomJoinConfiguration, AgoraRoomJoinConfiguration } from "../RoomJoinConfiguration";
 import { RtcVideoEncoderPreference, type VideoEncodingConfiguration } from "../VideoEncodingConfiguration";
 import { AgoraRtcStatistics } from "./AgoraRtcStatistics";
+import { rtcOrientedVideoSize } from "../RtcVideoOrientation";
 
 /**
  * 固定版本 SDK 的 DataStream 扩展；官方公共类型未暴露发送方法。
@@ -170,9 +171,10 @@ export class AgoraRtcManager implements RtcManaging {
     if (this.camera) throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Camera capture is already running");
 
     try {
+      const captureSize = rtcOrientedVideoSize(options);
       const camera = await this.sdk!.createCameraVideoTrack({
         facingMode: options.position === CameraPosition.front ? "user" : "environment",
-        encoderConfig: { width: options.width, height: options.height, frameRate: options.frameRate },
+        encoderConfig: { width: captureSize.width, height: captureSize.height, frameRate: options.frameRate },
       });
       if (this.client !== client) { camera.close(); throw this.cancelled(); }
       this.camera = camera;
@@ -202,13 +204,19 @@ export class AgoraRtcManager implements RtcManaging {
   }
 
   /**
-   * 应用公共编码配置，不使用 TRTC 专属的竖屏尺寸转置。
+   * 应用公共编码配置，补偿移动端竖屏的宽高转置。
    */
   async configureVideoEncoding(config: VideoEncodingConfiguration): Promise<void> {
     const camera = this.requireCamera();
+    const encodingSize = rtcOrientedVideoSize(config);
     await this.run(async () => {
-      await camera.setEncoderConfiguration({ width: config.width, height: config.height, frameRate: config.frameRate,
-        bitrateMin: config.minimumBitrate, bitrateMax: config.maximumBitrate });
+      await camera.setEncoderConfiguration({
+        width: encodingSize.width,
+        height: encodingSize.height,
+        frameRate: config.frameRate,
+        bitrateMin: config.minimumBitrate,
+        bitrateMax: config.maximumBitrate,
+      });
       await camera.setOptimizationMode(config.encoderPreference === RtcVideoEncoderPreference.maintainFramerate ? "motion" : "detail");
     });
   }

@@ -5,8 +5,8 @@ import { CameraPosition } from "../src/Foundation/Media/Camera/CameraPosition";
 import { RemoteStream } from "../src/Foundation/RTC/RemoteStream";
 import { RoomJoinConfiguration } from "../src/Foundation/RTC/RoomJoinConfiguration";
 import type { RtcEventListener } from "../src/Foundation/RTC/RtcEventListener";
-import { RtcEngineManager, type RtcEngine } from "../src/Foundation/RTC/RtcEngineManager";
-import { TrtcRtcManager } from "../src/Foundation/RTC/TrtcRtcManager";
+import { RtcEngineManager, type RtcEngine } from "../src/Foundation/RTC/TRTC/RtcEngineManager";
+import { TrtcRtcManager } from "../src/Foundation/RTC/TRTC/TrtcRtcManager";
 
 class FakeRtcEngine {
   destroyed = false;

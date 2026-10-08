@@ -1,5 +1,5 @@
 /**
- * TRTC 视频方向环境参数；缺省时读取浏览器全局对象（可注入，测试用）。
+ * RTC 视频方向环境参数；缺省时读取浏览器全局对象（可注入，测试用）。
  */
 export interface RtcOrientationEnvironment {
   userAgent?: string;
@@ -19,9 +19,9 @@ export interface RtcOrientationEnvironment {
 /**
  * 判断当前是否为移动端竖屏。
  *
- * TRTC 在移动端竖屏下会把视频宽高按设备方向转置输出：传横屏
- * profile 实际得到竖屏上行，传竖屏 profile 反而得到横屏上行。
- * 为让上行方向与请求一致，移动端竖屏时传给 TRTC 的尺寸需反向转置。
+ * TRTC 与 Agora 的移动端竖屏采集、编码路径存在宽高转置行为。
+ * 为让上行方向与请求一致，传给厂商 SDK 的尺寸需反向转置；
+ * 业务请求尺寸和实际视频统计保持原样。
  */
 export function shouldTransposeRtcVideoSize(
   environment?: RtcOrientationEnvironment,

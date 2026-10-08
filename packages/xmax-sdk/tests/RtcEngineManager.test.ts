@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { RtcEngineManager } from "../src/Foundation/RTC/RtcEngineManager";
+import { RtcEngineManager } from "../src/Foundation/RTC/TRTC/RtcEngineManager";
 
 const { setLogLevel, create, destroy } = vi.hoisted(() => ({
   setLogLevel: vi.fn(),

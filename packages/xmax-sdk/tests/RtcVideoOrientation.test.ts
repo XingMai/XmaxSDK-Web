@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CameraPosition } from "../src/Foundation/Media/Camera/CameraPosition";
-import { RtcEngineManager, type RtcEngine } from "../src/Foundation/RTC/RtcEngineManager";
-import { TrtcRtcManager } from "../src/Foundation/RTC/TrtcRtcManager";
+import { RtcEngineManager, type RtcEngine } from "../src/Foundation/RTC/TRTC/RtcEngineManager";
+import { TrtcRtcManager } from "../src/Foundation/RTC/TRTC/TrtcRtcManager";
 import {
   rtcOrientedVideoSize,
   shouldTransposeRtcVideoSize,

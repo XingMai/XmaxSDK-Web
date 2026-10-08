@@ -1,7 +1,7 @@
 import { XmaxEnvironment } from "../Runtime/XmaxEnvironment";
 import { AgoraRtcManager } from "./Agora/AgoraRtcManager";
 import { RtcProvider } from "./RtcProvider";
-import { TrtcRtcManager } from "./TrtcRtcManager";
+import { TrtcRtcManager } from "./TRTC/TrtcRtcManager";
 import type { RtcManaging } from "./RtcManaging";
 
 /**
