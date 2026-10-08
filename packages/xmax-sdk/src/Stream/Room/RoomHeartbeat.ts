@@ -80,7 +80,7 @@ export class RoomHeartbeat {
         return;
       }
       try {
-        this.rtcManager.sendRoomMessage(RoomEvent.heartbeat({ userID }));
+        await this.rtcManager.sendRoomMessage(RoomEvent.heartbeat({ userID }));
       } catch (error) {
         if (this.cycleVersion !== version) {
           return;

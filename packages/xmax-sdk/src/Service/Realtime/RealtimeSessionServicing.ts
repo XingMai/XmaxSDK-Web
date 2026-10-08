@@ -34,6 +34,11 @@ export interface RealtimeSessionServicing {
   createSession(model: RealtimeModel): Promise<RealtimeSession>;
 
   /**
+   * 请求一次会话心跳并返回当前有效凭据，用于 RTC Token 续期。
+   */
+  heartbeatSession(sessionID: string): Promise<RealtimeSession>;
+
+  /**
    * 启动指定会话的周期心跳；重复启动会替换当前心跳。
    *
    * @param sessionID 会话标识。

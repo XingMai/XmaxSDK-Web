@@ -72,6 +72,7 @@ class FakeMediaStreamTrack {
 }
 
 class RtcManagingStub implements RtcManaging {
+  async updateCredentials(): Promise<void> {}
   isInitialized = false;
   initializeCalls = 0;
   destroyCalls = 0;
@@ -130,7 +131,7 @@ class RtcManagingStub implements RtcManaging {
   async subscribeRemoteAudio(): Promise<void> {}
   readonly supportsRemoteAudioVolumeControl = true;
   setRemoteAudioVolume(): void {}
-  sendRoomMessage(): void {}
+  async sendRoomMessage(): Promise<void> {}
   setEventListener(): void {}
 
   /** 让最近一次采集产出的视频轨收到首帧。 */

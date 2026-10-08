@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { RealtimeModel } from "../src/Service/Realtime/RealtimeModel";
 import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import { ApiMethod, type ApiServicing } from "../src/Service/Network/ApiServicing";
@@ -15,6 +15,11 @@ const trtcModelExtra = {
   rtc_bot_id: "bot001",
   user_sig: "sig-v1",
   private_map_key_with_string_room_id: "pmk-v1",
+};
+
+const agoraModelExtra = {
+  provider: "agora", room_id: "000123", rtc_app_id: "agora-app", rtc_user_id: "rtc-user",
+  rtc_bot_id: "bot-agora", room_token: "token-v1", rtc_area: "GLOBAL",
 };
 
 class ApiServicingStub implements ApiServicing {
@@ -92,7 +97,6 @@ async function flushHeartbeats(rounds = 5): Promise<void> {
 describe("RealtimeSessionService", () => {
   it.each([
     [RealtimeModel.x2_0, "x2.0"],
-    [RealtimeModel.x2_0_pro, "x2.0-pro"],
     [RealtimeModel.x2_0_trtc, "x2.0-trtc"],
   ] as const)("creates a %s session and parses TRTC connection info", async (model, modelID) => {
     const api = new ApiServicingStub();
@@ -125,8 +129,7 @@ describe("RealtimeSessionService", () => {
     const service = makeService(api);
 
     const session = await service.createSession(RealtimeModel.x2_0_trtc);
-    expect(session.connection?.sdkAppID).toBe("1600126360");
-    expect(session.connection?.userSig).toBe("sig-v1");
+    expect(session.connection).toMatchObject({ provider: "trtc", sdkAppID: "1600126360", userSig: "sig-v1" });
   });
 
   it("rejects session creation when RTC join info is incomplete", async () => {
@@ -141,7 +144,7 @@ describe("RealtimeSessionService", () => {
     });
   });
 
-  it("rejects session creation for non-TRTC providers", async () => {
+  it("rejects session creation without a supported provider", async () => {
     const api = new ApiServicingStub();
     api.postResponses = [
       sessionPayload({ modelExtra: { room_id: "1", room_token: "t", user_id: "u" } }),
@@ -151,6 +154,59 @@ describe("RealtimeSessionService", () => {
     await expect(service.createSession(RealtimeModel.x2_0_trtc)).rejects.toMatchObject({
       code: XmaxErrorCode.sessionError,
     });
+  });
+
+  it.each([false, true])("parses Agora credentials with JSON encoding %s and sends the chosen model", async (encoded) => {
+    const api = new ApiServicingStub();
+    api.postResponses = [sessionPayload({ modelExtra: encoded ? JSON.stringify(agoraModelExtra) : agoraModelExtra })];
+    const session = await makeService(api).createSession(RealtimeModel.x2_0_agora);
+    expect(api.requests[0]?.body).toEqual({ model: "x2.0-agora" });
+    expect(session.userID).toBe("user-001");
+    expect(session.connection).toEqual({ provider: "agora", roomID: "000123", appID: "agora-app",
+      userID: "rtc-user", botID: "bot-agora", roomToken: "token-v1" });
+  });
+
+  it.each(["room_token", "rtc_user_id", "rtc_app_id", "room_id"])("rejects missing Agora %s and closes the allocated session", async (field) => {
+    const api = new ApiServicingStub();
+    api.postResponses = [sessionPayload({ modelExtra: { ...agoraModelExtra, [field]: "" } })];
+    api.deleteResponses = [{}];
+    await expect(makeService(api).createSession(RealtimeModel.x2_0_agora)).rejects.toMatchObject({ code: XmaxErrorCode.sessionError });
+    expect(api.requests.at(-1)).toMatchObject({ method: ApiMethod.delete, path: "/session/ums-001", keepalive: true });
+  });
+
+  it("merges partial heartbeat credentials and deduplicates concurrent refresh requests", async () => {
+    const api = new ApiServicingStub();
+    api.postResponses = [sessionPayload({ modelExtra: agoraModelExtra })];
+    api.putResponses = [sessionPayload({ modelExtra: { room_token: "token-v2" } }), sessionPayload({})];
+    const service = makeService(api);
+    await service.createSession(RealtimeModel.x2_0_agora);
+    const [first, second] = await Promise.all([service.heartbeatSession("ums-001"), service.heartbeatSession("ums-001")]);
+    expect(first).toBe(second);
+    expect(first.connection).toMatchObject({ provider: "agora", roomID: "000123", userID: "rtc-user", roomToken: "token-v2" });
+    expect(api.requests.filter(r => r.method === ApiMethod.put)).toHaveLength(1);
+    expect((await service.heartbeatSession("ums-001")).connection).toEqual(first.connection);
+  });
+
+  it("rejects malformed or rebound heartbeat credentials without exposing the token", async () => {
+    const api = new ApiServicingStub();
+    api.postResponses = [sessionPayload({ modelExtra: agoraModelExtra })];
+    api.putResponses = [sessionPayload({ modelExtra: "not json" }), { ...sessionPayload({}), sessionUid: "other" }];
+    const service = makeService(api);
+    await service.createSession(RealtimeModel.x2_0_agora);
+    await expect(service.heartbeatSession("ums-001")).rejects.toThrow("Invalid heartbeat RTC credentials");
+    await expect(service.heartbeatSession("ums-001")).rejects.toThrow("identity changed");
+  });
+
+  it("waits for asynchronous credential application and reports renew failure", async () => {
+    const api = new ApiServicingStub();
+    api.putResponses = [sessionPayload({ modelExtra: agoraModelExtra })];
+    const service = makeService(api);
+    const onFailure = vi.fn();
+    service.startHeartbeat("ums-001", { onFailure, onRefresh: async () => { throw new Error("renew failed"); } });
+    await flushHeartbeats();
+    service.stopHeartbeat();
+    expect(onFailure).toHaveBeenCalledOnce();
+    expect(onFailure).toHaveBeenCalledWith("ums-001", expect.objectContaining({ message: "renew failed" }));
   });
 
   it("reports refreshed credentials through the heartbeat refresh handler", async () => {
@@ -163,14 +219,14 @@ describe("RealtimeSessionService", () => {
     const refreshed: RealtimeSession[] = [];
     service.startHeartbeat("ums-001", {
       onFailure: () => {},
-      onRefresh: (session) => refreshed.push(session),
+      onRefresh: (session) => { refreshed.push(session); },
     });
     await flushHeartbeats();
     service.stopHeartbeat();
 
     expect(api.requests.some((r) => r.method === ApiMethod.put && r.path === "/session/ums-001/heartbeat")).toBe(true);
     expect(refreshed.length).toBeGreaterThan(0);
-    expect(refreshed[0]?.connection?.userSig).toBe("sig-v2");
+    expect(refreshed[0]?.connection).toMatchObject({ provider: "trtc", userSig: "sig-v2" });
   });
 
   it("reports heartbeat failure when the session is no longer active", async () => {

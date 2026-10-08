@@ -2,7 +2,8 @@ import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
 import { CameraPosition } from "../../Foundation/Media/Camera/CameraPosition";
 import { watchMediaPermissionPrompt } from "../../Foundation/Permissions/MediaPermissionWatch";
-import { RtcManager } from "../../Foundation/RTC/RtcManager";
+import { createRtcManager } from "../../Foundation/RTC/RtcFactory";
+import { XmaxEnvironment } from "../../Foundation/Runtime/XmaxEnvironment";
 import type { RtcManaging } from "../../Foundation/RTC/RtcManaging";
 import type { NetworkStatistics, NetworkStatisticsListener } from "../../Foundation/RTC/NetworkStatistics";
 import type { RemoteVideoStatistics, RemoteVideoStatisticsListener, VideoStatistics, VideoStatisticsListener } from "../../Foundation/RTC/VideoStatistics";
@@ -116,6 +117,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    * 相机控制器与传输层共享同一个 RTC 引擎。
    */
   constructor(options: RealtimeConfiguration, dependencies?: {
+    environment?: XmaxEnvironment;
     apiService?: ApiServicing;
     sessionService?: RealtimeSessionServicing;
     streamController?: StreamControlling;
@@ -132,7 +134,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
 
     this.errorHandler = new RealtimeErrorHandler();
 
-    const rtcManager = dependencies?.rtcManager ?? new RtcManager();
+    const rtcManager = dependencies?.rtcManager ?? createRtcManager(options.provider, dependencies?.environment ?? XmaxEnvironment.china);
     this.cameraController = dependencies?.cameraController ?? new CameraController({
       rtcManager,
       mediaService: this.mediaService,
@@ -148,6 +150,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         : undefined);
     this.streamController = dependencies?.streamController ?? new StreamController({
       rtcManager,
+      onCredentialsRequired: () => { void this.connectionManager.refreshCredentials(); },
       errorListener: (error) => {
         void this.errorHandler.report(error);
       },
@@ -158,6 +161,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     });
 
     this.connectionManager = new XmaxRealtimeConnectionManager({
+      provider: options.provider,
       sessionService,
       streamController: this.streamController,
       timing: this.launchTimer,
@@ -635,10 +639,11 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         // 已在生成时只更新条件，不重新连接或启动任务。
         const currentState = this.coordinator.currentState;
         if (currentState.connectionState === RealtimeConnectionState.generating) {
-          this.generationManager.update(currentState.taskID, {
+          await this.generationManager.update(currentState.taskID, {
             videoFormat,
             context: options.context,
           });
+          token.ensureCurrent();
           return this.connectionManager.makeRemoteStream();
         }
         const context = this.generationManager.validateContext(options.context);

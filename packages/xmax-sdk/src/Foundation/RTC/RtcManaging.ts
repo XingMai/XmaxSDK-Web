@@ -1,6 +1,6 @@
 import type { CameraPosition } from "../Media/Camera/CameraPosition";
 import type { RtcEventListener } from "./RtcEventListener";
-import type { RoomJoinConfiguration } from "./RoomJoinConfiguration";
+import type { RtcRoomJoinConfiguration } from "./RoomJoinConfiguration";
 import type { VideoEncodingConfiguration } from "./VideoEncodingConfiguration";
 
 /**
@@ -31,9 +31,7 @@ export interface RtcCameraCaptureOptions {
 /**
  * 定义 RTC 引擎生命周期、房间、媒体传输和消息能力。
  *
- * 采集由 TRTC 内部完成（`startLocalVideo`）：SDK 不直接调用
- * getUserMedia，浏览器兼容性差异由 TRTC 适配。采集阶段不发布
- * （`publish: false`），建立连接时才发布本地流。
+ * 采集由选定 RTC 提供方完成；采集阶段不发布，建立连接时才发布本地流。
  */
 export interface RtcManaging {
   /**
@@ -88,7 +86,12 @@ export interface RtcManaging {
    *
    * @throws 引擎未初始化、进房参数无效或进房失败时抛出错误。
    */
-  joinRoom(configuration: RoomJoinConfiguration): Promise<void>;
+  joinRoom(configuration: RtcRoomJoinConfiguration): Promise<void>;
+
+  /**
+   * 应用当前会话更新的鉴权凭据，不切换房间或提供方；取消信号用于中止凭据恢复。
+   */
+  updateCredentials(configuration: RtcRoomJoinConfiguration, signal?: AbortSignal): Promise<void>;
 
   /**
    * 离开当前 RTC 房间；未在房间中时不产生效果。
@@ -158,7 +161,7 @@ export interface RtcManaging {
    * @param message UTF-8 文本消息；编码后不得超过 1000 字节。
    * @throws 未在房间中或消息超长时抛出错误。
    */
-  sendRoomMessage(message: string): void;
+  sendRoomMessage(message: string): Promise<void>;
 
   /**
    * 设置 RTC 事件监听器，传入空值时清除监听器。

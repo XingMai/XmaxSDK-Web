@@ -2,6 +2,20 @@ import { describe, expect, it } from "vitest";
 import { RoomMessageCodec } from "../src/Stream/Room/RoomMessageCodec";
 
 describe("RoomMessageCodec", () => {
+  it.each(["__agora_chunk__", "__trtc_chunk__"])("accounts for JSON escaping in %s packet budgets", (event) => {
+    const codec = new RoomMessageCodec(event);
+    const original = { event: "start", params: { prompt: '\\"\n中文🎬'.repeat(1500) } };
+    const chunks = codec.encodeOutgoing(JSON.stringify(original));
+    const receiver = new RoomMessageCodec(event);
+    const decoded: unknown[] = [];
+    for (const packet of chunks.reverse()) {
+      expect(JSON.parse(packet).event).toBe(event);
+      expect(new TextEncoder().encode(packet).byteLength).toBeLessThanOrEqual(800);
+      const message = receiver.processIncoming("bot", packet);
+      if (message) decoded.push(message);
+    }
+    expect(decoded).toEqual([original]);
+  });
   it("passes through messages within the byte threshold", () => {
     const codec = new RoomMessageCodec();
     const message = JSON.stringify({ event: "heartbeat", user_id: "user-001" });

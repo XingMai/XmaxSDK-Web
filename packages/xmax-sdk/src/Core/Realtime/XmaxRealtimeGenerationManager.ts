@@ -87,15 +87,16 @@ export class XmaxRealtimeGenerationManager {
   /**
    * 更新活动任务的生成条件；信令发送成功后才覆盖缓存，无任务或上下文时抛错。
    */
-  update(taskID: string | undefined, options: GenerationOptions): void {
+  async update(taskID: string | undefined, options: GenerationOptions): Promise<void> {
     const context = options.context ?? this.currentContext;
     if (!taskID || !context) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "A realtime context is required to update the current generation");
     }
 
-    this.streamController.updateGeneration({
+    await this.streamController.updateGeneration({
       taskID, videoFormat: options.videoFormat, context,
     });
+    if (this.activeTaskID !== taskID) throw RealtimeCoordinator.cancelledError();
     this.currentContext = context;
   }
 

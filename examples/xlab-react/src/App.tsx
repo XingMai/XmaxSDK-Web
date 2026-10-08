@@ -4,6 +4,7 @@ import {
   RealtimeConnectionState,
   RealtimeContext,
   RealtimeModel,
+  RtcProvider,
   RealtimeVideoFormat,
   XmaxClient,
   XmaxConfiguration,
@@ -65,7 +66,7 @@ export function App() {
   const [apiKey, setApiKey] = useState(
     () => localStorage.getItem(API_KEY_STORAGE) ?? "",
   );
-  const [model] = useState<RealtimeModel>(RealtimeModel.x2_0_trtc);
+  const [model, setModel] = useState<RealtimeModel>(RealtimeModel.x2_0_agora);
   const [wechatOpen, setWechatOpen] = useState(false);
   const [keyEditorOpen, setKeyEditorOpen] = useState(false);
   const [useMicrophone, setUseMicrophone] = useState(true);
@@ -341,7 +342,7 @@ export function App() {
     setBusy(true);
     setErrorText("");
     const realtime = client.createRealtimeManager(
-      new RealtimeConfiguration({ model }),
+      new RealtimeConfiguration({ model, provider: model === RealtimeModel.x2_0_agora ? RtcProvider.agora : RtcProvider.trtc }),
     );
     realtimeRef.current = realtime;
     // 会话建立成功后是否已切换到生成页面。
@@ -606,9 +607,9 @@ export function App() {
         { label: "上行码率", value: formatVideoMetric(localVideoStatistics?.bitrateKbps, "kbps") },
       ]} />
       <StatisticsPanel label="上行网络与延迟统计" rows={[
-        { label: "上行丢包率", value: formatVideoMetric(remoteVideoStatistics?.uplinkLossPercent, "%"), title: "本端 SDK → TRTC 云端的上行丢包率，不是本地预览丢包率" },
+        { label: "上行丢包率", value: formatVideoMetric(localVideoStatistics?.uplinkLossPercent ?? remoteVideoStatistics?.uplinkLossPercent, "%"), title: "本端 SDK → RTC 云端的上行丢包率，不是本地预览丢包率" },
         { label: "上行网络质量", value: formatNetworkQuality(networkStatistics?.uplinkQuality) },
-        { label: "上行 RTT", value: formatVideoMetric(networkStatistics?.uplinkRttMs, "ms"), title: "本端上行连接到 TRTC 云端的往返延迟，不是单程耗时" },
+        { label: "上行 RTT", value: formatVideoMetric(networkStatistics?.uplinkRttMs, "ms"), title: "本端上行连接到 RTC 云端的往返延迟；未提供时显示 —" },
       ]} />
     </>
   );
@@ -625,6 +626,17 @@ export function App() {
             <img className="brandLogo" src="/xmax-wordmark.png" alt="Xmax" />
           </div>
           <div className="topbarRight">
+            <div className="rtcModelPicker">
+              <select className="rtcModelSelect" aria-label="Model" value={model} disabled={busy}
+                onChange={(event) => setModel(event.target.value as RealtimeModel)}>
+                <option value={RealtimeModel.x2_0_trtc}>X2.0 · TRTC</option>
+                <option value={RealtimeModel.x2_0_agora}>X2.0 · Agora</option>
+              </select>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="m6 9 6 6 6-6" />
+              </svg>
+            </div>
             <div className="keyEntry" ref={keyFieldRef}>
               <button
                 type="button"
@@ -819,7 +831,9 @@ export function App() {
               { label: "播放缓冲延迟", value: formatVideoMetric(remoteVideoStatistics?.jitterBufferDelayMs, "ms") },
               { label: "下行丢包率", value: formatVideoMetric(remoteVideoStatistics?.downlinkLossPercent, "%") },
               { label: "下行网络质量", value: formatNetworkQuality(networkStatistics?.downlinkQuality), title: "本端所有下行连接的平均网络质量" },
-              { label: "下行 RTT", value: formatVideoMetric(networkStatistics?.downlinkRttMs, "ms"), title: "本端所有下行连接到 TRTC 云端的平均往返延迟，不是单程耗时" },
+              model === RealtimeModel.x2_0_agora
+                ? { label: "RTT（云端）", value: formatVideoMetric(remoteVideoStatistics?.rttMs, "ms"), title: "本端 SDK 到 RTC 云端的往返延迟" }
+                : { label: "下行 RTT", value: formatVideoMetric(networkStatistics?.downlinkRttMs, "ms"), title: "本端所有下行连接到 RTC 云端的平均往返延迟，不是单程耗时" },
               { label: "E2E（RTC 估算）", value: formatVideoMetric(remoteVideoStatistics?.endToEndDelayMs, "ms") },
             ]} />
           </div>

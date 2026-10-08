@@ -2,7 +2,7 @@ import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import type { RealtimeModel } from "./RealtimeModel";
 import type { ApiServicing } from "../Network/ApiServicing";
 import { RealtimeSession } from "./RealtimeSession";
-import { RealtimeSessionConnection } from "./RealtimeSessionConnection";
+import { RealtimeSessionConnection, type RtcSessionConnection } from "./RealtimeSessionConnection";
 import type {
   RealtimeSessionHeartbeatHandlers,
   RealtimeSessionServicing,
@@ -20,7 +20,7 @@ interface SessionPayload {
 }
 
 /**
- * `modelExtra` 中 TRTC 连接参数的原始字段。
+ * `modelExtra` 中两种 RTC 连接参数的原始字段。
  */
 interface ConnectionPayload {
   room_id?: string;
@@ -30,6 +30,7 @@ interface ConnectionPayload {
   user_sig?: string;
   private_map_key_with_string_room_id?: string;
   rtc_bot_id?: string;
+  room_token?: string;
 }
 
 export interface RealtimeSessionServiceOptions {
@@ -71,6 +72,11 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
    * 运行状态
    */
   private heartbeatVersion = 0;
+  /**
+   * 会话凭证缓存，支持心跳仅返回变更字段；关闭后清除。
+   */
+  private readonly credentials = new Map<string, ConnectionPayload>();
+  private readonly refreshes = new Map<string, Promise<RealtimeSession>>();
 
   /**
    * 创建实时生成会话 Service。
@@ -94,7 +100,17 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
     const payload = await this.apiService.post<SessionPayload>("/session", {
       model,
     });
-    return RealtimeSessionService.makeSession(payload, true);
+    try {
+      const session = RealtimeSessionService.makeSession(payload, true);
+      RealtimeSessionService.ensureSessionActive(session);
+      this.credentials.set(session.id, RealtimeSessionService.decodeConnectionPayload(payload.modelExtra)!);
+      return session;
+    } catch (error) {
+      // 后端已创建会话但凭据无效时，也必须尽力关闭，避免留下计费会话。
+      const sessionID = RealtimeSessionService.nonEmpty(payload.sessionUid);
+      if (sessionID) await this.closeSession(sessionID).catch(() => {});
+      throw error;
+    }
   }
 
   /**
@@ -119,6 +135,8 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
    * 关闭指定实时会话；请求带 keepalive，页面卸载后仍能发出。
    */
   async closeSession(sessionID: string): Promise<void> {
+    this.credentials.delete(sessionID);
+    this.refreshes.delete(sessionID);
     try {
       await this.apiService.delete<Record<string, never>>(
         `/session/${sessionID}`,
@@ -148,7 +166,7 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
           return;
         }
         RealtimeSessionService.ensureSessionActive(session);
-        handlers.onRefresh?.(session);
+        await handlers.onRefresh?.(session);
       } catch (error) {
         if (this.heartbeatVersion !== version) {
           return;
@@ -163,11 +181,35 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
   /**
    * 发送一次心跳请求并解析会话数据（不要求携带完整连接参数）。
    */
-  private async heartbeatSession(sessionID: string): Promise<RealtimeSession> {
+  heartbeatSession(sessionID: string): Promise<RealtimeSession> {
+    const pending = this.refreshes.get(sessionID);
+    if (pending) return pending;
+    const operation = this.performHeartbeat(sessionID);
+    this.refreshes.set(sessionID, operation);
+    void operation.finally(() => {
+      if (this.refreshes.get(sessionID) === operation) this.refreshes.delete(sessionID);
+    }).catch(() => {});
+    return operation;
+  }
+
+  /**
+   * 合并心跳部分凭据；已关闭会话的迟到响应不重建缓存。
+   */
+  private async performHeartbeat(sessionID: string): Promise<RealtimeSession> {
+    const previous = this.credentials.get(sessionID);
     const payload = await this.apiService.put<SessionPayload>(
       `/session/${sessionID}/heartbeat`,
     );
-    return RealtimeSessionService.makeSession(payload, false);
+    const incoming = RealtimeSessionService.decodeConnectionPayload(payload.modelExtra);
+    if (payload.modelExtra != null && !incoming) {
+      throw new XmaxError(XmaxErrorCode.sessionError, "Invalid heartbeat RTC credentials");
+    }
+    const merged = incoming ? { ...previous, ...incoming } : previous;
+    const session = RealtimeSessionService.makeSession({ ...payload, modelExtra: merged }, merged !== undefined);
+    if (session.id !== sessionID) throw new XmaxError(XmaxErrorCode.sessionError, "Heartbeat session identity changed");
+    RealtimeSessionService.ensureSessionActive(session);
+    if (previous && this.credentials.get(sessionID) === previous && merged) this.credentials.set(sessionID, merged);
+    return session;
   }
 
   /**
@@ -213,24 +255,31 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
   }
 
   /**
-   * 解析 `modelExtra` 中的 TRTC 连接参数；字段不完整或提供方不支持时返回空。
+   * 解析 `modelExtra` 中的 RTC 连接参数；字段不完整或提供方不支持时返回空。
    */
   private static makeConnection(
     modelExtra: unknown,
-  ): RealtimeSessionConnection | undefined {
+  ): RtcSessionConnection | undefined {
     const payload = RealtimeSessionService.decodeConnectionPayload(modelExtra);
     if (!payload) {
       return undefined;
     }
 
-    // 仅支持 TRTC 提供方；provider 缺省时服务端按 vertc 处理，同样不支持。
-    if (RealtimeSessionService.nonEmpty(payload.provider) !== "trtc") {
+    const provider = RealtimeSessionService.nonEmpty(payload.provider);
+    if (provider !== "trtc" && provider !== "agora") {
       return undefined;
     }
 
     const roomID = RealtimeSessionService.nonEmpty(payload.room_id);
     const sdkAppID = RealtimeSessionService.nonEmpty(payload.rtc_app_id);
     const userID = RealtimeSessionService.nonEmpty(payload.rtc_user_id);
+    if (!roomID || !sdkAppID || !userID) return undefined;
+    if (provider === "agora") {
+      const roomToken = RealtimeSessionService.nonEmpty(payload.room_token);
+      if (!roomToken) return undefined;
+      return Object.freeze({ provider, roomID, appID: sdkAppID, userID, roomToken,
+        botID: RealtimeSessionService.nonEmpty(payload.rtc_bot_id) });
+    }
     const userSig = RealtimeSessionService.nonEmpty(payload.user_sig);
     const privateMapKey = RealtimeSessionService.nonEmpty(
       payload.private_map_key_with_string_room_id,
@@ -258,12 +307,12 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
   ): ConnectionPayload | undefined {
     if (typeof modelExtra === "string") {
       try {
-        return JSON.parse(modelExtra) as ConnectionPayload;
+        return RealtimeSessionService.decodeConnectionPayload(JSON.parse(modelExtra));
       } catch {
         return undefined;
       }
     }
-    if (typeof modelExtra === "object" && modelExtra !== null) {
+    if (typeof modelExtra === "object" && modelExtra !== null && !Array.isArray(modelExtra)) {
       return modelExtra as ConnectionPayload;
     }
     return undefined;
@@ -273,7 +322,7 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
    * 归一化可选字符串：去除首尾空白后为空时返回 `undefined`。
    */
   private static nonEmpty(value?: string): string | undefined {
-    const normalized = value?.trim();
+    const normalized = typeof value === "string" ? value.trim() : undefined;
     return normalized || undefined;
   }
 }

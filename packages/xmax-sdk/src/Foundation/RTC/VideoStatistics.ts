@@ -2,6 +2,10 @@
  * 视频流实际运行统计；缺失或无效指标为 undefined。
  */
 export interface VideoStatistics {
+  /**
+   * 本端视频上行丢包率，单位 %；厂商未提供时为空。
+   */
+  readonly uplinkLossPercent?: number;
   readonly width?: number;
   readonly height?: number;
   /**
@@ -25,23 +29,24 @@ export type VideoStatisticsListener = (statistics: VideoStatistics | undefined) 
 export interface RemoteVideoStatistics extends VideoStatistics {
   readonly userID: string;
   /**
-   * 本端 SDK 到 TRTC 云端的往返延迟，单位 ms；不是与远端用户之间的 RTT。
+   * 本端 SDK 到 RTC 云端的往返延迟，单位 ms；不是与远端用户之间的 RTT。
    */
   readonly rttMs?: number;
   /**
-   * 本端 SDK 到 TRTC 云端的上行丢包率，单位 %，不是结果流的发送端丢包率。
+   * 本端 SDK 到 RTC 云端的上行丢包率，单位 %，不是结果流的发送端丢包率。
    */
   readonly uplinkLossPercent?: number;
   /**
-   * TRTC 云端到本端 SDK 的下行丢包率，单位 %。
+   * RTC 云端到本端 SDK 的下行丢包率，单位 %。
    */
   readonly downlinkLossPercent?: number;
   /**
-   * 当前远端视频流的播放缓冲延迟，单位 ms。
+   * 当前远端视频流的播放缓冲延迟，单位 ms；Agora 未提供时为空。
    */
   readonly jitterBufferDelayMs?: number;
   /**
-   * TRTC 媒体端到端延迟估算值，单位 ms；不代表完整 AI 处理链路耗时。
+   * RTC 媒体端到端延迟估算值，单位 ms；不代表完整 AI 处理链路耗时。
+   * 采用各厂商原生口径，Agora end2EndDelay 不包含编码与解码耗时。
    */
   readonly endToEndDelayMs?: number;
 }

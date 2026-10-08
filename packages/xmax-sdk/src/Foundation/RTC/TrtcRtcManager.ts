@@ -9,7 +9,7 @@ import {
 } from "./RtcEngineManager";
 import type { RtcEventListener } from "./RtcEventListener";
 import type { NetworkQualityLevel } from "./NetworkStatistics";
-import type { RoomJoinConfiguration } from "./RoomJoinConfiguration";
+import type { RtcRoomJoinConfiguration } from "./RoomJoinConfiguration";
 import type { RtcCameraCaptureOptions, RtcManaging } from "./RtcManaging";
 import { RtcStatsLogger } from "./RtcStatsLogger";
 import { rtcOrientedVideoSize } from "./RtcVideoOrientation";
@@ -99,7 +99,7 @@ interface RtcCustomMessageEvent {
  * 浏览器兼容性差异交由 TRTC 适配；视频轨通过 `getVideoTrack()` 取出后
  * 交给 SDK 自己的渲染层预览。房间信令走自定义消息通道（`cmdId = 1`）。
  */
-export class RtcManager implements RtcManaging {
+export class TrtcRtcManager implements RtcManaging {
   /**
    * 依赖
    */
@@ -288,7 +288,10 @@ export class RtcManager implements RtcManaging {
    *
    * @throws 引擎未初始化、进房参数无效或进房失败时抛出错误。
    */
-  async joinRoom(configuration: RoomJoinConfiguration): Promise<void> {
+  async joinRoom(configuration: RtcRoomJoinConfiguration): Promise<void> {
+    if (configuration.provider !== "trtc") {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "TRTC credentials required");
+    }
     const engine = this.requireEngine();
     const sdkAppId = Number(configuration.sdkAppID);
     if (!Number.isInteger(sdkAppId) || sdkAppId <= 0) {
@@ -537,7 +540,7 @@ export class RtcManager implements RtcManaging {
    *
    * @throws 未在房间中或消息编码后超过 1000 字节时抛出错误。
    */
-  sendRoomMessage(message: string): void {
+  async sendRoomMessage(message: string): Promise<void> {
     const engine = this.requireEngine();
     if (!this.isInRoom) {
       throw new XmaxError(
@@ -559,6 +562,11 @@ export class RtcManager implements RtcManaging {
       data: encoded.buffer as ArrayBuffer,
     });
   }
+
+  /**
+   * TRTC 凭据由会话层缓存，保持现有进房鉴权行为。
+   */
+  async updateCredentials(_configuration: RtcRoomJoinConfiguration): Promise<void> {}
 
   /**
    * 设置 RTC 事件监听器，传入空值时清除监听器。

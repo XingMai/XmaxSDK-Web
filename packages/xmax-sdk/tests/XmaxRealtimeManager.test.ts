@@ -125,6 +125,7 @@ class CameraControllingStub implements CameraControlling {
 
 /** 传输层桩：记录全部调用，生成确认由测试手动控制。 */
 class StreamControllingStub implements StreamControlling {
+  async updateCredentials(): Promise<void> {}
   networkStatisticsListener?: NetworkStatisticsListener;
 
   setNetworkStatisticsListener(listener?: NetworkStatisticsListener): void {
@@ -199,7 +200,7 @@ class StreamControllingStub implements StreamControlling {
     this.activateAudioCalls += 1;
   }
 
-  updateGeneration(options: StreamGenerationOptions): void {
+  async updateGeneration(options: StreamGenerationOptions): Promise<void> {
     this.updateCalls.push(options);
   }
 
@@ -209,7 +210,7 @@ class StreamControllingStub implements StreamControlling {
     this.stopGenerationCalls.push(taskID);
   }
 
-  sendTracks(): void {}
+  async sendTracks(): Promise<void> {}
 
   setRoomListener(): void {}
 
@@ -221,6 +222,7 @@ class StreamControllingStub implements StreamControlling {
 
 /** 会话 Service 桩：返回固定会话，记录心跳与关闭调用。 */
 class RealtimeSessionServicingStub implements RealtimeSessionServicing {
+  async heartbeatSession(): Promise<RealtimeSession> { return this.session; }
   readonly session = new RealtimeSession({
     id: "session-1",
     userID: "user-1",

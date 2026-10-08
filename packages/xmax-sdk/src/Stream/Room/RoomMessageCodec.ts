@@ -45,10 +45,15 @@ export class RoomMessageCodec {
   private readonly records = new Map<string, ChunkRecord>();
 
   /**
+   * 创建厂商协议编解码器；TRTC 保持原事件名，Agora 使用 __agora_chunk__。
+   */
+  constructor(private readonly chunkEvent = CHUNK_EVENT) {}
+
+  /**
    * 编码出站消息。
    *
    * @returns 不超过阈值时返回仅含原消息的单元素数组；
-   * 否则返回按 `__trtc_chunk__` 协议包装的分片 JSON 数组。
+   * 否则返回按当前提供方分片协议包装的 JSON 数组。
    */
   encodeOutgoing(message: string): string[] {
     if (RoomMessageCodec.byteLength(message) <= RoomMessageCodec.chunkThresholdBytes) {
@@ -70,7 +75,7 @@ export class RoomMessageCodec {
 
     return slices.map((data, index) =>
       JSON.stringify({
-        event: CHUNK_EVENT,
+        event: this.chunkEvent,
         eventId,
         index,
         count,
@@ -94,7 +99,7 @@ export class RoomMessageCodec {
       return undefined;
     }
 
-    const chunk = RoomMessageCodec.parseChunk(parsed);
+    const chunk = this.parseChunk(parsed);
     if (!chunk) {
       return parsed;
     }
@@ -144,7 +149,7 @@ export class RoomMessageCodec {
   /**
    * 从已解析的值识别分片消息；字段不完整时按普通业务消息处理。
    */
-  private static parseChunk(
+  private parseChunk(
     parsed: unknown,
   ): { eventId: string; index: number; count: number; data: string } | undefined {
     if (typeof parsed !== "object" || parsed === null) {
@@ -153,8 +158,9 @@ export class RoomMessageCodec {
 
     const record = parsed as Record<string, unknown>;
     if (
-      record.event !== CHUNK_EVENT ||
+      record.event !== this.chunkEvent ||
       typeof record.eventId !== "string" ||
+      record.eventId.length === 0 ||
       !Number.isInteger(record.index) ||
       !Number.isInteger(record.count) ||
       typeof record.data !== "string"
@@ -193,7 +199,8 @@ export class RoomMessageCodec {
     let currentBytes = 0;
 
     for (const char of message) {
-      const bytes = RoomMessageCodec.byteLength(char);
+      // data 是 JSON 字符串，必须计入引号、反斜杠与控制字符的转义开销。
+      const bytes = RoomMessageCodec.byteLength(JSON.stringify(char)) - 2;
       if (currentBytes + bytes > budget && current.length > 0) {
         slices.push(current);
         current = "";

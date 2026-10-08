@@ -6,7 +6,7 @@ import { RemoteStream } from "../src/Foundation/RTC/RemoteStream";
 import { RoomJoinConfiguration } from "../src/Foundation/RTC/RoomJoinConfiguration";
 import type { RtcEventListener } from "../src/Foundation/RTC/RtcEventListener";
 import { RtcEngineManager, type RtcEngine } from "../src/Foundation/RTC/RtcEngineManager";
-import { RtcManager } from "../src/Foundation/RTC/RtcManager";
+import { TrtcRtcManager } from "../src/Foundation/RTC/TrtcRtcManager";
 
 class FakeRtcEngine {
   destroyed = false;
@@ -119,7 +119,7 @@ class FakeRtcEngine {
 function makeManager() {
   const engine = new FakeRtcEngine();
   const engineManager = new RtcEngineManager(async () => engine as unknown as RtcEngine);
-  const manager = new RtcManager(engineManager);
+  const manager = new TrtcRtcManager(engineManager);
   return { manager, engine };
 }
 
@@ -131,7 +131,7 @@ const joinConfig = new RoomJoinConfiguration({
   privateMapKey: "pmk-v1",
 });
 
-describe("RtcManager performance logging", () => {
+describe("TrtcRtcManager performance logging", () => {
   afterEach(() => {
     XmaxLogger.configure(XmaxLoggerOption.none);
     vi.restoreAllMocks();
@@ -200,7 +200,7 @@ describe("RtcManager performance logging", () => {
   });
 });
 
-describe("RtcManager", () => {
+describe("TrtcRtcManager", () => {
   it("maps directional network quality and RTT without requiring logs or remote video", async () => {
     const { manager, engine } = makeManager();
     const listener = vi.fn();
@@ -594,12 +594,12 @@ describe("RtcManager", () => {
     const { manager, engine } = makeManager();
     await manager.initialize();
 
-    expect(() => manager.sendRoomMessage("{}")).toThrowError(
+    await expect(manager.sendRoomMessage("{}")).rejects.toThrowError(
       expect.objectContaining({ code: XmaxErrorCode.invalidConfiguration }),
     );
 
     await manager.joinRoom(joinConfig);
-    manager.sendRoomMessage(JSON.stringify({ event: "heartbeat" }));
+    await manager.sendRoomMessage(JSON.stringify({ event: "heartbeat" }));
     expect(engine.sentMessages).toHaveLength(1);
     expect(engine.sentMessages[0]?.cmdId).toBe(1);
     expect(new TextDecoder().decode(engine.sentMessages[0]!.data)).toBe(
@@ -612,7 +612,7 @@ describe("RtcManager", () => {
     await manager.initialize();
     await manager.joinRoom(joinConfig);
 
-    expect(() => manager.sendRoomMessage("x".repeat(1001))).toThrowError(
+    await expect(manager.sendRoomMessage("x".repeat(1001))).rejects.toThrowError(
       expect.objectContaining({ code: XmaxErrorCode.invalidConfiguration }),
     );
   });

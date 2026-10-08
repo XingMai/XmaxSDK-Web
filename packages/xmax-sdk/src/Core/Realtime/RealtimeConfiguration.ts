@@ -1,4 +1,5 @@
 import type { RealtimeModel } from "../../Service/Realtime/RealtimeModel";
+import { RtcProvider } from "../../Foundation/RTC/RtcProvider";
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 
 /**
@@ -16,6 +17,10 @@ export interface FrameInterpolationConfiguration {
 }
 
 export interface RealtimeConfigurationInit {
+  /**
+   * RTC 提供方，默认 TRTC；不根据模型名称自动推断。
+   */
+  provider?: RtcProvider;
   /**
    * 实时生成业务使用的模型。
    */
@@ -36,6 +41,10 @@ export interface RealtimeConfigurationInit {
  * 创建实时 Manager 所需的业务配置。
  */
 export class RealtimeConfiguration {
+  /**
+   * RTC 配置
+   */
+  readonly provider: RtcProvider;
   /**
    * 模型配置
    */
@@ -60,10 +69,15 @@ export class RealtimeConfiguration {
    * 创建实时业务配置。
    *
    * @param init.model 实时生成业务使用的模型。
+   * @param init.provider RTC 提供方，默认 TRTC；创建后不可切换。
    * @param init.isFrameInterpolationEnabled 是否默认开启远端生成画面的插帧。
    * @param init.frameInterpolation 插帧开关和显示帧率上限的详细配置。
    */
   constructor(init: RealtimeConfigurationInit) {
+    this.provider = init.provider ?? RtcProvider.trtc;
+    if (!Object.values(RtcProvider).includes(this.provider)) {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Unsupported RTC provider");
+    }
     this.model = init.model;
 
     const targetFrameRate = init.frameInterpolation?.targetFrameRate ?? 60;

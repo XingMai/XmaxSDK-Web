@@ -11,6 +11,7 @@ import { VideoRenderRegistry, type VideoRenderTarget } from "../../Service/Realt
 import type { RemoteStreamBinding, StreamControlling } from "../../Stream/StreamControlling";
 import type { RealtimeLaunchTimer } from "./RealtimeLaunchTimer";
 import { RealtimeCoordinator } from "./RealtimeCoordinator";
+import { RtcProvider } from "../../Foundation/RTC/RtcProvider";
 
 /**
  * 内部连接管理器：拥有会话、心跳、RTC 连接及远端轨道；不提交公开状态。
@@ -20,6 +21,10 @@ export class XmaxRealtimeConnectionManager {
    * 会话资源
    */
   private activeSession?: RealtimeSession;
+  private refreshVersion = 0;
+  private credentialRefresh?: Promise<void>;
+  private credentialApplication: Promise<void> = Promise.resolve();
+  private credentialController?: AbortController;
 
   /**
    * 远端轨道与渲染绑定
@@ -35,6 +40,7 @@ export class XmaxRealtimeConnectionManager {
      * 会话、传输、计时与渲染依赖
      */
     private readonly dependencies: {
+      provider?: RtcProvider;
       sessionService?: RealtimeSessionServicing;
       streamController: StreamControlling;
       timing: RealtimeLaunchTimer;
@@ -88,6 +94,11 @@ export class XmaxRealtimeConnectionManager {
         "Session does not contain RTC join information",
       );
     }
+    if (connection.provider !== (this.dependencies.provider ?? RtcProvider.trtc)) {
+      throw new XmaxError(XmaxErrorCode.sessionError, "Session RTC provider does not match RealtimeConfiguration.provider");
+    }
+    const refreshVersion = ++this.refreshVersion;
+    this.credentialController = new AbortController();
 
     // 发布本地流之前配置编码参数：采集阶段不发布，此处配置即可生效到发送端。
     const videoFormat = options.localTrack.videoFormat;
@@ -119,7 +130,7 @@ export class XmaxRealtimeConnectionManager {
         this.dependencies.onHeartbeatFailure(sessionID, error);
       },
       onRefresh: (refreshed) => {
-        this.handleSessionRefresh(refreshed);
+        return this.handleSessionRefresh(refreshed, refreshVersion);
       },
     });
 
@@ -148,7 +159,37 @@ export class XmaxRealtimeConnectionManager {
   /**
    * 停止会话心跳；未配置会话服务时不执行操作。
    */
-  stopHeartbeat(): void { this.dependencies.sessionService?.stopHeartbeat(); }
+  stopHeartbeat(): void {
+    this.refreshVersion++;
+    this.credentialController?.abort();
+    this.credentialController = undefined;
+    this.credentialRefresh = undefined;
+    this.credentialApplication = Promise.resolve();
+    this.dependencies.sessionService?.stopHeartbeat();
+  }
+
+  /**
+   * RTC Token 过期时复用会话心跳获取新凭据，并合并同一实例的并发请求。
+   */
+  async refreshCredentials(): Promise<void> {
+    if (this.credentialRefresh) return this.credentialRefresh;
+    const current = this.activeSession;
+    if (!current || current.connection?.provider !== "agora") return;
+    const version = this.refreshVersion;
+    const operation = (async () => {
+      try {
+        const session = await this.requireSessionService().heartbeatSession(current.id);
+        await this.handleSessionRefresh(session, version, true);
+      } catch (error) {
+        if (version === this.refreshVersion && this.activeSession?.id === current.id) {
+          this.dependencies.onHeartbeatFailure(current.id, XmaxError.from(error));
+        }
+      }
+    })();
+    this.credentialRefresh = operation;
+    try { await operation; }
+    finally { if (this.credentialRefresh === operation) this.credentialRefresh = undefined; }
+  }
 
   /**
    * 等待接收轨解除静音；超时只警告，取消必须立即退出并移除监听。
@@ -269,9 +310,19 @@ export class XmaxRealtimeConnectionManager {
    * 心跳成功后的凭据刷新：仅凭据变化时覆盖本地缓存；房间绑定信息
    * （提供方、房间、应用、登录身份）变化时当前连接失效，按失败结束。
    */
-  private handleSessionRefresh(session: RealtimeSession): void {
+  private handleSessionRefresh(session: RealtimeSession, version: number, force = false): Promise<void> {
+    // 周期心跳和 Token 到期通知可能并发；按响应顺序应用，避免较旧 Token 迟到覆盖。
+    const operation = this.credentialApplication.then(() => this.applySessionRefresh(session, version, force));
+    this.credentialApplication = operation.catch(() => {});
+    return operation;
+  }
+
+  /**
+   * 校验绑定并应用最新凭据，异步刷新期间失效的房间不得恢复缓存。
+   */
+  private async applySessionRefresh(session: RealtimeSession, version: number, force: boolean): Promise<void> {
     const current = this.activeSession;
-    if (!current || current.id !== session.id) {
+    if (version !== this.refreshVersion || !current || current.id !== session.id) {
       return;
     }
 
@@ -285,7 +336,9 @@ export class XmaxRealtimeConnectionManager {
       previous !== undefined &&
       (next.provider !== previous.provider ||
         next.roomID !== previous.roomID ||
-        next.sdkAppID !== previous.sdkAppID ||
+        (next.provider === "agora" ? next.appID : next.sdkAppID) !==
+          (previous.provider === "agora" ? previous.appID : previous.sdkAppID) ||
+        next.botID !== previous.botID ||
         next.userID !== previous.userID);
     if (bindingChanged) {
       this.dependencies.onHeartbeatFailure(
@@ -293,6 +346,11 @@ export class XmaxRealtimeConnectionManager {
         new XmaxError(XmaxErrorCode.sessionError, "RTC session binding changed during heartbeat"),
       );
       return;
+    }
+
+    if (next.provider === "agora" && (force || previous?.provider !== "agora" || next.roomToken !== previous.roomToken)) {
+      await this.dependencies.streamController.updateCredentials(next, this.credentialController?.signal);
+      if (version !== this.refreshVersion || this.activeSession !== current) return;
     }
 
     this.activeSession = new RealtimeSession({

@@ -1,5 +1,5 @@
 /**
- * TRTC 网络质量等级：未知、极好、良好、一般、差、极差、断网。
+ * RTC 网络质量等级：未知、极好、良好、一般、差、极差、断网。
  */
 export type NetworkQualityLevel = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
@@ -13,11 +13,11 @@ export interface NetworkStatistics {
    */
   readonly downlinkQuality?: NetworkQualityLevel;
   /**
-   * 上行连接到 TRTC 云端的往返延迟，单位 ms，不是单程延迟。
+   * 上行连接到 RTC 云端的往返延迟，单位 ms，不是单程延迟；Agora 未提供时为空。
    */
   readonly uplinkRttMs?: number;
   /**
-   * 所有下行连接到 TRTC 云端的平均往返延迟，单位 ms。
+   * 所有下行连接到 RTC 云端的平均往返延迟，单位 ms；Agora 未提供时为空。
    */
   readonly downlinkRttMs?: number;
 }

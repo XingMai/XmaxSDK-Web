@@ -1,4 +1,4 @@
-import type { RealtimeSessionConnection } from "./RealtimeSessionConnection";
+import type { RtcSessionConnection } from "./RealtimeSessionConnection";
 
 export interface RealtimeSessionInit {
   /**
@@ -19,7 +19,7 @@ export interface RealtimeSessionInit {
   /**
    * RTC 连接参数。
    */
-  connection?: RealtimeSessionConnection;
+  connection?: RtcSessionConnection;
 
   /**
    * 会话关闭原因。
@@ -63,7 +63,7 @@ export class RealtimeSession {
   /**
    * RTC 连接参数；心跳等响应未携带完整参数时为空。
    */
-  readonly connection?: RealtimeSessionConnection;
+  readonly connection?: RtcSessionConnection;
 
   /**
    * 创建实时会话。

@@ -5,7 +5,7 @@ import type { MediaServicing } from "../Service/Media/MediaServicing";
 import { MediaService } from "../Service/Media/MediaService";
 import type { StorageServicing } from "../Service/Storage/StorageServicing";
 import { StorageService } from "../Service/Storage/StorageService";
-import { RealtimeModel } from "../Service/Realtime/RealtimeModel";
+import { RealtimeModel, modelBaseURL } from "../Service/Realtime/RealtimeModel";
 import type { RealtimeConfiguration } from "./Realtime/RealtimeConfiguration";
 import { XmaxRealtimeManager } from "./Realtime/XmaxRealtimeManager";
 import type { XmaxRealtimeManaging } from "./Realtime/XmaxRealtimeManaging";
@@ -49,12 +49,21 @@ export class XmaxClient {
 
   /**
    * 创建实时媒体 Manager。
+   * 模型专用地址优先于环境默认地址，并用于该 Manager 的整个会话生命周期。
    *
    * @param options 实时生成模型等业务配置。
    * @returns 可用于本地相机预览、实时连接与生成的实时 Manager。
    */
   createRealtimeManager(options: RealtimeConfiguration): XmaxRealtimeManaging {
-    return new XmaxRealtimeManager(options, { apiService: this.apiService });
+    const baseURL = modelBaseURL(options.model);
+    const apiService = baseURL
+      ? new ApiService({ apiKey: this.configuration.apiKey, baseURL })
+      : this.apiService;
+
+    return new XmaxRealtimeManager(options, {
+      apiService,
+      environment: this.configuration.environment,
+    });
   }
 
   /**

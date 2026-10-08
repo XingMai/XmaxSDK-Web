@@ -4,7 +4,7 @@ import { XmaxError, XmaxErrorCode, type XmaxErrorListener } from "../../Foundati
 import type { PermissionManaging } from "../../Foundation/Permissions/PermissionManaging";
 import { PermissionManager } from "../../Foundation/Permissions/PermissionManager";
 import type { RtcManaging } from "../../Foundation/RTC/RtcManaging";
-import { RtcManager } from "../../Foundation/RTC/RtcManager";
+import { TrtcRtcManager } from "../../Foundation/RTC/TrtcRtcManager";
 import { VideoRenderRegistry } from "../../Service/Realtime/VideoRenderBinding";
 import type { MediaServicing } from "../../Service/Media/MediaServicing";
 import { MediaService } from "../../Service/Media/MediaService";
@@ -79,7 +79,7 @@ export class CameraController implements CameraControlling {
     errorListener?: XmaxErrorListener;
   }) {
     this.permissionManager = options?.permissionManager ?? new PermissionManager();
-    this.rtcManager = options?.rtcManager ?? new RtcManager();
+    this.rtcManager = options?.rtcManager ?? new TrtcRtcManager();
     this.mediaService = options?.mediaService ?? new MediaService();
     this.errorListener = options?.errorListener ?? (() => {});
   }

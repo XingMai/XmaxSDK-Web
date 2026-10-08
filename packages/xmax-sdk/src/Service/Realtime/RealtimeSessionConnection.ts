@@ -3,9 +3,9 @@ import type { RealtimeSession } from "./RealtimeSession";
 
 export interface RealtimeSessionConnectionInit {
   /**
-   * RTC 提供方标识（当前仅支持 `trtc`）。
+   * TRTC 凭据的提供方判别字段。
    */
-  provider: string;
+  provider: "trtc";
 
   /**
    * TRTC 房间号（字符串房间号）。
@@ -49,9 +49,9 @@ export class RealtimeSessionConnection {
    * RTC 提供方
    */
   /**
-   * RTC 提供方标识（当前仅支持 `trtc`）。
+   * TRTC 凭据的提供方判别字段。
    */
-  readonly provider: string;
+  readonly provider: "trtc";
 
   /**
    * 进房参数
@@ -124,4 +124,28 @@ export type RealtimeSessionHeartbeatFailureHandler = (
  */
 export type RealtimeSessionHeartbeatRefreshHandler = (
   session: RealtimeSession,
-) => void;
+) => void | Promise<void>;
+
+/**
+ * 声网会话凭证；频道与 UID 原样用于 RTC 入房和房间信令。
+ */
+export interface AgoraSessionConnection {
+  /**
+   * 提供方与房间身份
+   */
+  readonly provider: "agora";
+  readonly roomID: string;
+  readonly appID: string;
+  readonly userID: string;
+  readonly botID?: string;
+
+  /**
+   * RTC 入房与续期凭证，不写入日志。
+   */
+  readonly roomToken: string;
+}
+
+/**
+ * RTC 会话连接参数，按 provider 区分厂商凭证。
+ */
+export type RtcSessionConnection = RealtimeSessionConnection | AgoraSessionConnection;

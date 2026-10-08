@@ -13,6 +13,7 @@ import type { RemoteStreamBinding } from "../src/Stream/StreamControlling";
 import type { VideoEncodingConfiguration } from "../src/Foundation/RTC/VideoEncodingConfiguration";
 
 class RtcManagingStub implements RtcManaging {
+  async updateCredentials(): Promise<void> {}
   isInitialized = true;
 
   // 房间
@@ -98,7 +99,7 @@ class RtcManagingStub implements RtcManaging {
   setRemoteAudioVolume(volume: number, userID: string): void {
     this.volumeCalls.push([volume, userID]);
   }
-  sendRoomMessage(message: string): void {
+  async sendRoomMessage(message: string): Promise<void> {
     if (this.failNextSend) {
       this.failNextSend = false;
       throw new XmaxError(XmaxErrorCode.rtcError, "send failed");
@@ -156,6 +157,49 @@ function emitRemoteVideo(
 }
 
 describe("StreamController", () => {
+  it("uses a video published during join without waiting for another publication event", async () => {
+    const { controller, rtc, bindings } = makeStream();
+    vi.spyOn(rtc, "joinRoom").mockImplementation(async () => { emitRemoteVideo(rtc, "bot001", true); });
+    await controller.connect(connection, false, noopEnsureActive);
+    await controller.beginGeneration({ taskID: "early-bot", videoFormat, context });
+    expect(rtc.subscribeRemoteVideoCalls).toEqual([["bot001", true]]);
+    expect(bindings.filter(Boolean)).toHaveLength(1);
+    await controller.disconnect();
+  });
+
+  it("does not accept a subscription that completes after remote unpublication", async () => {
+    const { controller, rtc, bindings } = makeStream();
+    let complete!: (track: MediaStreamTrack) => void;
+    vi.spyOn(rtc, "subscribeRemoteVideo").mockReturnValueOnce(new Promise(resolve => { complete = resolve; }));
+    await controller.connect(connection, false, noopEnsureActive);
+    emitRemoteVideo(rtc, "bot001", true);
+    emitRemoteVideo(rtc, "bot001", false);
+    complete({ kind: "video" } as MediaStreamTrack);
+    await Promise.resolve();
+    expect(bindings.filter(Boolean)).toHaveLength(0);
+    const generation = controller.beginGeneration({ taskID: "fresh", videoFormat, context });
+    emitRemoteVideo(rtc, "bot001", true);
+    await generation;
+    expect(bindings.filter(Boolean)).toHaveLength(1);
+    await controller.disconnect();
+  });
+
+  it("waits for an asynchronous start send even if the video is already ready", async () => {
+    const { controller, rtc } = makeStream();
+    await controller.connect(connection, false, noopEnsureActive);
+    let sent!: () => void;
+    vi.spyOn(rtc, "sendRoomMessage").mockReturnValueOnce(new Promise(resolve => { sent = resolve; }));
+    let completed = false;
+    const generation = controller.beginGeneration({ taskID: "async-start", videoFormat, context }).then(() => { completed = true; });
+    emitRemoteVideo(rtc, "bot001", true);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(completed).toBe(false);
+    sent();
+    await generation;
+    expect(completed).toBe(true);
+    await controller.disconnect();
+  });
   it("先进入房间，曝光屏障通过后才发布视频和音频", async () => {
     const { controller, rtc } = makeStream();
     let ready!: () => void;
@@ -335,6 +379,7 @@ describe("StreamController", () => {
       context,
     });
     expect(controller.hasGenerationTask).toBe(true);
+    await vi.waitFor(() => expect(rtc.sentMessages.length).toBeGreaterThan(0));
     expect(JSON.parse(rtc.sentMessages[0]!).event).toBe("start");
 
     emitRemoteVideo(rtc, "bot001", true);
@@ -397,9 +442,9 @@ describe("StreamController", () => {
     await controller.connect(connection, false, noopEnsureActive);
     rtc.failNextSend = true;
 
-    expect(() =>
+    await expect(
       controller.beginGeneration({ taskID: "task-001", videoFormat, context }),
-    ).toThrowError(expect.objectContaining({ code: XmaxErrorCode.rtcError }));
+    ).rejects.toMatchObject({ code: XmaxErrorCode.rtcError });
     expect(controller.hasGenerationTask).toBe(false);
   });
 
@@ -533,9 +578,9 @@ describe("StreamController", () => {
     const { controller, rtc } = makeStream();
     await controller.connect(connection, false, noopEnsureActive);
 
-    controller.updateGeneration({ taskID: "task-001", videoFormat, context });
-    controller.changeTargetSize("task-001", { width: 640, height: 960 }, noopEnsureActive);
-    controller.sendTracks("task-001", [{ x: 0.1, y: 0.2 } as never]);
+    await controller.updateGeneration({ taskID: "task-001", videoFormat, context });
+    await controller.changeTargetSize("task-001", { width: 640, height: 960 }, noopEnsureActive);
+    await controller.sendTracks("task-001", [{ x: 0.1, y: 0.2 } as never]);
 
     const events = rtc.sentMessages.map((raw) => JSON.parse(raw).event);
     expect(events).toEqual(["change_condition", "change_target_size", "tracks"]);

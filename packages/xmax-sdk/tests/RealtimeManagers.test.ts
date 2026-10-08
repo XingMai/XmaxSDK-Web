@@ -5,10 +5,11 @@ import { RealtimeCoordinator } from "../src/Core/Realtime/RealtimeCoordinator";
 import { RealtimeLaunchTimer } from "../src/Core/Realtime/RealtimeLaunchTimer";
 import { XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import { RemoteStream } from "../src/Foundation/RTC/RemoteStream";
+import { RtcProvider } from "../src/Foundation/RTC/RtcProvider";
 import { RealtimeContext } from "../src/Service/Realtime/RealtimeContext";
 import { RealtimeModel } from "../src/Service/Realtime/RealtimeModel";
 import { RealtimeSession } from "../src/Service/Realtime/RealtimeSession";
-import { RealtimeSessionConnection } from "../src/Service/Realtime/RealtimeSessionConnection";
+import { RealtimeSessionConnection, type RtcSessionConnection } from "../src/Service/Realtime/RealtimeSessionConnection";
 import type { RealtimeSessionHeartbeatHandlers } from "../src/Service/Realtime/RealtimeSessionServicing";
 import { RealtimeVideoFormat } from "../src/Service/Realtime/RealtimeVideoFormat";
 import { RealtimeVideoTrack } from "../src/Service/Realtime/RealtimeVideoTrack";
@@ -38,7 +39,8 @@ const context = new RealtimeContext({ prompt: "first" });
 function makeStream() {
   const methods = {
     beginGeneration: vi.fn((_options: StreamGenerationOptions) => Promise.resolve()),
-    updateGeneration: vi.fn((_options: StreamGenerationOptions) => {}),
+    updateGeneration: vi.fn(async (_options: StreamGenerationOptions) => {}),
+    updateCredentials: vi.fn(async (_connection: RtcSessionConnection, _signal?: AbortSignal) => {}),
     stopGeneration: vi.fn(async (_id: string) => {}),
     activateRemoteAudio: vi.fn(async () => {}),
     setVideoEncoderConfig: vi.fn(async () => {}),
@@ -67,7 +69,7 @@ describe("XmaxRealtimeGenerationManager", () => {
     const taskID = await manager.start(options);
     expect(manager.validateContext()).toBe(context);
     const updated = new RealtimeContext({ prompt: "updated" });
-    manager.update(taskID, { videoFormat, context: updated });
+    await manager.update(taskID, { videoFormat, context: updated });
     expect(manager.validateContext()).toBe(updated);
     expect(stream.beginGeneration).toHaveBeenCalledOnce();
     expect(stream.updateGeneration).toHaveBeenCalledWith({ taskID, videoFormat, context: updated });
@@ -135,10 +137,23 @@ describe("XmaxRealtimeGenerationManager", () => {
     const { manager, stream, options } = setup();
     const taskID = await manager.start(options);
     stream.updateGeneration.mockImplementation(() => { throw new Error("update failed"); });
-    expect(() => manager.update(taskID, { videoFormat, context: new RealtimeContext({ prompt: "bad" }) })).toThrow("update failed");
+    await expect(manager.update(taskID, { videoFormat, context: new RealtimeContext({ prompt: "bad" }) })).rejects.toThrow("update failed");
     expect(manager.validateContext()).toBe(context);
     expect(stream.stopGeneration).not.toHaveBeenCalled();
     await manager.reset();
+  });
+
+  it("does not restore cached context when an update finishes after reset", async () => {
+    const { manager, stream, options } = setup();
+    const taskID = await manager.start(options);
+    const sent = deferred<void>();
+    stream.updateGeneration.mockReturnValue(sent.promise);
+    const updating = manager.update(taskID, { videoFormat, context: new RealtimeContext({ prompt: "late" }) });
+    const rejected = expect(updating).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
+    await manager.reset();
+    sent.resolve();
+    await rejected;
+    expect(() => manager.validateContext()).toThrow("first generation");
   });
 
   it("stops a task on synchronous begin failure without replacing the original error", async () => {
@@ -161,17 +176,21 @@ describe("XmaxRealtimeGenerationManager", () => {
 });
 
 describe("XmaxRealtimeConnectionManager", () => {
-  function setup() {
+  function setup(provider = RtcProvider.trtc) {
     const { methods: stream, controller } = makeStream();
-    const connection = new RealtimeSessionConnection({ provider: "trtc", roomID: "room", sdkAppID: "1", userID: "user", userSig: "sig", privateMapKey: "key" });
+    const connection: RtcSessionConnection = provider === RtcProvider.agora
+      ? { provider: "agora", roomID: "room", appID: "app", userID: "rtc-user", roomToken: "token-v1" }
+      : new RealtimeSessionConnection({ provider: "trtc", roomID: "room", sdkAppID: "1", userID: "user", userSig: "sig", privateMapKey: "key" });
     const session = new RealtimeSession({ id: "session", connection });
     const service = {
+      heartbeatSession: vi.fn(async () => session),
       createSession: vi.fn(async () => session), closeSession: vi.fn(async (_id: string) => {}),
       startHeartbeat: vi.fn((_id: string, _handlers: RealtimeSessionHeartbeatHandlers) => {}),
       stopHeartbeat: vi.fn(),
     };
     const events = { onHeartbeatFailure: vi.fn(), onFrameDisplayed: vi.fn(), onRenderAttached: vi.fn(), onRenderDetached: vi.fn() };
     const manager = new XmaxRealtimeConnectionManager({
+      provider,
       sessionService: service, streamController: controller, timing: new RealtimeLaunchTimer(),
       isMirrored: () => true, remoteAudioVolume: () => 0.25, ...events,
     });
@@ -283,13 +302,80 @@ describe("XmaxRealtimeConnectionManager", () => {
     const refresh = (roomID: string) => new RealtimeSession({ id: "session", connection: new RealtimeSessionConnection({
       provider: "trtc", roomID, sdkAppID: "1", userID: "user", userSig: "new-sig", privateMapKey: "key",
     }) });
-    handlers.onRefresh?.(refresh("room"));
+    await handlers.onRefresh?.(refresh("room"));
     expect(events.onHeartbeatFailure).not.toHaveBeenCalled();
-    handlers.onRefresh?.(refresh("other-room"));
+    await handlers.onRefresh?.(refresh("other-room"));
     expect(events.onHeartbeatFailure).toHaveBeenCalledWith("session", expect.objectContaining({ code: XmaxErrorCode.sessionError }));
     await manager.disconnect();
-    handlers.onRefresh?.(refresh("yet-another-room"));
+    await handlers.onRefresh?.(refresh("yet-another-room"));
     expect(events.onHeartbeatFailure).toHaveBeenCalledOnce();
+  });
+
+  it("rejects mismatched providers before joining and retains the session for cleanup", async () => {
+    const { manager, service, stream, options } = setup();
+    service.createSession.mockResolvedValue(new RealtimeSession({ id: "mismatch", connection: {
+      provider: "agora", roomID: "room", appID: "app", userID: "rtc-user", roomToken: "token",
+    } }));
+    await expect(manager.connect(options)).rejects.toThrow("provider does not match");
+    expect(stream.connect).not.toHaveBeenCalled();
+    await manager.disconnect();
+    expect(service.closeSession).toHaveBeenCalledWith("mismatch");
+  });
+
+  it("renews Agora credentials through heartbeat and coalesces expiry notifications", async () => {
+    const { manager, service, stream, options, events } = setup(RtcProvider.agora);
+    await manager.connect({ ...options, model: RealtimeModel.x2_0_agora });
+    const refreshed = new RealtimeSession({ id: "session", connection: {
+      provider: "agora", roomID: "room", appID: "app", userID: "rtc-user", roomToken: "token-v2",
+    } });
+    service.heartbeatSession.mockResolvedValue(refreshed);
+    await Promise.all([manager.refreshCredentials(), manager.refreshCredentials()]);
+    expect(service.heartbeatSession).toHaveBeenCalledOnce();
+    expect(stream.updateCredentials).toHaveBeenCalledOnce();
+    expect(stream.updateCredentials).toHaveBeenCalledWith(refreshed.connection, expect.any(AbortSignal));
+    await service.startHeartbeat.mock.calls[0]![1].onRefresh?.(refreshed);
+    expect(stream.updateCredentials).toHaveBeenCalledOnce();
+    expect(events.onHeartbeatFailure).not.toHaveBeenCalled();
+    await manager.disconnect();
+  });
+
+  it("ignores Agora credentials arriving after disconnect", async () => {
+    const { manager, service, stream, options, session } = setup(RtcProvider.agora);
+    await manager.connect(options);
+    const response = deferred<RealtimeSession>();
+    service.heartbeatSession.mockReturnValue(response.promise);
+    const refreshing = manager.refreshCredentials();
+    await manager.disconnect();
+    response.resolve(session);
+    await refreshing;
+    expect(stream.updateCredentials).not.toHaveBeenCalled();
+    expect(manager.currentSessionID).toBeUndefined();
+  });
+
+  it("aborts credential recovery before waiting for generation and room teardown", async () => {
+    const { manager, service, stream, options, events } = setup(RtcProvider.agora);
+    await manager.connect(options);
+    stream.updateCredentials.mockImplementation(async (_connection, signal) => {
+      await new Promise<void>((_resolve, reject) => signal!.addEventListener("abort", () => reject(RealtimeCoordinator.cancelledError()), { once: true }));
+    });
+    const refreshing = manager.refreshCredentials();
+    await vi.waitFor(() => expect(stream.updateCredentials).toHaveBeenCalledOnce());
+    const signal = stream.updateCredentials.mock.calls[0]![1]!;
+    manager.stopHeartbeat();
+    expect(signal.aborted).toBe(true);
+    await refreshing;
+    expect(events.onHeartbeatFailure).not.toHaveBeenCalled();
+    await manager.disconnect();
+    expect(service.closeSession).toHaveBeenCalledOnce();
+  });
+
+  it("reports Agora renewal failure through the connection failure path", async () => {
+    const { manager, stream, options, events } = setup(RtcProvider.agora);
+    await manager.connect(options);
+    stream.updateCredentials.mockRejectedValue(new Error("renew failed"));
+    await manager.refreshCredentials();
+    expect(events.onHeartbeatFailure).toHaveBeenCalledWith("session", expect.objectContaining({ message: "renew failed" }));
+    await manager.disconnect();
   });
 
   it.each(["abort", "unmute", "timeout"])("cleans up remote readiness listeners on %s", async (outcome) => {

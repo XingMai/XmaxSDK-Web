@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import { XmaxLogger, XmaxLoggerOption } from "../src/Foundation/Logging/XmaxLogger";
 import type { RtcEventListener } from "../src/Foundation/RTC/RtcEventListener";
-import type { RoomJoinConfiguration } from "../src/Foundation/RTC/RoomJoinConfiguration";
+import type { RtcRoomJoinConfiguration } from "../src/Foundation/RTC/RoomJoinConfiguration";
 import type { RtcManaging } from "../src/Foundation/RTC/RtcManaging";
 import { RealtimeContext } from "../src/Service/Realtime/RealtimeContext";
 import { RealtimePoint } from "../src/Service/Realtime/RealtimePoint";
@@ -14,8 +14,9 @@ import { RoomMessageCodec } from "../src/Stream/Room/RoomMessageCodec";
 import type { VideoEncodingConfiguration } from "../src/Foundation/RTC/VideoEncodingConfiguration";
 
 class RtcManagingStub implements RtcManaging {
+  async updateCredentials(): Promise<void> {}
   isInitialized = true;
-  joinRoomCalls: RoomJoinConfiguration[] = [];
+  joinRoomCalls: RtcRoomJoinConfiguration[] = [];
   leaveRoomCalls = 0;
   sentMessages: string[] = [];
   eventListener?: RtcEventListener;
@@ -38,7 +39,7 @@ class RtcManagingStub implements RtcManaging {
   ): Promise<void> {
     this.encodingConfigurations.push(configuration);
   }
-  async joinRoom(configuration: RoomJoinConfiguration): Promise<void> {
+  async joinRoom(configuration: RtcRoomJoinConfiguration): Promise<void> {
     if (this.failNextJoin) {
       const error = this.failNextJoin;
       this.failNextJoin = undefined;
@@ -59,7 +60,7 @@ class RtcManagingStub implements RtcManaging {
   async subscribeRemoteAudio(): Promise<void> {}
   readonly supportsRemoteAudioVolumeControl = true;
   setRemoteAudioVolume(): void {}
-  sendRoomMessage(message: string): void {
+  async sendRoomMessage(message: string): Promise<void> {
     this.sentMessages.push(message);
   }
   setEventListener(listener?: RtcEventListener): void {
@@ -103,6 +104,28 @@ function makeController() {
 const noopEnsureActive = () => {};
 
 describe("RoomController", () => {
+  it("uses Agora framing and RTC identity for generation, heartbeat and inbound targeting", async () => {
+    const { controller, rtc, heartbeat } = makeController();
+    const credentials = { provider: "agora" as const, appID: "app", roomID: "000123", userID: "rtc-uid", roomToken: "token" };
+    await controller.join(credentials, noopEnsureActive);
+    expect(rtc.joinRoomCalls[0]).toEqual(credentials);
+    expect(heartbeat.startedUserIDs).toEqual(["rtc-uid"]);
+    await controller.startGeneration({ taskID: "task", videoFormat, context: new RealtimeContext({ prompt: "角色🎬".repeat(300) }) });
+    const receiver = new RoomMessageCodec("__agora_chunk__");
+    let decoded: unknown;
+    for (const message of rtc.sentMessages) {
+      expect(JSON.parse(message).event).toBe("__agora_chunk__");
+      decoded = receiver.processIncoming("rtc-uid", message) ?? decoded;
+    }
+    expect(decoded).toMatchObject({ event: "start", user_id: "rtc-uid", uid: "task" });
+    const incoming = vi.fn();
+    controller.setListener({ onRoomMessage: incoming });
+    controller.handleIncomingMessage("bot", JSON.stringify({ event: "ack", user_id: "business-uid" }));
+    expect(incoming).not.toHaveBeenCalled();
+    controller.handleIncomingMessage("bot", JSON.stringify({ event: "ack", user_id: "rtc-uid" }));
+    expect(incoming).toHaveBeenCalledOnce();
+    await controller.leave();
+  });
   it("joins with mapped configuration and starts heartbeat", async () => {
     const { controller, rtc, heartbeat } = makeController();
     await controller.join(connection, noopEnsureActive);
@@ -161,7 +184,7 @@ describe("RoomController", () => {
     const { controller, rtc } = makeController();
     await controller.join(connection, noopEnsureActive);
 
-    controller.startGeneration({
+    await controller.startGeneration({
       taskID: "task-001",
       videoFormat,
       targetSize: { width: 416, height: 736 },
@@ -189,7 +212,7 @@ describe("RoomController", () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => {});
     XmaxLogger.configure(XmaxLoggerOption.business);
     try {
-      controller.startGeneration({ taskID: "task-001", videoFormat, context });
+      await controller.startGeneration({ taskID: "task-001", videoFormat, context });
 
       expect(rtc.sentMessages).toHaveLength(1);
       const raw = rtc.sentMessages[0]!;
@@ -210,17 +233,17 @@ describe("RoomController", () => {
     const { controller, rtc } = makeController();
     await controller.join(connection, noopEnsureActive);
 
-    controller.changeGenerationCondition({ taskID: "task-001", videoFormat, context });
+    await controller.changeGenerationCondition({ taskID: "task-001", videoFormat, context });
     let ensureActiveCalled = false;
-    controller.changeTargetSize({
+    await controller.changeTargetSize({
       taskID: "task-001",
       targetSize: { width: 640, height: 960 },
       ensureActive: () => {
         ensureActiveCalled = true;
       },
     });
-    controller.stopGeneration("task-001");
-    controller.sendTracks("task-001", [
+    await controller.stopGeneration("task-001");
+    await controller.sendTracks("task-001", [
       new RealtimePoint({ x: 0.5, y: 0.25 }),
     ]);
 
@@ -236,10 +259,10 @@ describe("RoomController", () => {
     expect(events[3].tracks).toEqual([[0.5, 0.25]]);
   });
 
-  it("ignores stop when the room is not joined but rejects tracks", () => {
+  it("ignores stop when the room is not joined but rejects tracks", async () => {
     const { controller, rtc } = makeController();
-    controller.stopGeneration("task-001");
-    controller.sendTracks("task-001", []);
+    await controller.stopGeneration("task-001");
+    await controller.sendTracks("task-001", []);
     expect(rtc.sentMessages).toHaveLength(0);
 
     expect(() =>

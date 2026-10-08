@@ -1,11 +1,12 @@
 import { XmaxError, XmaxErrorCode, type XmaxErrorListener } from "../Foundation/Errors/XmaxError";
 import { XmaxLogger } from "../Foundation/Logging/XmaxLogger";
 import { RemoteStream } from "../Foundation/RTC/RemoteStream";
+import { RoomJoinConfiguration } from "../Foundation/RTC/RoomJoinConfiguration";
 import type { RtcManaging } from "../Foundation/RTC/RtcManaging";
 import type { RemoteVideoStatisticsListener, VideoStatisticsListener } from "../Foundation/RTC/VideoStatistics";
 import type { NetworkStatisticsListener } from "../Foundation/RTC/NetworkStatistics";
 import type { RealtimePoint } from "../Service/Realtime/RealtimePoint";
-import type { RealtimeSessionConnection } from "../Service/Realtime/RealtimeSessionConnection";
+import type { RtcSessionConnection } from "../Service/Realtime/RealtimeSessionConnection";
 import type { RealtimeVideoFormat } from "../Service/Realtime/RealtimeVideoFormat";
 import type { RoomListener, RoomControlling } from "./Room/RoomControlling";
 import { RoomController } from "./Room/RoomController";
@@ -38,6 +39,9 @@ interface StreamState {
   localVideoPublished: boolean;
   localAudioPublished: boolean;
   subscribedRemoteUserIDs: Set<string>;
+  publishedRemoteUserIDs: Set<string>;
+  remoteVideoTracks: Map<string, MediaStreamTrack>;
+  remoteVideoSubscriptions: Map<string, object>;
   subscribedRemoteAudioUserIDs: Set<string>;
   generationTaskID?: string;
   generationWaiter?: GenerationWaiter;
@@ -54,11 +58,18 @@ function makeInitialState(): StreamState {
     localVideoPublished: false,
     localAudioPublished: false,
     subscribedRemoteUserIDs: new Set(),
+    publishedRemoteUserIDs: new Set(),
+    remoteVideoTracks: new Map(),
+    remoteVideoSubscriptions: new Map(),
     subscribedRemoteAudioUserIDs: new Set(),
   };
 }
 
 export interface StreamControllerOptions {
+  /**
+   * 凭据即将过期或已过期时，转交会话层获取新凭据。
+   */
+  onCredentialsRequired?: () => void;
   /**
    * RTC 引擎与媒体传输组件。
    */
@@ -157,6 +168,10 @@ export class StreamController implements StreamControlling {
 
     // RTC 事件监听权归传输层：房间消息交给房间控制器组包分发。
     this.rtcManager.setEventListener({
+      onTokenWillExpire: options.onCredentialsRequired,
+      onTokenExpired: options.onCredentialsRequired,
+      onRoomRejoining: () => this.handleRoomRejoining(),
+      onError: (error) => this.errorListener(error),
       onNetworkStatistics: (statistics) => {
         if (this.state.localVideoPublished) {
           this.networkStatisticsListener?.(statistics);
@@ -243,15 +258,15 @@ export class StreamController implements StreamControlling {
    * @throws 连接已取消，或 RTC 进房、房间配置与本地流发布失败时抛出错误。
    */
   async connect(
-    connection: RealtimeSessionConnection,
+    connection: RtcSessionConnection,
     includeLocalAudio: boolean,
     ensureActive: () => void,
     beforePublish?: () => Promise<void>,
   ): Promise<void> {
+    this.configureRoom({ roomID: connection.roomID, botID: connection.botID });
     await this.roomController.join(connection, ensureActive);
     ensureActive();
 
-    this.configureRoom({ roomID: connection.roomID, botID: connection.botID });
     XmaxLogger.stream.info(
       () =>
         `RTC 房间已配置 (RTC Room Configured)\n` +
@@ -272,11 +287,18 @@ export class StreamController implements StreamControlling {
   }
 
   /**
+   * 将会话刷新后的凭据应用到当前 RTC 连接。
+   */
+  async updateCredentials(connection: RtcSessionConnection, signal?: AbortSignal): Promise<void> {
+    await this.rtcManager.updateCredentials(connection.provider === "agora" ? connection : new RoomJoinConfiguration(connection), signal);
+  }
+
+  /**
    * 建立生成任务并发送开始信令。
    *
    * @returns 等待远端结果流确认的 Promise。
-   * @throws 任务标识无效、RTC 房间未就绪、已有生成任务，或开始信令
-   * 发送失败时同步抛出错误。
+   * @throws 任务标识无效、RTC 房间未就绪或已有生成任务时同步抛错；
+   * 发送失败或确认超时通过返回的 Promise 拒绝。
    */
   beginGeneration(options: StreamGenerationOptions): Promise<void> {
     const taskID = options.taskID.trim();
@@ -320,27 +342,45 @@ export class StreamController implements StreamControlling {
 
     this.state.generationTaskID = taskID;
     this.state.generationWaiter = waiter;
+    // 发送可能先失败，提前接住确认 Promise，避免产生无人处理的拒绝。
+    void confirmation.catch(() => {});
 
     try {
-      this.roomController.startGeneration({
+      const sending = this.roomController.startGeneration({
         taskID,
         videoFormat: options.videoFormat,
         targetSize: options.targetSize,
         context: options.context,
       });
+      const state = this.state;
+      const sent = Promise.resolve(sending).then(() => {
+        if (this.state !== state || state.generationTaskID !== taskID) return;
+        // 机器人可能在 start 之前已发布；复用已订阅轨道，不等待第二次发布事件。
+        for (const userID of state.publishedRemoteUserIDs) {
+          void this.handleRemoteVideoPublished(userID, true);
+        }
+      }).catch(error => {
+        const mapped = XmaxError.from(error);
+        this.rejectGenerationStart(taskID, mapped);
+        if (this.state.generationTaskID === taskID) {
+          this.state.generationTaskID = undefined;
+          void this.roomController.stopGeneration(taskID).catch(() => {});
+        }
+        throw mapped;
+      });
+      return Promise.all([sent, confirmation]).then(() => {});
     } catch (error) {
       const mapped = XmaxError.from(error);
-      this.state.generationTaskID = undefined;
       this.rejectGenerationStart(taskID, mapped);
+      this.state.generationTaskID = undefined;
       try {
-        this.roomController.stopGeneration(taskID);
+        void this.roomController.stopGeneration(taskID).catch(() => {});
       } catch {
         // 开始信令发送失败后的停止信令失败不影响错误返回。
       }
       throw mapped;
     }
 
-    return confirmation;
   }
 
   /**
@@ -366,9 +406,9 @@ export class StreamController implements StreamControlling {
    *
    * @throws RTC 房间未就绪或条件变更信令发送失败时抛出错误。
    */
-  updateGeneration(options: StreamGenerationOptions): void {
+  async updateGeneration(options: StreamGenerationOptions): Promise<void> {
     try {
-      this.roomController.changeGenerationCondition({
+      await this.roomController.changeGenerationCondition({
         taskID: options.taskID,
         videoFormat: options.videoFormat,
         targetSize: options.targetSize,
@@ -384,13 +424,13 @@ export class StreamController implements StreamControlling {
    *
    * @throws 操作已取消、房间未就绪或信令发送失败时抛出错误。
    */
-  changeTargetSize(
+  async changeTargetSize(
     taskID: string,
     targetSize: RoomEventTargetSize,
     ensureActive: () => void,
-  ): void {
+  ): Promise<void> {
     try {
-      this.roomController.changeTargetSize({ taskID, targetSize, ensureActive });
+      await this.roomController.changeTargetSize({ taskID, targetSize, ensureActive });
     } catch (error) {
       throw XmaxError.from(error);
     }
@@ -407,7 +447,7 @@ export class StreamController implements StreamControlling {
       return;
     }
     try {
-      this.roomController.stopGeneration(stoppedTaskID);
+      await this.roomController.stopGeneration(stoppedTaskID);
     } catch (error) {
       throw XmaxError.from(error);
     }
@@ -418,9 +458,9 @@ export class StreamController implements StreamControlling {
    *
    * @throws RTC 房间未就绪或轨迹信令发送失败时抛出错误。
    */
-  sendTracks(taskID: string, points: RealtimePoint[]): void {
+  async sendTracks(taskID: string, points: RealtimePoint[]): Promise<void> {
     try {
-      this.roomController.sendTracks(taskID, points);
+      await this.roomController.sendTracks(taskID, points);
     } catch (error) {
       throw XmaxError.from(error);
     }
@@ -511,6 +551,12 @@ export class StreamController implements StreamControlling {
     if (!this.state.roomID) {
       return;
     }
+    if (published) this.state.publishedRemoteUserIDs.add(trimmedUserID);
+    else {
+      this.state.publishedRemoteUserIDs.delete(trimmedUserID);
+      this.state.remoteVideoSubscriptions.delete(trimmedUserID);
+      this.state.remoteVideoTracks.delete(trimmedUserID);
+    }
     if (this.state.botID && this.state.botID !== trimmedUserID) {
       // 会话下发的机器人标识与实际发布者不一致时，若当前有生成任务在
       // 等待确认或运行中，仍接受该发布者（房间为会话独占，除本端外
@@ -544,15 +590,35 @@ export class StreamController implements StreamControlling {
   }
 
   /**
+   * RTC 重进房时废弃旧媒体绑定；业务任务、音频订阅意图和生成确认等待器继续保留。
+   */
+  private handleRoomRejoining(): void {
+    this.state.publishedRemoteUserIDs.clear();
+    this.state.subscribedRemoteUserIDs.clear();
+    this.state.remoteVideoSubscriptions.clear();
+    this.state.remoteVideoTracks.clear();
+    this.state.activeRemoteStream = undefined;
+    this.clearRemoteStream();
+  }
+
+  /**
    * 订阅远端视频并在成功后就绪或确认生成任务。
    */
   private async subscribeRemoteVideo(userID: string): Promise<void> {
-    if (this.state.subscribedRemoteUserIDs.has(userID)) {
+    const state = this.state;
+    const existing = state.remoteVideoTracks.get(userID);
+    if (existing) {
+      if (state.generationWaiter) this.confirmOrUpdateRemoteStream(userID, existing);
       return;
     }
+    if (state.remoteVideoSubscriptions.has(userID)) return;
+    const subscription = {};
+    state.remoteVideoSubscriptions.set(userID, subscription);
+    const isCurrent = () => this.state === state && state.remoteVideoSubscriptions.get(userID) === subscription;
 
     try {
       const track = await this.rtcManager.subscribeRemoteVideo(userID, true);
+      if (!isCurrent()) return;
       if (!track) {
         throw new XmaxError(
           XmaxErrorCode.mediaError,
@@ -560,12 +626,8 @@ export class StreamController implements StreamControlling {
         );
       }
 
-      // 订阅期间连接可能已被重置。
-      if (!this.state.roomID) {
-        return;
-      }
-
-      this.state.subscribedRemoteUserIDs.add(userID);
+      state.subscribedRemoteUserIDs.add(userID);
+      state.remoteVideoTracks.set(userID, track);
       XmaxLogger.stream.info(
         () =>
           `远端视频订阅成功 (Remote Video Subscribed)\n` +
@@ -573,6 +635,7 @@ export class StreamController implements StreamControlling {
       );
       this.confirmOrUpdateRemoteStream(userID, track);
     } catch (error) {
+      if (!isCurrent()) return;
       const mapped = XmaxError.from(error);
       const pendingTaskID = this.state.generationWaiter
         ? this.state.generationTaskID
@@ -582,6 +645,8 @@ export class StreamController implements StreamControlling {
       } else {
         this.errorListener(mapped);
       }
+    } finally {
+      if (isCurrent()) state.remoteVideoSubscriptions.delete(userID);
     }
   }
 

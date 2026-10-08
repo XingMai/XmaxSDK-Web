@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CameraPosition } from "../src/Foundation/Media/Camera/CameraPosition";
 import { RtcEngineManager, type RtcEngine } from "../src/Foundation/RTC/RtcEngineManager";
-import { RtcManager } from "../src/Foundation/RTC/RtcManager";
+import { TrtcRtcManager } from "../src/Foundation/RTC/TrtcRtcManager";
 import {
   rtcOrientedVideoSize,
   shouldTransposeRtcVideoSize,
@@ -73,7 +73,7 @@ describe("shouldTransposeRtcVideoSize", () => {
   });
 });
 
-describe("RtcManager video orientation", () => {
+describe("TrtcRtcManager video orientation", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
@@ -96,7 +96,7 @@ describe("RtcManager video orientation", () => {
       getVideoTrack: () => ({ id: "track" }) as unknown as MediaStreamTrack,
       destroy: () => {},
     };
-    const manager = new RtcManager(
+    const manager = new TrtcRtcManager(
       new RtcEngineManager(async () => engine as unknown as RtcEngine),
     );
     return { manager, calls };

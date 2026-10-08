@@ -4,7 +4,7 @@ import { RoomJoinConfiguration } from "../../Foundation/RTC/RoomJoinConfiguratio
 import type { RtcManaging } from "../../Foundation/RTC/RtcManaging";
 import type { RealtimeContext } from "../../Service/Realtime/RealtimeContext";
 import type { RealtimePoint } from "../../Service/Realtime/RealtimePoint";
-import type { RealtimeSessionConnection } from "../../Service/Realtime/RealtimeSessionConnection";
+import type { RtcSessionConnection } from "../../Service/Realtime/RealtimeSessionConnection";
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import type { RoomControlling, RoomListener } from "./RoomControlling";
 import { RoomEvent, type RoomEventTargetSize } from "./RoomEvent";
@@ -41,7 +41,7 @@ export interface RoomControllerOptions {
  * 管理 RTC 房间生命周期、心跳和实时生成信令。
  *
  * 入站消息经 `RoomMessageCodec` 组包后按 `user_id` 目标字段过滤
- * （TRTC 自定义消息通道只有广播语义），再分发给监听器。
+ * （RTC 消息通道使用广播语义），再分发给监听器。
  */
 export class RoomController implements RoomControlling {
   /**
@@ -53,7 +53,9 @@ export class RoomController implements RoomControlling {
    * 传输层组件
    */
   private readonly heartbeat: RoomHeartbeat;
-  private readonly codec: RoomMessageCodec;
+  private codec: RoomMessageCodec;
+  private readonly customCodec: boolean;
+  private sendTail: Promise<void> = Promise.resolve();
 
   /**
    * 事件监听
@@ -78,6 +80,7 @@ export class RoomController implements RoomControlling {
     this.heartbeat =
       options.heartbeat ?? new RoomHeartbeat({ rtcManager: options.rtcManager });
     this.codec = options.codec ?? new RoomMessageCodec();
+    this.customCodec = options.codec !== undefined;
   }
 
   /**
@@ -86,7 +89,7 @@ export class RoomController implements RoomControlling {
    * @throws 已有房间未离开、操作失效或进房失败时抛出错误。
    */
   async join(
-    connection: RealtimeSessionConnection,
+    connection: RtcSessionConnection,
     ensureActive: () => void,
   ): Promise<void> {
     try {
@@ -106,8 +109,9 @@ export class RoomController implements RoomControlling {
     this.heartbeat.stop();
 
     try {
+      if (!this.customCodec) this.codec = new RoomMessageCodec(connection.provider === "agora" ? "__agora_chunk__" : "__trtc_chunk__");
       await this.rtcManager.joinRoom(
-        new RoomJoinConfiguration({
+        connection.provider === "agora" ? connection : new RoomJoinConfiguration({
           roomID: connection.roomID,
           userID: connection.userID,
           sdkAppID: connection.sdkAppID,
@@ -169,8 +173,8 @@ export class RoomController implements RoomControlling {
     videoFormat: RealtimeVideoFormat;
     targetSize?: RoomEventTargetSize;
     context: RealtimeContext;
-  }): void {
-    this.send(
+  }): Promise<void> {
+    return this.send(
       RoomEvent.start({
         userID: this.requireUserID(),
         taskID: options.taskID,
@@ -191,8 +195,8 @@ export class RoomController implements RoomControlling {
     videoFormat: RealtimeVideoFormat;
     targetSize?: RoomEventTargetSize;
     context: RealtimeContext;
-  }): void {
-    this.send(
+  }): Promise<void> {
+    return this.send(
       RoomEvent.changeCondition({
         userID: this.requireUserID(),
         taskID: options.taskID,
@@ -212,9 +216,9 @@ export class RoomController implements RoomControlling {
     taskID: string;
     targetSize: RoomEventTargetSize;
     ensureActive: () => void;
-  }): void {
+  }): Promise<void> {
     options.ensureActive();
-    this.send(
+    return this.send(
       RoomEvent.changeTargetSize({
         userID: this.requireUserID(),
         taskID: options.taskID,
@@ -226,21 +230,21 @@ export class RoomController implements RoomControlling {
   /**
    * 尝试发送生成停止信令；未进房或任务标识为空时忽略。
    */
-  stopGeneration(taskID: string): void {
+  stopGeneration(taskID: string): Promise<void> {
     if (!taskID || this.state.kind !== "joined") {
-      return;
+      return Promise.resolve();
     }
-    this.send(RoomEvent.stop({ userID: this.state.userID, taskID }));
+    return this.send(RoomEvent.stop({ userID: this.state.userID, taskID }));
   }
 
   /**
    * 发送生成任务的交互轨迹；任务标识或轨迹为空时忽略。
    */
-  sendTracks(taskID: string, points: RealtimePoint[]): void {
+  sendTracks(taskID: string, points: RealtimePoint[]): Promise<void> {
     if (!taskID || points.length === 0) {
-      return;
+      return Promise.resolve();
     }
-    this.send(
+    return this.send(
       RoomEvent.tracks({
         userID: this.requireUserID(),
         taskID,
@@ -263,8 +267,9 @@ export class RoomController implements RoomControlling {
     this.state = { kind: "idle" };
     this.heartbeat.stop();
     this.codec.reset();
-    await this.rtcManager.leaveRoom();
-    this.leaveOperation = undefined;
+    this.sendTail = Promise.resolve();
+    try { await this.rtcManager.leaveRoom(); }
+    finally { this.leaveOperation = undefined; }
   }
 
   /**
@@ -278,7 +283,7 @@ export class RoomController implements RoomControlling {
 
     const message = parsed as Record<string, unknown>;
 
-    // TRTC 自定义消息只有广播语义，按 payload 中的 user_id 过滤目标。
+    // RTC 消息使用广播语义，按 payload 中的 user_id 过滤目标。
     const targetUserID =
       typeof message.user_id === "string" ? message.user_id : undefined;
     const ownUserID = this.state.kind === "joined" ? this.state.userID : undefined;
@@ -292,19 +297,24 @@ export class RoomController implements RoomControlling {
   /**
    * 发送房间信令并输出日志。
    */
-  private send(message: string): void {
-    for (const packet of this.codec.encodeOutgoing(message)) {
-      try {
-        this.rtcManager.sendRoomMessage(packet);
-      } catch (error) {
-        throw XmaxError.from(error);
+  private send(message: string): Promise<void> {
+    const state = this.state;
+    const packets = this.codec.encodeOutgoing(message);
+    const operation = this.sendTail.then(async () => {
+      for (const packet of packets) {
+        if (state !== this.state || state.kind !== "joined") {
+          throw new XmaxError(XmaxErrorCode.cancelled, "Room message was cancelled");
+        }
+        await this.rtcManager.sendRoomMessage(packet);
       }
-    }
-    XmaxLogger.room.info(
-      () =>
-        `发送房间信令 (Outbound Room Signaling)\n` +
-        `└─ ${XmaxLogger.localized("内容：", "Content:")}\n${JSON.stringify(JSON.parse(message), null, 2)}`,
-    );
+      XmaxLogger.room.info(
+        () =>
+          `发送房间信令 (Outbound Room Signaling)\n` +
+          `└─ ${XmaxLogger.localized("内容：", "Content:")}\n${JSON.stringify(JSON.parse(message), null, 2)}`,
+      );
+    }).catch(error => { throw XmaxError.from(error); });
+    this.sendTail = operation.catch(() => {});
+    return operation;
   }
 
   /**

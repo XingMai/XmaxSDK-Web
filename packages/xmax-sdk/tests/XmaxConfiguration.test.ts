@@ -3,6 +3,7 @@ import { XmaxConfiguration } from "../src/Core/XmaxConfiguration";
 import { XmaxEnvironment, apiBaseURL } from "../src/Foundation/Runtime/XmaxEnvironment";
 import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import { XmaxLoggerOption } from "../src/Foundation/Logging/XmaxLogger";
+import { RealtimeModel, modelBaseURL } from "../src/Service/Realtime/RealtimeModel";
 
 describe("XmaxConfiguration", () => {
   it("trims the API key and applies defaults", () => {
@@ -30,5 +31,12 @@ describe("XmaxConfiguration", () => {
     expect(apiBaseURL(XmaxEnvironment.global)).toBe(
       "https://api.xmax.cloud/open/api/v1",
     );
+  });
+
+  it("overrides only the Agora model endpoint", () => {
+    expect(modelBaseURL(RealtimeModel.x2_0_agora)).toBe("https://dev.xmaxai.com/open/api/v1");
+    for (const model of [RealtimeModel.x2_0, RealtimeModel.x2_0_trtc]) {
+      expect(modelBaseURL(model)).toBeUndefined();
+    }
   });
 });

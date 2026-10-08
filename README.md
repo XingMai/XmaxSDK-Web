@@ -214,9 +214,9 @@ The following JavaScript snippet creates a camera stream, starts real-time gener
 and binds the output to a video view. Run this within an async function in the browser,
 after a user action such as clicking a Start button.
 
-Choose a model with `RealtimeModel.x2_0` (`x2.0`),
-`RealtimeModel.x2_0_pro` (`x2.0-pro`), or
-`RealtimeModel.x2_0_trtc` (`x2.0-trtc`).
+Choose a model with `RealtimeModel.x2_0` (`x2.0`) or
+`RealtimeModel.x2_0_trtc` (`x2.0-trtc`). For Agora, use
+`RealtimeModel.x2_0_agora` (`x2.0-agora`) with `RtcProvider.agora`.
 
 ```javascript
 import {
@@ -270,6 +270,30 @@ videoView.remoteTrack = remoteStream.videoTrack;
 
 Add a `video-container` element with an explicit width and height to your page.
 The view displays a local camera preview until the first generated frame arrives.
+
+TRTC is the default RTC provider. To use Agora, replace the manager configuration
+above; camera capture, generation, rendering, and cleanup use the same APIs:
+
+```javascript
+import { RtcProvider } from "@xmaxai/web-sdk";
+
+const realtime = client.createRealtimeManager(
+  new RealtimeConfiguration({
+    provider: RtcProvider.agora,
+    model: RealtimeModel.x2_0_agora,
+  })
+);
+```
+
+The provider is fixed for each manager and must match the session credentials.
+The `x2.0-agora` model uses `https://dev.xmaxai.com/open/api/v1`; other models
+and file uploads use the configured environment's API endpoint.
+
+`XmaxConfiguration.environment` selects the Agora region (`china` or `global`);
+concurrent Agora managers must use the same environment. RTC modules load on demand.
+Statistics not supplied by a provider are `undefined`, including Agora playback
+buffer delay and separate uplink/downlink RTT. RTC end-to-end estimates do not
+include AI generation time and use each provider's own measurement definition.
 
 <br>
 
@@ -370,6 +394,7 @@ It demonstrates real-time generation using live camera feeds and reference image
 ## Dependencies
 
 - <ins><strong>Tencent Cloud TRTC SDK for Web</strong></ins> enables low-latency, real-time audio and video communication.
+- <ins><strong>Agora RTC SDK for Web</strong></ins> provides an alternative RTC transport for the Agora model.
 - <ins><strong>Tencent Cloud COS SDK</strong></ins> handles media upload and download via object storage.
 
 <br>

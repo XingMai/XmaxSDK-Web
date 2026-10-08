@@ -3,7 +3,7 @@ import type { NetworkStatisticsListener } from "../Foundation/RTC/NetworkStatist
 import type { RemoteVideoStatisticsListener, VideoStatisticsListener } from "../Foundation/RTC/VideoStatistics";
 import type { RealtimeContext } from "../Service/Realtime/RealtimeContext";
 import type { RealtimePoint } from "../Service/Realtime/RealtimePoint";
-import type { RealtimeSessionConnection } from "../Service/Realtime/RealtimeSessionConnection";
+import type { RtcSessionConnection } from "../Service/Realtime/RealtimeSessionConnection";
 import type { RealtimeVideoFormat } from "../Service/Realtime/RealtimeVideoFormat";
 import type { RoomListener } from "./Room/RoomControlling";
 import type { RoomEventTargetSize } from "./Room/RoomEvent";
@@ -98,7 +98,7 @@ export interface StreamControlling {
    * @throws 连接已取消，或 RTC 进房、房间配置与本地流发布失败时抛出错误。
    */
   connect(
-    connection: RealtimeSessionConnection,
+    connection: RtcSessionConnection,
     includeLocalAudio: boolean,
     ensureActive: () => void,
     beforePublish?: () => Promise<void>,
@@ -110,12 +110,16 @@ export interface StreamControlling {
   disconnect(): Promise<void>;
 
   /**
+   * 将同一会话的新凭据应用到 RTC；断连时通过 signal 取消未完成的恢复。
+   */
+  updateCredentials(connection: RtcSessionConnection, signal?: AbortSignal): Promise<void>;
+
+  /**
    * 建立生成任务并发送开始信令。
    *
    * @returns 等待远端结果流确认的 Promise：机器人视频发布并完成
    * 订阅后兑现；超时、取消或订阅失败时拒绝。
-   * @throws 任务标识无效、RTC 房间未就绪、已有生成任务，或开始信令
-   * 发送失败时同步抛出错误。
+   * @throws 配置无效时同步抛错；信令发送失败或确认超时通过 Promise 拒绝。
    */
   beginGeneration(options: StreamGenerationOptions): Promise<void>;
 
@@ -131,7 +135,7 @@ export interface StreamControlling {
    *
    * @throws RTC 房间未就绪或条件变更信令发送失败时抛出错误。
    */
-  updateGeneration(options: StreamGenerationOptions): void;
+  updateGeneration(options: StreamGenerationOptions): Promise<void>;
 
   /**
    * 调整当前生成任务的回传尺寸，不重启生成。
@@ -142,7 +146,7 @@ export interface StreamControlling {
     taskID: string,
     targetSize: RoomEventTargetSize,
     ensureActive: () => void,
-  ): void;
+  ): Promise<void>;
 
   /**
    * 停止生成任务并清理远端结果流；任务标识为空字符串时停止当前任务。
@@ -156,7 +160,7 @@ export interface StreamControlling {
    *
    * @throws RTC 房间未就绪或轨迹信令发送失败时抛出错误。
    */
-  sendTracks(taskID: string, points: RealtimePoint[]): void;
+  sendTracks(taskID: string, points: RealtimePoint[]): Promise<void>;
 
   /**
    * 设置房间业务消息监听器，传入空值时清除监听器。

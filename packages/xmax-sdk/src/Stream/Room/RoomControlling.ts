@@ -1,6 +1,6 @@
 import type { RealtimeContext } from "../../Service/Realtime/RealtimeContext";
 import type { RealtimePoint } from "../../Service/Realtime/RealtimePoint";
-import type { RealtimeSessionConnection } from "../../Service/Realtime/RealtimeSessionConnection";
+import type { RtcSessionConnection } from "../../Service/Realtime/RealtimeSessionConnection";
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import type { RoomEventTargetSize } from "./RoomEvent";
 
@@ -26,7 +26,7 @@ export interface RoomControlling {
    * @throws 已有房间未离开、操作失效或进房失败时抛出错误。
    */
   join(
-    connection: RealtimeSessionConnection,
+    connection: RtcSessionConnection,
     ensureActive: () => void,
   ): Promise<void>;
 
@@ -45,7 +45,7 @@ export interface RoomControlling {
     videoFormat: RealtimeVideoFormat;
     targetSize?: RoomEventTargetSize;
     context: RealtimeContext;
-  }): void;
+  }): Promise<void>;
 
   /**
    * 发送生成条件变更信令。
@@ -57,7 +57,7 @@ export interface RoomControlling {
     videoFormat: RealtimeVideoFormat;
     targetSize?: RoomEventTargetSize;
     context: RealtimeContext;
-  }): void;
+  }): Promise<void>;
 
   /**
    * 调整当前生成任务的回传尺寸。
@@ -69,17 +69,17 @@ export interface RoomControlling {
     taskID: string;
     targetSize: RoomEventTargetSize;
     ensureActive: () => void;
-  }): void;
+  }): Promise<void>;
 
   /**
    * 尝试发送生成停止信令；未进房或任务标识为空时忽略。
    */
-  stopGeneration(taskID: string): void;
+  stopGeneration(taskID: string): Promise<void>;
 
   /**
    * 发送生成任务的交互轨迹；任务标识或轨迹为空时忽略。
    */
-  sendTracks(taskID: string, points: RealtimePoint[]): void;
+  sendTracks(taskID: string, points: RealtimePoint[]): Promise<void>;
 
   /**
    * 设置房间事件监听器，传入空值时清除监听器。
