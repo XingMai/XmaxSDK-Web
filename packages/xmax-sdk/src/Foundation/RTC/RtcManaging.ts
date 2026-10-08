@@ -156,9 +156,9 @@ export interface RtcManaging {
   setRemoteAudioVolume(volume: number, userID: string): void;
 
   /**
-   * 向当前 RTC 房间发送自定义消息（`cmdId = 1`）。
+   * 向当前 RTC 房间发送业务文本消息；TRTC 使用 `cmdId = 1`。
    *
-   * @param message UTF-8 文本消息；编码后不得超过 1000 字节。
+   * @param message UTF-8 文本消息；最大字节数由各厂商适配器校验。
    * @throws 未在房间中或消息超长时抛出错误。
    */
   sendRoomMessage(message: string): Promise<void>;

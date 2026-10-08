@@ -381,3 +381,25 @@ describe("RoomController", () => {
     expect(received[0]?.note).toBe("长文本".repeat(100));
   });
 });
+
+describe("VeRTC room protocol", () => {
+  it("preserves existing JSON fields and sends a long prompt without chunking", async () => {
+    const { controller, rtc, heartbeat } = makeController();
+    const credentials = { provider: "vertc" as const, appID: "app", roomID: "000123", userID: "ve-user", roomToken: "token", botID: "bot" };
+    await controller.join(credentials, noopEnsureActive);
+    expect(rtc.joinRoomCalls[0]).toEqual(credentials);
+    expect(heartbeat.startedUserIDs).toEqual(["ve-user"]);
+    const prompt = "角色🎬".repeat(300);
+    await controller.startGeneration({ taskID: "task", videoFormat, targetSize: { width: 416, height: 736 }, context: new RealtimeContext({ prompt, referencePath: "ref/1.png" }) });
+    expect(rtc.sentMessages).toHaveLength(1);
+    const sent = JSON.parse(rtc.sentMessages[0]!);
+    expect(sent).toMatchObject({ event: "start", user_id: "ve-user", uid: "task", params: {
+      model: "default", prompt, size: [832, 1472], target_size: [416, 736], ref_image_path: "ref/1.png",
+    } });
+    expect(sent).not.toHaveProperty("session_uid");
+    const incoming = vi.fn(); controller.setListener({ onRoomMessage: incoming });
+    controller.handleIncomingMessage("bot", JSON.stringify({ event: "ack", user_id: "ve-user", uid: "task" }));
+    expect(incoming).toHaveBeenCalledOnce();
+    await controller.leave();
+  });
+});

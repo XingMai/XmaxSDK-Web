@@ -216,7 +216,8 @@ after a user action such as clicking a Start button.
 
 Choose a model with `RealtimeModel.x2_0` (`x2.0`) or
 `RealtimeModel.x2_0_trtc` (`x2.0-trtc`). For Agora, use
-`RealtimeModel.x2_0_agora` (`x2.0-agora`) with `RtcProvider.agora`.
+`RealtimeModel.x2_0_agora` (`x2.0-agora`) with `RtcProvider.agora`. For VeRTC, use
+`RealtimeModel.x2_1_preview` (`x2.1-preview`) with `RtcProvider.vertc`.
 
 ```javascript
 import {
@@ -285,9 +286,42 @@ const realtime = client.createRealtimeManager(
 );
 ```
 
-The provider is fixed for each manager and must match the session credentials.
-The `x2.0-agora` model uses `https://dev.xmaxai.com/open/api/v1`; other models
-and file uploads use the configured environment's API endpoint.
+To use VeRTC, set both values explicitly:
+
+```javascript
+const realtime = client.createRealtimeManager(
+  new RealtimeConfiguration({
+    provider: RtcProvider.vertc,
+    model: RealtimeModel.x2_1_preview,
+  })
+);
+```
+
+The provider is fixed for each manager, defaults to TRTC, and is chosen only by
+`RealtimeConfiguration.provider`. The SDK does not infer it from the model or read
+`modelExtra.provider` from the backend. The selected provider determines how RTC
+credentials are parsed.
+
+The `x2.0-agora` and `x2.1-preview` models use
+`https://dev.xmaxai.com/open/api/v1` in both environments.
+Other models and file uploads use the configured environment's API endpoint.
+
+VeRTC uses `@volcengine/rtc` 4.69.3 and the fixed AppID
+`69a177e226e9b90176a86b96`. Session credentials must contain this `rtc_app_id`,
+`room_id`, and `room_token`; the RTC user is `user_id` (falling back to `userUid`),
+and `bot_name` identifies the bot. Camera and microphone capture use VeRTC's SDK.
+The preview model uses the same media rules as `x2.0-trtc`: 1024 × 1920 or
+1920 × 1024 input, with 30 fps by default.
+
+VeRTC sends the existing room-event JSON as a single room text message, without
+chunk envelopes. The adapter rejects messages above 64 KiB of UTF-8 data; vendor
+send failures are returned to the caller. TRTC and Agora retain their chunking.
+HTTP session heartbeats start after joining and publishing the local stream, with
+the first request after 10 seconds. Changed tokens returned by heartbeat are
+applied to Agora and VeRTC; expiry callbacks also request fresh credentials.
+VeRTC restores media after token expiry without creating another business session
+or restarting the generation task. HTTP heartbeats maintain the session and are
+not treated as a client-side billing trigger.
 
 `XmaxConfiguration.environment` selects the Agora region (`china` or `global`);
 concurrent Agora managers must use the same environment. RTC modules load on demand.
@@ -395,6 +429,7 @@ It demonstrates real-time generation using live camera feeds and reference image
 
 - <ins><strong>Tencent Cloud TRTC SDK for Web</strong></ins> enables low-latency, real-time audio and video communication.
 - <ins><strong>Agora RTC SDK for Web</strong></ins> provides an alternative RTC transport for the Agora model.
+- <ins><strong>Volcengine VeRTC SDK for Web</strong></ins> provides RTC transport and device capture for the X2.1 preview model.
 - <ins><strong>Tencent Cloud COS SDK</strong></ins> handles media upload and download via object storage.
 
 <br>

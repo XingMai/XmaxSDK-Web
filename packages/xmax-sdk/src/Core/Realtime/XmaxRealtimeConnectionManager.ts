@@ -3,6 +3,7 @@ import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
 import type { RemoteFrameInterpolationOptions } from "../../Render/Video/RemoteVideoFramePipeline";
 import { RealtimeMediaStream } from "../../Service/Realtime/RealtimeMediaStream";
 import type { RealtimeModel } from "../../Service/Realtime/RealtimeModel";
+import { connectionAppID } from "../../Service/Realtime/RealtimeSessionConnection";
 import { RealtimeSession } from "../../Service/Realtime/RealtimeSession";
 import type { RealtimeSessionServicing } from "../../Service/Realtime/RealtimeSessionServicing";
 import { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
@@ -94,8 +95,9 @@ export class XmaxRealtimeConnectionManager {
         "Session does not contain RTC join information",
       );
     }
+    // 内部服务与适配器必须使用同一接入配置；connection.provider 不来自后端。
     if (connection.provider !== (this.dependencies.provider ?? RtcProvider.trtc)) {
-      throw new XmaxError(XmaxErrorCode.sessionError, "Session RTC provider does not match RealtimeConfiguration.provider");
+      throw new XmaxError(XmaxErrorCode.sessionError, "RTC adapter configuration does not match the session service");
     }
     const refreshVersion = ++this.refreshVersion;
     this.credentialController = new AbortController();
@@ -174,7 +176,7 @@ export class XmaxRealtimeConnectionManager {
   async refreshCredentials(): Promise<void> {
     if (this.credentialRefresh) return this.credentialRefresh;
     const current = this.activeSession;
-    if (!current || current.connection?.provider !== "agora") return;
+    if (!current?.connection || current.connection.provider === "trtc") return;
     const version = this.refreshVersion;
     const operation = (async () => {
       try {
@@ -336,8 +338,7 @@ export class XmaxRealtimeConnectionManager {
       previous !== undefined &&
       (next.provider !== previous.provider ||
         next.roomID !== previous.roomID ||
-        (next.provider === "agora" ? next.appID : next.sdkAppID) !==
-          (previous.provider === "agora" ? previous.appID : previous.sdkAppID) ||
+        connectionAppID(next) !== connectionAppID(previous) ||
         next.botID !== previous.botID ||
         next.userID !== previous.userID);
     if (bindingChanged) {
@@ -348,7 +349,7 @@ export class XmaxRealtimeConnectionManager {
       return;
     }
 
-    if (next.provider === "agora" && (force || previous?.provider !== "agora" || next.roomToken !== previous.roomToken)) {
+    if (next.provider !== "trtc" && (force || !previous || previous.provider === "trtc" || next.roomToken !== previous.roomToken)) {
       await this.dependencies.streamController.updateCredentials(next, this.credentialController?.signal);
       if (version !== this.refreshVersion || this.activeSession !== current) return;
     }

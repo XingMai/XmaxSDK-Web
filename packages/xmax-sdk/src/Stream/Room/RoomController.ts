@@ -1,6 +1,6 @@
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
-import { RoomJoinConfiguration } from "../../Foundation/RTC/RoomJoinConfiguration";
+import { toRoomJoinConfiguration } from "../../Service/Realtime/RealtimeSessionConnection";
 import type { RtcManaging } from "../../Foundation/RTC/RtcManaging";
 import type { RealtimeContext } from "../../Service/Realtime/RealtimeContext";
 import type { RealtimePoint } from "../../Service/Realtime/RealtimePoint";
@@ -109,16 +109,10 @@ export class RoomController implements RoomControlling {
     this.heartbeat.stop();
 
     try {
-      if (!this.customCodec) this.codec = new RoomMessageCodec(connection.provider === "agora" ? "__agora_chunk__" : "__trtc_chunk__");
-      await this.rtcManager.joinRoom(
-        connection.provider === "agora" ? connection : new RoomJoinConfiguration({
-          roomID: connection.roomID,
-          userID: connection.userID,
-          sdkAppID: connection.sdkAppID,
-          userSig: connection.userSig,
-          privateMapKey: connection.privateMapKey,
-        }),
+      if (!this.customCodec) this.codec = new RoomMessageCodec(
+        connection.provider === "vertc" ? null : connection.provider === "agora" ? "__agora_chunk__" : "__trtc_chunk__",
       );
+      await this.rtcManager.joinRoom(toRoomJoinConfiguration(connection));
       ensureActive();
       if (
         this.state.kind !== "joining" ||

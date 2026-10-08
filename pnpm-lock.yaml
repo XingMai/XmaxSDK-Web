@@ -48,6 +48,9 @@ importers:
 
   packages/xmax-sdk:
     dependencies:
+      '@volcengine/rtc':
+        specifier: 4.69.3
+        version: 4.69.3
       agora-rtc-sdk-ng:
         specifier: 4.24.8
         version: 4.24.8
@@ -694,6 +697,9 @@ packages:
   '@vitest/utils@2.1.9':
     resolution: {integrity: sha512-v0psaMSkNJ3A2NMrUEHFRzJtDPFn+/VWZ5WxImB21T9fjucJRmS7xCS3ppEnARb9y11OAzaD+P2Ps+b+BGX5iQ==}
 
+  '@volcengine/rtc@4.69.3':
+    resolution: {integrity: sha512-FaQ+GiBESW0+o4Hd80rEdEW8CPzYp3X1kSiN6caxnsl+4rBt8E8qVoiDHFDIsD6AT8U4qrE7i1rCJXKQ7wHjaw==}
+
   '@webgpu/types@0.1.74':
     resolution: {integrity: sha512-lgiI4hbuLcI9unnm2cL/tvCaQU45dp0xcLWJh5uB/9MBGvIA4F8XIk7nSiBeg+K4xWGYwgZKn80LmERI5CxoTA==}
 
@@ -850,6 +856,9 @@ packages:
 
   estree-walker@3.0.3:
     resolution: {integrity: sha512-7RUKfXgSMMkzt6ZuXmqapOurLGPPfgj6l9uRZ7lRGolvk0y2yocc35LdcxKC5PQZdn2DMqioAQ2NoWcrTKmm6g==}
+
+  eventemitter3@4.0.7:
+    resolution: {integrity: sha512-8guHBZCwKnFhYdHr2ysuRWErTwhoN2X8XELRlrRwpmfeY2jjuUN4taQMsULKUVo1K4DvZl+0pgfyoysHxvmvEw==}
 
   expect-type@1.4.0:
     resolution: {integrity: sha512-KfYbmpRm0VbLjEvVa9yGwCi9GI34xvi7A/HXYWQO65CSD2u3MczUJSuwXKFIxlGsgBQizV9q5J9NHj4VG0n+pA==}
@@ -1786,6 +1795,10 @@ snapshots:
       loupe: 3.2.1
       tinyrainbow: 1.2.0
 
+  '@volcengine/rtc@4.69.3':
+    dependencies:
+      eventemitter3: 4.0.7
+
   '@webgpu/types@0.1.74': {}
 
   acorn@8.18.0: {}
@@ -1982,6 +1995,8 @@ snapshots:
   estree-walker@3.0.3:
     dependencies:
       '@types/estree': 1.0.9
+
+  eventemitter3@4.0.7: {}
 
   expect-type@1.4.0: {}
 

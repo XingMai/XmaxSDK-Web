@@ -1,5 +1,6 @@
 import type { XmaxError } from "../../Foundation/Errors/XmaxError";
 import type { RealtimeSession } from "./RealtimeSession";
+import { RoomJoinConfiguration, type RtcRoomJoinConfiguration, type VeRtcRoomJoinConfiguration } from "../../Foundation/RTC/RoomJoinConfiguration";
 
 export interface RealtimeSessionConnectionInit {
   /**
@@ -41,7 +42,7 @@ export interface RealtimeSessionConnectionInit {
 /**
  * 实时会话对应的 RTC 连接参数（TRTC）。
  *
- * 全部字段来自会话接口 `data.modelExtra`；心跳成功后服务端可能
+ * 凭据来自会话接口 `data.modelExtra`，provider 由接入配置决定；心跳成功后服务端可能
  * 下发新的 `userSig` / `privateMapKey`，使用方应覆盖本地缓存。
  */
 export class RealtimeSessionConnection {
@@ -148,4 +149,17 @@ export interface AgoraSessionConnection {
 /**
  * RTC 会话连接参数，按 provider 区分厂商凭证。
  */
-export type RtcSessionConnection = RealtimeSessionConnection | AgoraSessionConnection;
+export interface VeRtcSessionConnection extends VeRtcRoomJoinConfiguration {
+  readonly botID?: string;
+}
+
+export type RtcSessionConnection = RealtimeSessionConnection | AgoraSessionConnection | VeRtcSessionConnection;
+
+/** provider 由接入配置赋值，只在 SDK 内部区分凭据类型。 */
+export function toRoomJoinConfiguration(connection: RtcSessionConnection): RtcRoomJoinConfiguration {
+  return connection.provider === "trtc" ? new RoomJoinConfiguration(connection) : connection;
+}
+
+export function connectionAppID(connection: RtcSessionConnection): string {
+  return connection.provider === "trtc" ? connection.sdkAppID : connection.appID;
+}

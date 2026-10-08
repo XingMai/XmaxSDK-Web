@@ -1,7 +1,7 @@
 import { XmaxError, XmaxErrorCode, type XmaxErrorListener } from "../Foundation/Errors/XmaxError";
 import { XmaxLogger } from "../Foundation/Logging/XmaxLogger";
 import { RemoteStream } from "../Foundation/RTC/RemoteStream";
-import { RoomJoinConfiguration } from "../Foundation/RTC/RoomJoinConfiguration";
+import { toRoomJoinConfiguration } from "../Service/Realtime/RealtimeSessionConnection";
 import type { RtcManaging } from "../Foundation/RTC/RtcManaging";
 import type { RemoteVideoStatisticsListener, VideoStatisticsListener } from "../Foundation/RTC/VideoStatistics";
 import type { NetworkStatisticsListener } from "../Foundation/RTC/NetworkStatistics";
@@ -290,7 +290,7 @@ export class StreamController implements StreamControlling {
    * 将会话刷新后的凭据应用到当前 RTC 连接。
    */
   async updateCredentials(connection: RtcSessionConnection, signal?: AbortSignal): Promise<void> {
-    await this.rtcManager.updateCredentials(connection.provider === "agora" ? connection : new RoomJoinConfiguration(connection), signal);
+    await this.rtcManager.updateCredentials(toRoomJoinConfiguration(connection), signal);
   }
 
   /**

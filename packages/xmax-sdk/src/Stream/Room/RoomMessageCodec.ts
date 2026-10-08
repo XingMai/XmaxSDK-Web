@@ -14,9 +14,9 @@ interface ChunkRecord {
 }
 
 /**
- * TRTC 自定义消息拆包协议编解码器。
+ * 房间文本协议编解码器；TRTC/Agora 启用拆包，VeRTC 原样传输。
  *
- * 出站：消息 UTF-8 字节长度超过 800 时按分片 JSON 拆包；
+ * 出站：启用拆包时，消息 UTF-8 字节长度超过 800 后按分片 JSON 拆包；
  * 入站：识别分片消息并按 `(发送方, eventId)` 乱序组包，
  * 未收齐时返回 `undefined`，收齐后返回解析后的完整业务消息。
  */
@@ -45,9 +45,9 @@ export class RoomMessageCodec {
   private readonly records = new Map<string, ChunkRecord>();
 
   /**
-   * 创建厂商协议编解码器；TRTC 保持原事件名，Agora 使用 __agora_chunk__。
+   * 创建厂商协议编解码器；TRTC 保持原事件名，Agora 使用 __agora_chunk__；null 表示不拆包。
    */
-  constructor(private readonly chunkEvent = CHUNK_EVENT) {}
+  constructor(private readonly chunkEvent: string | null = CHUNK_EVENT) {}
 
   /**
    * 编码出站消息。
@@ -56,7 +56,7 @@ export class RoomMessageCodec {
    * 否则返回按当前提供方分片协议包装的 JSON 数组。
    */
   encodeOutgoing(message: string): string[] {
-    if (RoomMessageCodec.byteLength(message) <= RoomMessageCodec.chunkThresholdBytes) {
+    if (this.chunkEvent === null || RoomMessageCodec.byteLength(message) <= RoomMessageCodec.chunkThresholdBytes) {
       return [message];
     }
 
@@ -152,7 +152,7 @@ export class RoomMessageCodec {
   private parseChunk(
     parsed: unknown,
   ): { eventId: string; index: number; count: number; data: string } | undefined {
-    if (typeof parsed !== "object" || parsed === null) {
+    if (this.chunkEvent === null || typeof parsed !== "object" || parsed === null) {
       return undefined;
     }
 

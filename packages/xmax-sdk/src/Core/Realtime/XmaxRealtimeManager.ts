@@ -146,7 +146,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     const sessionService =
       dependencies?.sessionService ??
       (dependencies?.apiService
-        ? new RealtimeSessionService({ apiService: dependencies.apiService })
+        ? new RealtimeSessionService({ apiService: dependencies.apiService, provider: options.provider })
         : undefined);
     this.streamController = dependencies?.streamController ?? new StreamController({
       rtcManager,

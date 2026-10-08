@@ -36,12 +36,12 @@ export interface VideoEncodingConfiguration {
   frameRate: number;
 
   /**
-   * 最低上传码率，单位为 kbps；作为引擎目标码率。
+   * 最低上传码率，单位为 kbps；TRTC 用作目标码率，Agora 用作下限，VeRTC 不提供下限配置。
    */
   minimumBitrate: number;
 
   /**
-   * 最高上传码率，单位为 kbps；仅参与区间校验。
+   * 最高上传码率，单位为 kbps；Agora 与 VeRTC 用作上限，TRTC 仅参与区间校验。
    */
   maximumBitrate: number;
 

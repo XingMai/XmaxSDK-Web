@@ -4,7 +4,7 @@ import type { NetworkStatisticsListener } from "./NetworkStatistics";
 /**
  * 接收 RTC 媒体和数据信令事件。
  *
- * 房间信令走 TRTC 自定义消息或 Agora DataStream，不使用 SEI。
+ * 房间信令走 TRTC 自定义消息、Agora DataStream 或 VeRTC 房间文本消息，不使用 SEI。
  */
 export interface RtcEventListener {
   /**
@@ -47,7 +47,7 @@ export interface RtcEventListener {
   onRemoteVideoPublished(userID: string, published: boolean): void;
 
   /**
-   * 处理房间自定义消息（已按 `cmdId = 1` 过滤并解码为 UTF-8 文本）。
+   * 处理房间自定义消息（TRTC 已按 `cmdId = 1` 过滤，统一为 UTF-8 文本）。
    */
   onCustomMessageReceived(userID: string, message: string): void;
 }

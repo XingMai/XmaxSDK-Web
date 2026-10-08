@@ -97,3 +97,13 @@ describe("RoomMessageCodec", () => {
     expect(codec.processIncoming("b", chunkOf('{"v":', 0))).toEqual({ v: 1 });
   });
 });
+
+describe("room text messages without chunking", () => {
+  it("passes a large JSON message unchanged in both directions", () => {
+    const codec = new RoomMessageCodec(null);
+    const message = JSON.stringify({ event: "start", params: { prompt: '中文\\"🎬'.repeat(500) } });
+    expect(codec.encodeOutgoing(message)).toEqual([message]);
+    expect(codec.processIncoming("bot", message)).toEqual(JSON.parse(message));
+    expect(codec.processIncoming("bot", "not json")).toBeUndefined();
+  });
+});

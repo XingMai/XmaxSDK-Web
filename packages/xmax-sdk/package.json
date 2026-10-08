@@ -46,6 +46,7 @@
     }
   },
   "dependencies": {
+    "@volcengine/rtc": "4.69.3",
     "agora-rtc-sdk-ng": "4.24.8",
     "framegen": "1.4.0",
     "cos-js-sdk-v5": "^1.10.1",

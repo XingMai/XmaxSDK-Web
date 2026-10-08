@@ -342,7 +342,11 @@ export function App() {
     setBusy(true);
     setErrorText("");
     const realtime = client.createRealtimeManager(
-      new RealtimeConfiguration({ model, provider: model === RealtimeModel.x2_0_agora ? RtcProvider.agora : RtcProvider.trtc }),
+      new RealtimeConfiguration({
+        model,
+        provider: model === RealtimeModel.x2_1_preview ? RtcProvider.vertc
+          : model === RealtimeModel.x2_0_agora ? RtcProvider.agora : RtcProvider.trtc,
+      }),
     );
     realtimeRef.current = realtime;
     // 会话建立成功后是否已切换到生成页面。
@@ -629,8 +633,9 @@ export function App() {
             <div className="rtcModelPicker">
               <select className="rtcModelSelect" aria-label="Model" value={model} disabled={busy}
                 onChange={(event) => setModel(event.target.value as RealtimeModel)}>
-                <option value={RealtimeModel.x2_0_trtc}>X2.0 · TRTC</option>
-                <option value={RealtimeModel.x2_0_agora}>X2.0 · Agora</option>
+                <option value={RealtimeModel.x2_0_trtc}>{RealtimeModel.x2_0_trtc}</option>
+                <option value={RealtimeModel.x2_0_agora}>{RealtimeModel.x2_0_agora}</option>
+                <option value={RealtimeModel.x2_1_preview}>{RealtimeModel.x2_1_preview}</option>
               </select>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                 strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -831,7 +836,7 @@ export function App() {
               { label: "播放缓冲延迟", value: formatVideoMetric(remoteVideoStatistics?.jitterBufferDelayMs, "ms") },
               { label: "下行丢包率", value: formatVideoMetric(remoteVideoStatistics?.downlinkLossPercent, "%") },
               { label: "下行网络质量", value: formatNetworkQuality(networkStatistics?.downlinkQuality), title: "本端所有下行连接的平均网络质量" },
-              model === RealtimeModel.x2_0_agora
+              (model === RealtimeModel.x2_0_agora || model === RealtimeModel.x2_1_preview)
                 ? { label: "RTT（云端）", value: formatVideoMetric(remoteVideoStatistics?.rttMs, "ms"), title: "本端 SDK 到 RTC 云端的往返延迟" }
                 : { label: "下行 RTT", value: formatVideoMetric(networkStatistics?.downlinkRttMs, "ms"), title: "本端所有下行连接到 RTC 云端的平均往返延迟，不是单程耗时" },
               { label: "E2E（RTC 估算）", value: formatVideoMetric(remoteVideoStatistics?.endToEndDelayMs, "ms") },

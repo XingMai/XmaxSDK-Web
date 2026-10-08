@@ -11,4 +11,7 @@ export enum RtcProvider {
    * 声网实时音视频。
    */
   agora = "agora",
+
+  /** 火山引擎实时音视频。 */
+  vertc = "vertc",
 }

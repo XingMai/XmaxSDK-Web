@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { RtcProvider } from "../src/Foundation/RTC/RtcProvider";
 import { RealtimeModel } from "../src/Service/Realtime/RealtimeModel";
 import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import { ApiMethod, type ApiServicing } from "../src/Service/Network/ApiServicing";
@@ -79,9 +80,10 @@ function sessionPayload(overrides?: {
   };
 }
 
-function makeService(api: ApiServicingStub) {
+function makeService(api: ApiServicingStub, provider = RtcProvider.trtc) {
   return new RealtimeSessionService({
     apiService: api,
+    provider,
     heartbeatIntervalMs: 1,
     sleep: () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
   });
@@ -144,7 +146,7 @@ describe("RealtimeSessionService", () => {
     });
   });
 
-  it("rejects session creation without a supported provider", async () => {
+  it("rejects incomplete credentials for the configured default TRTC provider", async () => {
     const api = new ApiServicingStub();
     api.postResponses = [
       sessionPayload({ modelExtra: { room_id: "1", room_token: "t", user_id: "u" } }),
@@ -159,7 +161,7 @@ describe("RealtimeSessionService", () => {
   it.each([false, true])("parses Agora credentials with JSON encoding %s and sends the chosen model", async (encoded) => {
     const api = new ApiServicingStub();
     api.postResponses = [sessionPayload({ modelExtra: encoded ? JSON.stringify(agoraModelExtra) : agoraModelExtra })];
-    const session = await makeService(api).createSession(RealtimeModel.x2_0_agora);
+    const session = await makeService(api, RtcProvider.agora).createSession(RealtimeModel.x2_0_agora);
     expect(api.requests[0]?.body).toEqual({ model: "x2.0-agora" });
     expect(session.userID).toBe("user-001");
     expect(session.connection).toEqual({ provider: "agora", roomID: "000123", appID: "agora-app",
@@ -170,7 +172,7 @@ describe("RealtimeSessionService", () => {
     const api = new ApiServicingStub();
     api.postResponses = [sessionPayload({ modelExtra: { ...agoraModelExtra, [field]: "" } })];
     api.deleteResponses = [{}];
-    await expect(makeService(api).createSession(RealtimeModel.x2_0_agora)).rejects.toMatchObject({ code: XmaxErrorCode.sessionError });
+    await expect(makeService(api, RtcProvider.agora).createSession(RealtimeModel.x2_0_agora)).rejects.toMatchObject({ code: XmaxErrorCode.sessionError });
     expect(api.requests.at(-1)).toMatchObject({ method: ApiMethod.delete, path: "/session/ums-001", keepalive: true });
   });
 
@@ -178,7 +180,7 @@ describe("RealtimeSessionService", () => {
     const api = new ApiServicingStub();
     api.postResponses = [sessionPayload({ modelExtra: agoraModelExtra })];
     api.putResponses = [sessionPayload({ modelExtra: { room_token: "token-v2" } }), sessionPayload({})];
-    const service = makeService(api);
+    const service = makeService(api, RtcProvider.agora);
     await service.createSession(RealtimeModel.x2_0_agora);
     const [first, second] = await Promise.all([service.heartbeatSession("ums-001"), service.heartbeatSession("ums-001")]);
     expect(first).toBe(second);
@@ -191,7 +193,7 @@ describe("RealtimeSessionService", () => {
     const api = new ApiServicingStub();
     api.postResponses = [sessionPayload({ modelExtra: agoraModelExtra })];
     api.putResponses = [sessionPayload({ modelExtra: "not json" }), { ...sessionPayload({}), sessionUid: "other" }];
-    const service = makeService(api);
+    const service = makeService(api, RtcProvider.agora);
     await service.createSession(RealtimeModel.x2_0_agora);
     await expect(service.heartbeatSession("ums-001")).rejects.toThrow("Invalid heartbeat RTC credentials");
     await expect(service.heartbeatSession("ums-001")).rejects.toThrow("identity changed");
@@ -200,7 +202,7 @@ describe("RealtimeSessionService", () => {
   it("waits for asynchronous credential application and reports renew failure", async () => {
     const api = new ApiServicingStub();
     api.putResponses = [sessionPayload({ modelExtra: agoraModelExtra })];
-    const service = makeService(api);
+    const service = makeService(api, RtcProvider.agora);
     const onFailure = vi.fn();
     service.startHeartbeat("ums-001", { onFailure, onRefresh: async () => { throw new Error("renew failed"); } });
     await flushHeartbeats();
@@ -283,5 +285,43 @@ describe("RealtimeSessionService", () => {
       path: "/session/ums-001",
       keepalive: true,
     });
+  });
+});
+
+describe("caller-selected RTC provider", () => {
+  const vertc = { room_id: "000123", rtc_app_id: "69a177e226e9b90176a86b96", room_token: "token-v1", user_id: "ve-user", bot_name: "bot_001" };
+
+  it.each([undefined, "wrong-provider", "trtc", "agora", "vertc"])("ignores backend provider %s for all configured adapters", async (backendProvider) => {
+    for (const [provider, credentials] of [[RtcProvider.trtc, trtcModelExtra], [RtcProvider.agora, agoraModelExtra], [RtcProvider.vertc, vertc]] as const) {
+      const api = new ApiServicingStub();
+      api.postResponses = [sessionPayload({ modelExtra: { ...credentials, provider: backendProvider } })];
+      const session = await makeService(api, provider).createSession(RealtimeModel.x2_1_preview);
+      expect(session.connection?.provider).toBe(provider);
+    }
+  });
+
+  it.each([false, true])("parses VeRTC credentials with JSON encoding %s and uses the preview model", async (encoded) => {
+    const api = new ApiServicingStub();
+    api.postResponses = [sessionPayload({ modelExtra: encoded ? JSON.stringify(vertc) : vertc })];
+    const session = await makeService(api, RtcProvider.vertc).createSession(RealtimeModel.x2_1_preview);
+    expect(api.requests[0]?.body).toEqual({ model: "x2.1-preview" });
+    expect(session.connection).toEqual({ provider: "vertc", appID: vertc.rtc_app_id, roomID: "000123", userID: "ve-user", botID: "bot_001", roomToken: "token-v1" });
+  });
+
+  it("preserves the userUid fallback through partial heartbeat responses", async () => {
+    const api = new ApiServicingStub();
+    api.postResponses = [sessionPayload({ modelExtra: { ...vertc, user_id: undefined } })];
+    api.putResponses = [{ sessionUid: "ums-001", status: "ACTIVE", modelExtra: { room_token: "token-v2", provider: "trtc" } }];
+    const service = makeService(api, RtcProvider.vertc);
+    expect((await service.createSession(RealtimeModel.x2_1_preview)).connection?.userID).toBe("user-001");
+    expect((await service.heartbeatSession("ums-001")).connection).toMatchObject({ provider: "vertc", roomToken: "token-v2", userID: "user-001", botID: "bot_001" });
+  });
+
+  it.each(["room_token", "rtc_app_id", "room_id"])("closes allocated VeRTC sessions missing %s", async (field) => {
+    const api = new ApiServicingStub();
+    api.postResponses = [sessionPayload({ modelExtra: { ...vertc, [field]: "" } })];
+    api.deleteResponses = [{}];
+    await expect(makeService(api, RtcProvider.vertc).createSession(RealtimeModel.x2_1_preview)).rejects.toMatchObject({ code: XmaxErrorCode.sessionError });
+    expect(api.requests.at(-1)).toMatchObject({ method: ApiMethod.delete, path: "/session/ums-001" });
   });
 });

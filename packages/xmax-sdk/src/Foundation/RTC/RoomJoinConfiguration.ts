@@ -93,4 +93,12 @@ export interface AgoraRoomJoinConfiguration {
 /**
  * 两种 RTC 的进房参数，不混用不同厂商的鉴权字段。
  */
-export type RtcRoomJoinConfiguration = RoomJoinConfiguration | AgoraRoomJoinConfiguration;
+export interface VeRtcRoomJoinConfiguration {
+  readonly provider: "vertc";
+  readonly roomID: string;
+  readonly userID: string;
+  readonly appID: string;
+  readonly roomToken: string;
+}
+
+export type RtcRoomJoinConfiguration = RoomJoinConfiguration | AgoraRoomJoinConfiguration | VeRtcRoomJoinConfiguration;

@@ -1,5 +1,6 @@
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import type { RealtimeModel } from "./RealtimeModel";
+import { RtcProvider } from "../../Foundation/RTC/RtcProvider";
 import type { ApiServicing } from "../Network/ApiServicing";
 import { RealtimeSession } from "./RealtimeSession";
 import { RealtimeSessionConnection, type RtcSessionConnection } from "./RealtimeSessionConnection";
@@ -20,11 +21,12 @@ interface SessionPayload {
 }
 
 /**
- * `modelExtra` 中两种 RTC 连接参数的原始字段。
+ * `modelExtra` 中的 RTC 凭据；厂商始终由接入配置决定。
  */
 interface ConnectionPayload {
   room_id?: string;
-  provider?: string;
+  user_id?: string;
+  bot_name?: string;
   rtc_app_id?: string;
   rtc_user_id?: string;
   user_sig?: string;
@@ -38,6 +40,9 @@ export interface RealtimeSessionServiceOptions {
    * Xmax API 请求组件。
    */
   apiService: ApiServicing;
+
+  /** 接入方选择的 RTC 厂商；不读取后端 provider，不根据模型推断。 */
+  provider?: RtcProvider;
 
   /**
    * 心跳间隔（毫秒）；默认 10 秒。
@@ -61,6 +66,7 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
    * 服务层组件
    */
   private readonly apiService: ApiServicing;
+  private readonly provider: RtcProvider;
 
   /**
    * 心跳配置
@@ -87,6 +93,10 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
    */
   constructor(options: RealtimeSessionServiceOptions) {
     this.apiService = options.apiService;
+    this.provider = options.provider ?? RtcProvider.trtc;
+    if (!Object.values(RtcProvider).includes(this.provider)) {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Unsupported RTC provider");
+    }
     this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? 10_000;
     this.sleep =
       options.sleep ??
@@ -101,9 +111,11 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
       model,
     });
     try {
-      const session = RealtimeSessionService.makeSession(payload, true);
+      const session = this.makeSession(payload, true);
       RealtimeSessionService.ensureSessionActive(session);
-      this.credentials.set(session.id, RealtimeSessionService.decodeConnectionPayload(payload.modelExtra)!);
+      const credentials = RealtimeSessionService.decodeConnectionPayload(payload.modelExtra)!;
+      this.credentials.set(session.id, this.provider === RtcProvider.vertc
+        ? { ...credentials, user_id: session.connection!.userID } : credentials);
       return session;
     } catch (error) {
       // 后端已创建会话但凭据无效时，也必须尽力关闭，避免留下计费会话。
@@ -205,7 +217,7 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
       throw new XmaxError(XmaxErrorCode.sessionError, "Invalid heartbeat RTC credentials");
     }
     const merged = incoming ? { ...previous, ...incoming } : previous;
-    const session = RealtimeSessionService.makeSession({ ...payload, modelExtra: merged }, merged !== undefined);
+    const session = this.makeSession({ ...payload, modelExtra: merged }, merged !== undefined);
     if (session.id !== sessionID) throw new XmaxError(XmaxErrorCode.sessionError, "Heartbeat session identity changed");
     RealtimeSessionService.ensureSessionActive(session);
     if (previous && this.credentials.get(sessionID) === previous && merged) this.credentials.set(sessionID, merged);
@@ -228,7 +240,7 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
   /**
    * 由会话接口数据构造会话模型；`requiresConnection` 要求携带完整 RTC 连接参数。
    */
-  private static makeSession(
+  private makeSession(
     payload: SessionPayload,
     requiresConnection: boolean,
   ): RealtimeSession {
@@ -237,7 +249,7 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
       throw new XmaxError(XmaxErrorCode.sessionError, "Invalid session response");
     }
 
-    const connection = RealtimeSessionService.makeConnection(payload.modelExtra);
+    const connection = this.makeConnection(payload.modelExtra, payload.userUid);
     if (requiresConnection && !connection) {
       throw new XmaxError(
         XmaxErrorCode.sessionError,
@@ -257,28 +269,28 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
   /**
    * 解析 `modelExtra` 中的 RTC 连接参数；字段不完整或提供方不支持时返回空。
    */
-  private static makeConnection(
+  private makeConnection(
     modelExtra: unknown,
+    fallbackUserID?: string,
   ): RtcSessionConnection | undefined {
     const payload = RealtimeSessionService.decodeConnectionPayload(modelExtra);
     if (!payload) {
       return undefined;
     }
 
-    const provider = RealtimeSessionService.nonEmpty(payload.provider);
-    if (provider !== "trtc" && provider !== "agora") {
-      return undefined;
-    }
+    const provider = this.provider;
 
     const roomID = RealtimeSessionService.nonEmpty(payload.room_id);
     const sdkAppID = RealtimeSessionService.nonEmpty(payload.rtc_app_id);
-    const userID = RealtimeSessionService.nonEmpty(payload.rtc_user_id);
+    const userID = provider === RtcProvider.vertc
+      ? RealtimeSessionService.nonEmpty(payload.user_id) ?? RealtimeSessionService.nonEmpty(fallbackUserID)
+      : RealtimeSessionService.nonEmpty(payload.rtc_user_id);
     if (!roomID || !sdkAppID || !userID) return undefined;
-    if (provider === "agora") {
+    if (provider === RtcProvider.agora || provider === RtcProvider.vertc) {
       const roomToken = RealtimeSessionService.nonEmpty(payload.room_token);
       if (!roomToken) return undefined;
       return Object.freeze({ provider, roomID, appID: sdkAppID, userID, roomToken,
-        botID: RealtimeSessionService.nonEmpty(payload.rtc_bot_id) });
+        botID: RealtimeSessionService.nonEmpty(provider === RtcProvider.vertc ? payload.bot_name : payload.rtc_bot_id) });
     }
     const userSig = RealtimeSessionService.nonEmpty(payload.user_sig);
     const privateMapKey = RealtimeSessionService.nonEmpty(

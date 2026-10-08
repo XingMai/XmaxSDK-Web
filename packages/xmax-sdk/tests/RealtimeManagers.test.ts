@@ -178,8 +178,8 @@ describe("XmaxRealtimeGenerationManager", () => {
 describe("XmaxRealtimeConnectionManager", () => {
   function setup(provider = RtcProvider.trtc) {
     const { methods: stream, controller } = makeStream();
-    const connection: RtcSessionConnection = provider === RtcProvider.agora
-      ? { provider: "agora", roomID: "room", appID: "app", userID: "rtc-user", roomToken: "token-v1" }
+    const connection: RtcSessionConnection = provider !== RtcProvider.trtc
+      ? { provider, roomID: "room", appID: "app", userID: "rtc-user", roomToken: "token-v1" }
       : new RealtimeSessionConnection({ provider: "trtc", roomID: "room", sdkAppID: "1", userID: "user", userSig: "sig", privateMapKey: "key" });
     const session = new RealtimeSession({ id: "session", connection });
     const service = {
@@ -201,6 +201,18 @@ describe("XmaxRealtimeConnectionManager", () => {
     };
     return { manager, stream, service, events, options, op, session, connection };
   }
+
+  it.each([RtcProvider.trtc, RtcProvider.agora, RtcProvider.vertc])("starts %s HTTP heartbeat after local publication without waiting for a remote frame", async (provider) => {
+    const { manager, service, stream, options, events } = setup(provider);
+    const publishing = deferred<void>(); stream.connect.mockReturnValueOnce(publishing.promise);
+    const pending = manager.connect(options);
+    await vi.waitFor(() => expect(stream.connect).toHaveBeenCalledOnce());
+    expect(service.startHeartbeat).not.toHaveBeenCalled();
+    publishing.resolve(); await pending;
+    expect(service.startHeartbeat).toHaveBeenCalledOnce();
+    expect(events.onFrameDisplayed).not.toHaveBeenCalled();
+    await manager.disconnect();
+  });
 
   it("owns session and track resources and registers rendering without starting generation", async () => {
     const { manager, stream, service, events, options } = setup();
@@ -316,17 +328,17 @@ describe("XmaxRealtimeConnectionManager", () => {
     service.createSession.mockResolvedValue(new RealtimeSession({ id: "mismatch", connection: {
       provider: "agora", roomID: "room", appID: "app", userID: "rtc-user", roomToken: "token",
     } }));
-    await expect(manager.connect(options)).rejects.toThrow("provider does not match");
+    await expect(manager.connect(options)).rejects.toThrow("adapter configuration does not match");
     expect(stream.connect).not.toHaveBeenCalled();
     await manager.disconnect();
     expect(service.closeSession).toHaveBeenCalledWith("mismatch");
   });
 
-  it("renews Agora credentials through heartbeat and coalesces expiry notifications", async () => {
-    const { manager, service, stream, options, events } = setup(RtcProvider.agora);
+  it.each([RtcProvider.agora, RtcProvider.vertc] as const)("renews %s credentials through heartbeat and coalesces expiry notifications", async (provider) => {
+    const { manager, service, stream, options, events } = setup(provider);
     await manager.connect({ ...options, model: RealtimeModel.x2_0_agora });
     const refreshed = new RealtimeSession({ id: "session", connection: {
-      provider: "agora", roomID: "room", appID: "app", userID: "rtc-user", roomToken: "token-v2",
+      provider, roomID: "room", appID: "app", userID: "rtc-user", roomToken: "token-v2",
     } });
     service.heartbeatSession.mockResolvedValue(refreshed);
     await Promise.all([manager.refreshCredentials(), manager.refreshCredentials()]);
@@ -339,8 +351,8 @@ describe("XmaxRealtimeConnectionManager", () => {
     await manager.disconnect();
   });
 
-  it("ignores Agora credentials arriving after disconnect", async () => {
-    const { manager, service, stream, options, session } = setup(RtcProvider.agora);
+  it.each([RtcProvider.agora, RtcProvider.vertc] as const)("ignores %s credentials arriving after disconnect", async (provider) => {
+    const { manager, service, stream, options, session } = setup(provider);
     await manager.connect(options);
     const response = deferred<RealtimeSession>();
     service.heartbeatSession.mockReturnValue(response.promise);
@@ -352,8 +364,8 @@ describe("XmaxRealtimeConnectionManager", () => {
     expect(manager.currentSessionID).toBeUndefined();
   });
 
-  it("aborts credential recovery before waiting for generation and room teardown", async () => {
-    const { manager, service, stream, options, events } = setup(RtcProvider.agora);
+  it.each([RtcProvider.agora, RtcProvider.vertc] as const)("aborts %s recovery before waiting for generation and room teardown", async (provider) => {
+    const { manager, service, stream, options, events } = setup(provider);
     await manager.connect(options);
     stream.updateCredentials.mockImplementation(async (_connection, signal) => {
       await new Promise<void>((_resolve, reject) => signal!.addEventListener("abort", () => reject(RealtimeCoordinator.cancelledError()), { once: true }));
@@ -369,8 +381,8 @@ describe("XmaxRealtimeConnectionManager", () => {
     expect(service.closeSession).toHaveBeenCalledOnce();
   });
 
-  it("reports Agora renewal failure through the connection failure path", async () => {
-    const { manager, stream, options, events } = setup(RtcProvider.agora);
+  it.each([RtcProvider.agora, RtcProvider.vertc] as const)("reports %s renewal failure through the connection failure path", async (provider) => {
+    const { manager, stream, options, events } = setup(provider);
     await manager.connect(options);
     stream.updateCredentials.mockRejectedValue(new Error("renew failed"));
     await manager.refreshCredentials();

@@ -18,6 +18,9 @@ export enum RealtimeModel {
    * Xmax X2.0 Agora 实时生成模型。
    */
   x2_0_agora = "x2.0-agora",
+
+  /** X2.1 预览模型；媒体规格与 x2.0-trtc 相同。 */
+  x2_1_preview = "x2.1-preview",
 }
 
 export interface ModelSize {
@@ -30,9 +33,14 @@ export interface ModelSize {
  */
 const MODEL_BASE_URLS: Readonly<Partial<Record<RealtimeModel, string>>> = {
   [RealtimeModel.x2_0_agora]: "https://dev.xmaxai.com/open/api/v1",
+  [RealtimeModel.x2_1_preview]: "https://dev.xmaxai.com/open/api/v1",
 };
 
 const RESOLUTION_BUCKETS: Record<RealtimeModel, ModelSize[]> = {
+  [RealtimeModel.x2_1_preview]: [
+    { width: 1024, height: 1920 },
+    { width: 1920, height: 1024 },
+  ],
   [RealtimeModel.x2_0_agora]: [
     { width: 1024, height: 1920 },
     { width: 1920, height: 1024 },
@@ -45,6 +53,7 @@ const RESOLUTION_BUCKETS: Record<RealtimeModel, ModelSize[]> = {
 };
 
 const MAXIMUM_INPUT_PIXELS: Record<RealtimeModel, number> = {
+  [RealtimeModel.x2_1_preview]: 2100000,
   [RealtimeModel.x2_0_agora]: 2100000,
   [RealtimeModel.x2_0]: 1280000,
   [RealtimeModel.x2_0_trtc]: 2100000,

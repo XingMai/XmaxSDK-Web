@@ -19,7 +19,7 @@ export interface RtcOrientationEnvironment {
 /**
  * 判断当前是否为移动端竖屏。
  *
- * TRTC 与 Agora 的移动端竖屏采集、编码路径存在宽高转置行为。
+ * TRTC、Agora 与 VeRTC 的移动端竖屏采集、编码路径存在宽高转置行为。
  * 为让上行方向与请求一致，传给厂商 SDK 的尺寸需反向转置；
  * 业务请求尺寸和实际视频统计保持原样。
  */
