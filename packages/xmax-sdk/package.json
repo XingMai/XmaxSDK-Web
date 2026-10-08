@@ -46,6 +46,7 @@
     }
   },
   "dependencies": {
+    "agora-rtc-sdk-ng": "4.24.8",
     "framegen": "1.4.0",
     "cos-js-sdk-v5": "^1.10.1",
     "trtc-sdk-v5": "^5.6.0"
