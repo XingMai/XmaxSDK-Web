@@ -41,8 +41,6 @@ export class ReferenceLibrary {
   private uploads = new Map<string, Promise<ReferenceItem>>();
   private previews = new Set<string>();
   private application: Promise<void> = Promise.resolve();
-  /** 各模式各自记住的选中项，切换页签后切回时恢复。 */
-  private selectedIds = new Map<ExampleModeKey, string>();
 
   constructor(private readonly upload: UploadReference) {}
 
@@ -68,10 +66,7 @@ export class ReferenceLibrary {
   setMode(mode: ExampleModeKey): void {
     this.mode = mode;
     this.intent += 1;
-    // 恢复该模式记住的选中态，不影响其他模式。
-    const remembered = this.selectedIds.get(mode);
-    this.update(this.items.map((item) =>
-      item.mode === mode ? { ...item, is_selected: item.id === remembered } : item));
+    // 分类只控制可见性，不改变全局选中项，也不恢复历史选择。
   }
 
   /** 每次进入生成页都从角色替换的第一张预置图开始，不受之前上传和选中项影响。 */
@@ -84,17 +79,13 @@ export class ReferenceLibrary {
 
   clearSelection(): void {
     this.intent += 1;
-    this.selectedIds.clear();
     this.update(this.items.map((item) => ({ ...item, is_selected: false })));
   }
 
-  /** 清空除指定模式外各模式记住的选中项；自由模式提交后调用，避免切回时被旧选中静默覆盖。 */
+  /** 自由模式提交时清空其他分类的选择，保留本次使用的自由模式参考图。 */
   clearOtherModes(mode: ExampleModeKey): void {
     // 同时使其他模式进行中的自动应用失效。
     this.intent += 1;
-    for (const key of [...this.selectedIds.keys()]) {
-      if (key !== mode) this.selectedIds.delete(key);
-    }
     this.update(this.items.map((item) =>
       item.mode === mode ? item : { ...item, is_selected: false }));
   }
@@ -105,9 +96,6 @@ export class ReferenceLibrary {
     if (!item) return;
     // 使进行中的自动应用失效，删除后不再触发生成。
     this.intent += 1;
-    for (const [mode, selectedId] of this.selectedIds) {
-      if (selectedId === id) this.selectedIds.delete(mode);
-    }
     if (this.previews.delete(item.thumbnail)) {
       URL.revokeObjectURL(item.thumbnail);
     }
@@ -144,10 +132,9 @@ export class ReferenceLibrary {
     const application = this.application.catch(() => {}).then(async () => {
       if (intent !== this.intent) return;
       const selected = { ...ready, is_selected: true };
-      this.selectedIds.set(item.mode, id);
+      // 所有分类（含自由模式上传）共用一个选中态。
       this.update(this.items.map((entry) =>
-        entry.mode !== item.mode ? entry
-          : entry.id === id ? selected : { ...entry, is_selected: false }));
+        entry.id === id ? selected : { ...entry, is_selected: false }));
       await apply(selected);
     });
     this.application = application;

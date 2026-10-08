@@ -46,3 +46,14 @@ it("renders all items in a single wrapping row container", () => {
   expect(html.match(/<button/g)).toHaveLength(6);
   expect(html).toContain('alt="E"');
 });
+
+it("keeps hidden categories and their selected/uploading items mounted", () => {
+  const html = renderToStaticMarkup(<ReferenceList
+    items={[{ ...item("Selected"), is_selected: true }, item("Uploading", "uploading")]}
+    rowRef={createRef()} hidden disabled={false} onUpload={() => {}} onSelect={() => {}} />);
+  expect(html).toContain('hidden=""');
+  expect(html).toContain('alt="Selected"');
+  expect(html).toContain('aria-pressed="true"');
+  expect(html).toContain('alt="Uploading"');
+  expect(html).toContain('aria-busy="true"');
+});

@@ -868,6 +868,12 @@ button:disabled,
   min-height: 190px;
 }
 
+/* 各分类保持挂载；覆盖面板的 flex 布局，隐藏项不占位也不参与键盘导航。 */
+.presetRow[hidden],
+.promptBar[hidden] {
+  display: none;
+}
+
 .modeTabs {
   display: flex;
   justify-content: center;

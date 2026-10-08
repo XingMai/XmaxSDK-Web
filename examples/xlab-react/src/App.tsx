@@ -20,7 +20,7 @@ import {
 } from "@xmaxai/web-sdk";
 import { XmaxVideo } from "@xmaxai/web-sdk/react";
 import { formatNetworkQuality } from "./formatNetworkQuality";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createRef, useEffect, useMemo, useRef, useState } from "react";
 import { EXAMPLE_MODES, type ExampleModeKey } from "./presets";
 import { ReferenceLibrary, type ReferenceItem } from "./ReferenceLibrary";
 import { ReferenceList } from "./ReferenceList";
@@ -98,7 +98,13 @@ export function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const wechatRef = useRef<HTMLDivElement>(null);
   const keyFieldRef = useRef<HTMLDivElement>(null);
-  const presetRowRef = useRef<HTMLDivElement>(null);
+  // 各分类拥有独立且常驻的列表节点，原生滚动位置不会随切换互相覆盖。
+  const [presetRowRefs] = useState(() => ({
+    charx: createRef<HTMLDivElement>(),
+    clothx: createRef<HTMLDivElement>(),
+    vibex: createRef<HTMLDivElement>(),
+    free: createRef<HTMLDivElement>(),
+  }));
 
   // 错误提示以 toast 展示，6 秒后自动消失；新错误会重置计时。
   useEffect(() => {
@@ -192,7 +198,7 @@ export function App() {
   const referencePath = selectedReference?.reference_path;
   const referenceUploading = activeReferences.some((item) => item.upload_status === "uploading");
   // 自由模式输入条内展示的本地上传参考图，取最新一张。
-  const uploadedReference = activeReferences.find((item) => item.file);
+  const uploadedReference = referenceItems.find((item) => item.mode === "free" && item.file);
 
   useEffect(() => {
     localStorage.setItem(API_KEY_STORAGE, apiKey);
@@ -224,76 +230,6 @@ export function App() {
     EXAMPLE_MODES[0]!;
   const submitPrompt = activeMode.key === "free" ? prompt : selectedReference?.prompt ?? activeMode.prompt;
 
-  // 预设列表滚动：滚轮与触控板纵向滚动为原生行为，左键按住可上下拖拽滚动。
-  useEffect(() => {
-    const row = presetRowRef.current;
-    if (!row) {
-      return;
-    }
-
-    let dragging = false;
-    let moved = false;
-    let horizontal = false;
-    let startPos = 0;
-    let startScroll = 0;
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (event.button !== 0) {
-        return;
-      }
-      dragging = true;
-      moved = false;
-      // 移动端为横向单列滚动，桌面端为纵向多行滚动。
-      horizontal = getComputedStyle(row).flexWrap === "nowrap";
-      startPos = horizontal ? event.clientX : event.clientY;
-      startScroll = horizontal ? row.scrollLeft : row.scrollTop;
-    };
-    const handlePointerMove = (event: PointerEvent) => {
-      if (!dragging) {
-        return;
-      }
-      const delta = (horizontal ? event.clientX : event.clientY) - startPos;
-      if (Math.abs(delta) > 4) {
-        moved = true;
-        row.classList.add("dragging");
-        // 真正拖动后才捕获指针，否则普通点击会被重定向到容器，无法选中图片。
-        if (!row.hasPointerCapture(event.pointerId)) row.setPointerCapture(event.pointerId);
-      }
-      if (horizontal) {
-        row.scrollLeft = startScroll - delta;
-      } else {
-        row.scrollTop = startScroll - delta;
-      }
-    };
-    const handlePointerEnd = (event: PointerEvent) => {
-      dragging = false;
-      row.classList.remove("dragging");
-      if (row.hasPointerCapture(event.pointerId)) {
-        row.releasePointerCapture(event.pointerId);
-      }
-    };
-    const handleClickCapture = (event: MouseEvent) => {
-      if (moved) {
-        event.preventDefault();
-        event.stopPropagation();
-        moved = false;
-      }
-    };
-
-    row.addEventListener("pointerdown", handlePointerDown);
-    row.addEventListener("pointermove", handlePointerMove);
-    row.addEventListener("pointerup", handlePointerEnd);
-    row.addEventListener("pointercancel", handlePointerEnd);
-    row.addEventListener("click", handleClickCapture, true);
-
-    return () => {
-      row.removeEventListener("pointerdown", handlePointerDown);
-      row.removeEventListener("pointermove", handlePointerMove);
-      row.removeEventListener("pointerup", handlePointerEnd);
-      row.removeEventListener("pointercancel", handlePointerEnd);
-      row.removeEventListener("click", handleClickCapture, true);
-    };
-  }, [sessionActive, activeModeKey, activeReferences.length]);
   const isConnected =
     stateText === RealtimeConnectionState.connected ||
     stateText === RealtimeConnectionState.generating;
@@ -413,7 +349,7 @@ export function App() {
   /** 提交生成条件：未生成时开始生成，生成中更新条件。 */
   async function handleSubmitPrompt() {
     if (referenceUploading) return;
-    // 自由输入的生成条件与其他模式的参考图无关，清掉它们记住的选中态。
+    // 自由输入的生成条件与其他分类无关，清除原参考图的选中态。
     references.clearOtherModes("free");
     await submitContext(new RealtimeContext({ prompt: submitPrompt, referencePath }));
   }
@@ -469,9 +405,10 @@ export function App() {
     setErrorText("");
     try {
       const uploading = references.addFile(file, submitPrompt, applyReference);
-      if (presetRowRef.current) {
-        presetRowRef.current.scrollTop = 0;
-        presetRowRef.current.scrollLeft = 0;
+      const row = presetRowRefs[activeModeKey].current;
+      if (row) {
+        row.scrollTop = 0;
+        row.scrollLeft = 0;
       }
       await uploading;
     } catch (error) {
@@ -480,7 +417,7 @@ export function App() {
   }
 
   function handleModeChange(mode: ExampleModeKey) {
-    // 只恢复该模式记住的选中态显示，不自动重新生成。
+    // 只切换分类可见性，不改变全局选择，也不自动重新生成。
     references.setMode(mode);
     setActiveModeKey(mode);
     setErrorText("");
@@ -879,8 +816,7 @@ export function App() {
 
         {/* 隐形等高容器：高度对齐两行参考图列表，切换页签时下方布局不跳动。 */}
         <div className="modeBody">
-          {activeMode.key === "free" && (
-            <div className="promptBar">
+            <div className="promptBar" hidden={activeMode.key !== "free"}>
               {isMobileLayout ? (
                 <input
                   type="text"
@@ -950,16 +886,17 @@ export function App() {
                 </button>
               </div>
             </div>
-          )}
-          {activeMode.key !== "free" && (
+          {EXAMPLE_MODES.filter((mode) => mode.key !== "free").map((mode) => (
             <ReferenceList
-              items={activeReferences}
-              rowRef={presetRowRef}
+              key={mode.key}
+              hidden={mode.key !== activeModeKey}
+              items={referenceItems.filter((item) => item.mode === mode.key)}
+              rowRef={presetRowRefs[mode.key]}
               disabled={busy || !apiKey}
               onUpload={() => fileInputRef.current?.click()}
               onSelect={(item) => void handleSelectReference(item)}
             />
-          )}
+          ))}
         </div>
       </div>
     </div>
