@@ -23,6 +23,7 @@ import {
   type RealtimeStateListener,
 } from "../../Service/Realtime/RealtimeState";
 import { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
+import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import { StreamController } from "../../Stream/StreamController";
 import type { StreamControlling } from "../../Stream/StreamControlling";
 import type { RealtimeConfiguration } from "./RealtimeConfiguration";
@@ -58,6 +59,11 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    */
   readonly options: RealtimeConfiguration;
   private readonly mediaService: MediaService;
+
+  /**
+   * 本地流创建时的生成格式；上行编码调整不改变模型输入配置与远端插帧尺寸。
+   */
+  private generationVideoFormat?: RealtimeVideoFormat;
 
   /**
    * 插帧能力、用户配置与渲染版本
@@ -222,7 +228,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    */
   async setFrameInterpolationEnabled(enabled: boolean): Promise<void> {
     await this.coordinator.run(RealtimeOperationKind.configuration, undefined, async (token) => {
-      const format = this.cameraController.currentTrack?.videoFormat;
+      const format = this.generationVideoFormat ?? this.cameraController.currentTrack?.videoFormat;
       const size = format && enabled ? this.mediaService.resolveFrameInterpolationSize(format) : undefined;
       if (enabled && !await this.checkInterpolationSupport(size, token)) {
         token.ensureCurrent();
@@ -507,6 +513,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         }
 
         token.ensureCurrent();
+        this.generationVideoFormat = stream.videoTrack?.videoFormat;
         completeCamera();
 
         // 收到有效帧且预览视图绑定后进入 ready。
@@ -528,6 +535,30 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   }
 
   /**
+   * 应用完整的上行视频格式，成功后更新本地轨道元数据，不改变生成格式或生命周期。
+   * 复用配置操作准入，避免与建连、切换摄像头或其他配置更新并发。
+   *
+   * @throws 无本地相机流、参数无效、操作冲突或底层编码更新失败时抛错。
+   */
+  async updateVideoFormat(videoFormat: RealtimeVideoFormat): Promise<void> {
+    await this.coordinator.run(RealtimeOperationKind.configuration, undefined, async (token) => {
+      const track = this.cameraController.currentTrack;
+      const previousFormat = track?.videoFormat;
+      if (!track || !previousFormat) {
+        throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Local camera stream is not started");
+      }
+      videoFormat.validate();
+
+      // 上行尺寸不按模型分辨率桶吸附，也不发送生成条件或回传尺寸信令。
+      await this.streamController.setVideoEncoderConfig(videoFormat);
+      token.ensureCurrent();
+
+      this.generationVideoFormat ??= previousFormat;
+      track.updateVideoFormat(videoFormat);
+    });
+  }
+
+  /**
    * 停止本地相机流并释放本地预览与 RTC 资源。
    */
   async stopLocalCameraStream(): Promise<void> {
@@ -540,6 +571,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         this.disposePermissionWatch();
         await this.cameraController.stopLocalCameraStream();
         token.ensureCurrent();
+        this.generationVideoFormat = undefined;
         await this.coordinator.commit(
           new RealtimeState({ connectionState: RealtimeConnectionState.idle }),
           token,
@@ -629,7 +661,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
             "The local stream must be created and started by this realtime manager",
           );
         }
-        const videoFormat = localTrack.videoFormat;
+        const videoFormat = this.generationVideoFormat ?? localTrack.videoFormat;
         if (!videoFormat) {
           throw new XmaxError(
             XmaxErrorCode.invalidConfiguration,
@@ -724,6 +756,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
 
       const remote = await this.connectionManager.connect({
         localTrack,
+        remoteVideoFormat: this.generationVideoFormat,
         model: this.options.model,
         includeLocalAudio: this.cameraController.useMicrophone,
         ensureCurrent: () => token.ensureCurrent(),
@@ -821,6 +854,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     const sessionID = await this.connectionManager.disconnect();
 
     if (scope === RealtimeTerminationScope.all) {
+      this.generationVideoFormat = undefined;
       this.disposePermissionWatch();
       try {
         await this.cameraController.stopLocalCameraStream();

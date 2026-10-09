@@ -272,6 +272,26 @@ videoView.remoteTrack = remoteStream.videoTrack;
 Add a `video-container` element with an explicit width and height to your page.
 The view displays a local camera preview until the first generated frame arrives.
 
+Use `updateVideoFormat` after creating the local camera stream, including during
+generation, to change upstream encoding without reconnecting or restarting the task:
+
+```javascript
+await realtime.updateVideoFormat(new RealtimeVideoFormat({
+  width: 1024,
+  height: 1920,
+  fps: 20,
+  minimumBitrate: 1000,
+  maximumBitrate: 2000,
+}));
+```
+
+Pass a complete format; omitted bitrate and preference fields use SDK defaults.
+The local track's `videoFormat` is updated on success and reused on reconnect.
+Generation and remote frame interpolation retain the original format. Actual sent
+resolution, frame rate, and bitrate depend on the device, browser, and network;
+use the statistics callbacks to observe them. Await each operation before starting
+another configuration or lifecycle operation.
+
 TRTC is the default RTC provider. To use Agora, replace the manager configuration
 above; camera capture, generation, rendering, and cleanup use the same APIs:
 

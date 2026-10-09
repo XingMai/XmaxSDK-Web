@@ -111,6 +111,18 @@ export interface XmaxRealtimeManaging {
   }): Promise<RealtimeMediaStream>;
 
   /**
+   * 更新当前本地流的上行视频格式，立即应用于 RTC 编码器，不重连或重启生成。
+   * 传入完整格式；未指定的码率和编码偏好按 RealtimeVideoFormat 默认规则解析。
+   * 成功后更新本地轨道的 videoFormat，后续重连继续使用该格式。
+   * 模型生成及远端插帧仍使用创建本地流时的格式；此接口不改变生成尺寸。
+   * 实际发送规格受设备、浏览器和网络影响，应通过统计回调确认。
+   *
+   * @param videoFormat 本次完整的上行尺寸、帧率和编码配置。
+   * @throws 无本地相机流、其他操作进行中、参数无效或 RTC 更新失败时抛错。
+   */
+  updateVideoFormat(videoFormat: RealtimeVideoFormat): Promise<void>;
+
+  /**
    * 停止本地相机流并释放本地预览与 RTC 资源。
    */
   stopLocalCameraStream(): Promise<void>;

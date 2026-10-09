@@ -72,6 +72,7 @@ export class XmaxRealtimeConnectionManager {
    */
   async connect(options: {
     localTrack: RealtimeVideoTrack;
+    remoteVideoFormat?: RealtimeVideoTrack["videoFormat"];
     model: RealtimeModel;
     includeLocalAudio: boolean;
     ensureCurrent: () => void;
@@ -138,7 +139,7 @@ export class XmaxRealtimeConnectionManager {
 
     const remoteTrack = new RealtimeVideoTrack({
       id: connection.botID ?? "video-remote",
-      videoFormat: options.localTrack.videoFormat,
+      videoFormat: options.remoteVideoFormat ?? options.localTrack.videoFormat,
     });
     this.activeRemoteTrack = remoteTrack;
     this.registerRemoteBinding(remoteTrack);

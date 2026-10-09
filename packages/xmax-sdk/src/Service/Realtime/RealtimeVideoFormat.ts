@@ -112,6 +112,7 @@ export class RealtimeVideoFormat {
     if (
       this.width <= 0 ||
       this.height <= 0 ||
+      !Number.isFinite(this.fps) ||
       this.fps <= 0 ||
       this.width % 2 !== 0 ||
       this.height % 2 !== 0
@@ -123,16 +124,16 @@ export class RealtimeVideoFormat {
       );
     }
 
-    if (this.minimumBitrate !== undefined && this.minimumBitrate < 0) {
+    if (this.minimumBitrate !== undefined && (!Number.isFinite(this.minimumBitrate) || this.minimumBitrate < 0)) {
       throw new XmaxError(
         XmaxErrorCode.invalidConfiguration,
-        "Minimum bitrate must not be negative",
+        "Minimum bitrate must be finite and not negative",
       );
     }
-    if (this.maximumBitrate !== undefined && this.maximumBitrate <= 0) {
+    if (this.maximumBitrate !== undefined && (!Number.isFinite(this.maximumBitrate) || this.maximumBitrate <= 0)) {
       throw new XmaxError(
         XmaxErrorCode.invalidConfiguration,
-        "Maximum bitrate must be greater than zero",
+        "Maximum bitrate must be finite and greater than zero",
       );
     }
 

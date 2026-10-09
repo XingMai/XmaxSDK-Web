@@ -35,6 +35,13 @@ describe("RealtimeVideoFormat", () => {
     expectXmaxError(() => format.validate(), XmaxErrorCode.invalidConfiguration);
   });
 
+  it.each(["fps", "minimumBitrate", "maximumBitrate"] as const)("rejects non-finite %s", (field) => {
+    for (const value of [NaN, Infinity, -Infinity]) {
+      const format = new RealtimeVideoFormat({ width: 640, height: 360, fps: 30, [field]: value });
+      expectXmaxError(() => format.validate(), XmaxErrorCode.invalidConfiguration);
+    }
+  });
+
   it("resized keeps fps and encoding configuration", () => {
     const format = new RealtimeVideoFormat({
       width: 832,

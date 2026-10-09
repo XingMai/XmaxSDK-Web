@@ -295,6 +295,142 @@ function makeLocalStream(camera: CameraControllingStub): RealtimeMediaStream {
 
 const testContext = new RealtimeContext({ prompt: "a red cube" });
 
+describe("XmaxRealtimeManager video format updates", () => {
+  const updatedFormat = new RealtimeVideoFormat({
+    width: 640, height: 360, fps: 20, minimumBitrate: 300, maximumBitrate: 1200,
+  });
+
+  it("requires a local camera stream", async () => {
+    const { manager, stream } = makeManager();
+    await expect(manager.updateVideoFormat(updatedFormat)).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    expect(stream.encoderConfigFormats).toHaveLength(0);
+  });
+
+  it("applies before connection and retains upstream settings across reconnects without resizing the result", async () => {
+    const { manager, camera, stream } = makeManager();
+    const localStream = makeLocalStream(camera);
+    await manager.updateVideoFormat(updatedFormat);
+    expect(localStream.videoTrack!.videoFormat).toBe(updatedFormat);
+    expect(stream.encoderConfigFormats).toEqual([updatedFormat]);
+    expect(stream.connectCalls).toHaveLength(0);
+
+    const remote = await manager.connect(localStream);
+    expect(remote.videoTrack!.videoFormat).toBe(testVideoFormat);
+    await manager.disconnect();
+    await manager.connect(localStream);
+    expect(stream.encoderConfigFormats).toEqual([updatedFormat, updatedFormat, updatedFormat]);
+    await manager.close();
+  });
+
+  it("updates during generation without signals, restarts, state changes or altered interpolation size", async () => {
+    const { manager, camera, stream } = makeManager(async () => true, true);
+    const localStream = makeLocalStream(camera);
+    const remote = await manager.connect(localStream);
+    const starting = manager.startGeneration({ localStream, context: testContext });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+    stream.confirmationDeferreds[0]!.resolve();
+    await starting;
+    const state = manager.currentState;
+
+    await manager.updateVideoFormat(updatedFormat);
+    expect(manager.currentState).toBe(state);
+    expect(stream.connectCalls).toHaveLength(1);
+    expect(stream.beginCalls).toHaveLength(1);
+    expect(stream.updateCalls).toHaveLength(0);
+    expect(stream.stopGenerationCalls).toHaveLength(0);
+    expect(stream.changeTargetSize).not.toHaveBeenCalled();
+
+    // 后续更新生成条件与切换插帧仍使用原始生成尺寸。
+    await manager.startGeneration({ localStream, context: new RealtimeContext({ prompt: "new prompt" }) });
+    expect(stream.updateCalls[0]!.videoFormat).toBe(testVideoFormat);
+    await manager.setFrameInterpolationEnabled(false);
+    await manager.setFrameInterpolationEnabled(true);
+    const view = { isMirrored: false, setMediaStream: vi.fn(), setFrameInterpolation: vi.fn() };
+    VideoRenderRegistry.binding(remote.videoTrack!)!.attachHandler(view, VideoContentMode.fill);
+    expect(view.setFrameInterpolation).toHaveBeenLastCalledWith(expect.objectContaining({ size: { width: 1280, height: 720 } }));
+    await manager.close();
+  });
+
+  it("rejects invalid formats before calling RTC", async () => {
+    const { manager, camera, stream } = makeManager();
+    makeLocalStream(camera);
+    await expect(manager.updateVideoFormat(new RealtimeVideoFormat({ width: 641, height: 360, fps: 20 })))
+      .rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    expect(stream.encoderConfigFormats).toHaveLength(0);
+    expect(camera.currentTrack!.videoFormat).toBe(testVideoFormat);
+  });
+
+  it("keeps metadata and the connection on RTC failure and allows retry", async () => {
+    const { manager, camera, stream } = makeManager();
+    await manager.connect(makeLocalStream(camera));
+    const state = manager.currentState;
+    stream.failEncoderConfig = new XmaxError(XmaxErrorCode.rtcError, "encoder failure");
+    await expect(manager.updateVideoFormat(updatedFormat)).rejects.toBe(stream.failEncoderConfig);
+    expect(camera.currentTrack!.videoFormat).toBe(testVideoFormat);
+    expect(manager.currentState).toBe(state);
+    expect(stream.disconnectCalls).toBe(0);
+
+    stream.failEncoderConfig = undefined;
+    await manager.updateVideoFormat(updatedFormat);
+    expect(camera.currentTrack!.videoFormat).toBe(updatedFormat);
+    await manager.close();
+  });
+
+  it("rejects concurrent operations and commits metadata only after RTC succeeds", async () => {
+    const { manager, camera, stream } = makeManager();
+    const localStream = makeLocalStream(camera);
+    const deferred = makeDeferred<void>();
+    vi.spyOn(stream, "setVideoEncoderConfig").mockReturnValueOnce(deferred.promise);
+    const updating = manager.updateVideoFormat(updatedFormat);
+    expect(camera.currentTrack!.videoFormat).toBe(testVideoFormat);
+    await expect(manager.updateVideoFormat(testVideoFormat)).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    await expect(manager.connect(localStream)).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    deferred.resolve();
+    await updating;
+    expect(camera.currentTrack!.videoFormat).toBe(updatedFormat);
+    await manager.close();
+  });
+
+  it("rejects an update while connecting", async () => {
+    const { manager, camera, stream } = makeManager();
+    const deferred = makeDeferred<void>();
+    vi.spyOn(stream, "setVideoEncoderConfig").mockReturnValueOnce(deferred.promise);
+    const connecting = manager.connect(makeLocalStream(camera));
+    await vi.waitFor(() => expect(stream.setVideoEncoderConfig).toHaveBeenCalledOnce());
+    await expect(manager.updateVideoFormat(updatedFormat)).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    deferred.resolve();
+    await connecting;
+    await manager.close();
+  });
+
+  it.each(["close", "disconnect"] as const)("does not commit a late update after %s", async (method) => {
+    const { manager, camera, stream } = makeManager();
+    const localStream = makeLocalStream(camera);
+    await manager.connect(localStream);
+    const deferred = makeDeferred<void>();
+    vi.spyOn(stream, "setVideoEncoderConfig").mockReturnValueOnce(deferred.promise);
+    const updating = manager.updateVideoFormat(updatedFormat);
+    const rejected = expect(updating).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
+    const stopping = manager[method]();
+    deferred.resolve();
+    await Promise.all([rejected, stopping]);
+    expect(localStream.videoTrack!.videoFormat).toBe(testVideoFormat);
+    await manager.close();
+  });
+
+  it.each(["close", "stopLocalCameraStream"] as const)("clears the generation format when a new camera lifecycle starts after %s", async (method) => {
+    const { manager, camera } = makeManager();
+    makeLocalStream(camera);
+    await manager.updateVideoFormat(updatedFormat);
+    await manager[method]();
+    const next = makeLocalStream(camera);
+    next.videoTrack!.updateVideoFormat(updatedFormat);
+    const remote = await manager.connect(next);
+    expect(remote.videoTrack!.videoFormat).toBe(updatedFormat);
+    await manager.close();
+  });
+});
+
 describe("XmaxRealtimeManager frame interpolation", () => {
   async function generating(supports: () => Promise<boolean> = async () => true) {
     const s = makeManager(supports, true);
