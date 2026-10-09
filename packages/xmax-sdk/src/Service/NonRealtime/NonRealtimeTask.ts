@@ -21,6 +21,10 @@ export enum NonRealtimeTaskStatus {
  */
 export interface NonRealtimeTaskOptions {
   /**
+   * 模型标识。
+   */
+  model?: string;
+  /**
    * 已上传源视频的 URL。
    */
   videoPath: string;

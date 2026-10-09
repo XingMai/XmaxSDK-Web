@@ -72,7 +72,14 @@ describe("NonRealtime task API", () => {
     expect(JSON.parse(fetch.mock.calls[1]![1].body!)).toMatchObject({ refImagePath: "https://media.example/reference.jpg", fps: 24 });
   });
 
+  it.each(["x2.0", "x2.1-preview", "future-offline-model"])("forwards the requested model %s without a realtime-only allowlist", async (model) => {
+    const { manager, fetch } = setup();
+    await manager.submitTask({ ...options, model: ` ${model} ` });
+    expect(JSON.parse(fetch.mock.calls[0]![1].body!)).toMatchObject({ model });
+  });
+
   it.each([
+    { model: "" }, { model: "  " },
     { prompt: "  " }, { prompt: "a".repeat(1025) }, { quality: "ultra" },
     { fps: 29.97 }, { fps: 7 }, { fps: 14 }, { fps: NaN }, { fps: 121 },
     { videoPath: "blob:local" }, { videoPath: "/video.mp4" }, { videoPath: "file:///video.mp4" },

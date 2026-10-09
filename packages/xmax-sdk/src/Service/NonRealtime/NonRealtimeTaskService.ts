@@ -28,6 +28,10 @@ export class NonRealtimeTaskService {
    * 提交一次任务；请求结果不确定时也不自动重试，以免重复扣费。
    */
   async submitTask(options: NonRealtimeTaskOptions): Promise<NonRealtimeTask> {
+    const model = options.model?.trim();
+    if (options.model !== undefined && !model) {
+      invalid("Model must not be empty");
+    }
     const prompt = options.prompt.trim();
     if (!prompt || [...prompt].length > 1024) {
       invalid("Prompt must contain 1–1024 characters");
@@ -44,6 +48,7 @@ export class NonRealtimeTaskService {
     }
 
     const payload = await this.api.post<unknown>("/offline-task", {
+      ...(model === undefined ? {} : { model }),
       prompt,
       refVideoPath: options.videoPath.trim(),
       ...(options.referencePath === undefined ? {} : { refImagePath: options.referencePath.trim() }),
