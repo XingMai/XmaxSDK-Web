@@ -570,9 +570,9 @@ export function App() {
             <div className="rtcModelPicker">
               <select className="rtcModelSelect" aria-label="Model" value={model} disabled={busy}
                 onChange={(event) => setModel(event.target.value as RealtimeModel)}>
-                <option value={RealtimeModel.x2_0_trtc}>{RealtimeModel.x2_0_trtc}</option>
-                <option value={RealtimeModel.x2_0_agora}>{RealtimeModel.x2_0_agora}</option>
-                <option value={RealtimeModel.x2_1_preview}>{RealtimeModel.x2_1_preview}</option>
+                <option value={RealtimeModel.x2_0_trtc}>x2.1-preview-trtc</option>
+                <option value={RealtimeModel.x2_0_agora}>x2.1-preview-agora</option>
+                <option value={RealtimeModel.x2_1_preview}>x2.1-preview-vertc</option>
               </select>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                 strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
