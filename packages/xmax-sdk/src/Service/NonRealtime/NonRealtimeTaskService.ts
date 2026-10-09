@@ -18,7 +18,7 @@ export class NonRealtimeTaskService {
   private readonly api: ApiServicing;
 
   /**
-   * 注入复用客户端鉴权和环境地址的 API 服务。
+   * 注入非实时任务使用的 API 服务。
    */
   constructor(api: ApiServicing) {
     this.api = api;

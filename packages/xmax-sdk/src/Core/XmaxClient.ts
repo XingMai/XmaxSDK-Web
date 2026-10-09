@@ -10,7 +10,7 @@ import type { RealtimeConfiguration } from "./Realtime/RealtimeConfiguration";
 import { XmaxRealtimeManager } from "./Realtime/XmaxRealtimeManager";
 import type { XmaxRealtimeManaging } from "./Realtime/XmaxRealtimeManaging";
 import { XmaxConfiguration } from "./XmaxConfiguration";
-import { apiBaseURL } from "../Foundation/Runtime/XmaxEnvironment";
+import { apiBaseURL, nonRealtimeApiBaseURL } from "../Foundation/Runtime/XmaxEnvironment";
 import { NonRealtimeTaskService } from "../Service/NonRealtime/NonRealtimeTaskService";
 import { XmaxNonRealtimeManager } from "./NonRealtime/XmaxNonRealtimeManager";
 import type { XmaxNonRealtimeManaging } from "./NonRealtime/XmaxNonRealtimeManaging";
@@ -70,11 +70,16 @@ export class XmaxClient {
   }
 
   /**
-   * 创建非实时视频任务 Manager；复用全局 API Key 与环境地址，不使用实时模型地址覆盖。
+   * 创建非实时视频任务 Manager，使用全局 API Key 和当前环境的非实时任务服务地址。
    * 本方法不发起网络请求或加载 RTC，任务由服务端持久化，可按 ID 恢复查询。
    */
   createNonRealtimeManager(): XmaxNonRealtimeManaging {
-    return new XmaxNonRealtimeManager(new NonRealtimeTaskService(this.apiService));
+    const apiService = new ApiService({
+      apiKey: this.configuration.apiKey,
+      baseURL: nonRealtimeApiBaseURL(this.configuration.environment),
+    });
+
+    return new XmaxNonRealtimeManager(new NonRealtimeTaskService(apiService));
   }
 
   /**
@@ -89,7 +94,7 @@ export class XmaxClient {
   /**
    * 创建文件存储 Service。
    *
-   * @returns 可上传图片到对象存储的存储 Service，返回地址可用作参考图路径。
+   * @returns 可上传图片和视频到对象存储的存储 Service。
    */
   createStorageService(): StorageServicing {
     return new StorageService({ apiService: this.apiService });

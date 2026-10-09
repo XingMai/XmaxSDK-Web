@@ -127,6 +127,74 @@ describe("StorageService", () => {
     expect(progress).toEqual([[5, 10]]);
   });
 
+  it("上传视频：使用一次普通上传，保留原始文件并返回进度与访问地址", async () => {
+    const { api, client, service } = makeService();
+    const file = new File([sampleData], "clip.MP4", { type: "video/mp4" });
+    const progress: Array<[number, number]> = [];
+    client.result = { Location: "//cdn.example.com/clip.mp4", ETag: "video-etag" };
+
+    const stored = await service.uploadVideo({
+      data: file,
+      fileName: file.name,
+      onProgress: (loaded, total) => progress.push([loaded, total]),
+    });
+
+    expect(api.requests).toEqual([
+      { method: ApiMethod.get, path: "/cos/sts", body: undefined },
+    ]);
+    expect(client.putCalls).toHaveLength(1);
+    const call = client.putCalls[0]!;
+    expect(call).toMatchObject({
+      Bucket: stsPayload.bucket,
+      Region: stsPayload.region,
+      Key: "uploads/1700000000000_abc123_clip.MP4",
+      ContentType: "video/mp4",
+    });
+    expect(call.Body).toBe(file);
+    expect(new Uint8Array(await call.Body.arrayBuffer())).toEqual(sampleData);
+    expect(stored).toMatchObject({
+      url: "https://cdn.example.com/clip.mp4",
+      objectKey: call.Key,
+      etag: "video-etag",
+    });
+    expect(progress).toEqual([[5, 10]]);
+  });
+
+  it.each([
+    ["mp4", "video/mp4"],
+    ["m4v", "video/mp4"],
+    ["mov", "video/quicktime"],
+    ["webm", "video/webm"],
+    ["avi", "video/x-msvideo"],
+    ["mkv", "video/x-matroska"],
+    ["ogv", "video/ogg"],
+  ])("上传 %s 视频时推断 MIME 类型", async (extension, contentType) => {
+    const { client, service } = makeService();
+    await service.uploadVideo({ data: sampleData.buffer, fileName: `clip.${extension}` });
+
+    expect(client.putCalls[0]!.ContentType).toBe(contentType);
+    expect(client.putCalls[0]!.Body.type).toBe(contentType);
+    expect(new Uint8Array(await client.putCalls[0]!.Body.arrayBuffer())).toEqual(sampleData);
+  });
+
+  it("视频未返回 Location 时按默认 COS 域名拼接访问地址", async () => {
+    const { client, service } = makeService();
+    client.result = {};
+
+    const stored = await service.uploadVideo({ data: sampleData, fileName: "clip.mp4" });
+
+    expect(stored.url).toBe(
+      "https://xmax-1300000000.cos.ap-guangzhou.myqcloud.com/uploads/1700000000000_abc123_clip.mp4",
+    );
+  });
+
+  it("视频显式内容类型优先于文件名推断", async () => {
+    const { client, service } = makeService();
+    await service.uploadVideo({ data: sampleData, fileName: "clip.bin", contentType: "video/webm" });
+
+    expect(client.putCalls[0]!.ContentType).toBe("video/webm");
+  });
+
   it("未返回 Location 时按默认 COS 域名拼接访问地址", async () => {
     const { client, service } = makeService();
     client.result = {};
@@ -169,37 +237,38 @@ describe("StorageService", () => {
     expect(client.putCalls[0]!.ContentType).toBe("image/png");
   });
 
-  it("凭证字段不完整时抛出 API 错误", async () => {
+  it.each(["uploadImage", "uploadVideo"] as const)("%s 凭证字段不完整时抛出 API 错误", async (method) => {
     const { service } = makeService({
       payload: { bucket: "xmax-1300000000" },
     });
 
     await expect(
-      service.uploadImage({ data: sampleData, fileName: "photo.png" }),
+      service[method]({ data: sampleData, fileName: "file.bin" }),
     ).rejects.toMatchObject({ code: XmaxErrorCode.apiError });
   });
 
-  it("对象存储上传失败时映射为上传错误", async () => {
+  it.each(["uploadImage", "uploadVideo"] as const)("%s 对象存储上传失败时映射为上传错误", async (method) => {
     const { client, service } = makeService();
     client.failWith = { message: "cos denied" };
 
     await expect(
-      service.uploadImage({ data: sampleData, fileName: "photo.png" }),
+      service[method]({ data: sampleData, fileName: "file.bin" }),
     ).rejects.toMatchObject({
       code: XmaxErrorCode.uploadError,
       message: "cos denied",
     });
   });
 
-  it("文件名非法或数据为空时拒绝上传", async () => {
-    const { client, service } = makeService();
+  it.each(["uploadImage", "uploadVideo"] as const)("%s 文件名非法或数据为空时拒绝上传", async (method) => {
+    const { api, client, service } = makeService();
 
     await expect(
-      service.uploadImage({ data: sampleData, fileName: "a/b.png" }),
+      service[method]({ data: sampleData, fileName: "a/b.bin" }),
     ).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
     await expect(
-      service.uploadImage({ data: new Uint8Array(), fileName: "photo.png" }),
+      service[method]({ data: new Uint8Array(), fileName: "file.bin" }),
     ).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    expect(api.requests).toHaveLength(0);
     expect(client.putCalls).toHaveLength(0);
   });
 });

@@ -33,8 +33,8 @@ afterEach(() => {
 
 describe("NonRealtime task API", () => {
   it.each([
-    [XmaxEnvironment.china, "https://cloud.xmax.22duck.cn"],
-    [XmaxEnvironment.global, "https://api.xmax.cloud"],
+    [XmaxEnvironment.china, "https://api.xmaxai.com"],
+    [XmaxEnvironment.global, "https://api.xmax.ai"],
   ])("creates a manager without requests and uses the %s endpoint and client key", async (environment, origin) => {
     const fetch = vi.fn().mockResolvedValue(response(submitted));
     vi.stubGlobal("fetch", fetch);
@@ -46,6 +46,22 @@ describe("NonRealtime task API", () => {
     expect(fetch).toHaveBeenCalledWith(`${origin}/open/api/v1/offline-task`, expect.objectContaining({
       method: "POST", headers: expect.objectContaining({ "X-Api-Key": "test-key" }),
     }));
+
+    await manager.getTask(uid);
+    fetch.mockResolvedValueOnce(response({ list: [submitted] }));
+    await manager.getTasks([uid]);
+    fetch.mockResolvedValueOnce(response({ pageNumber: 1, pageSize: 10, total: 1, list: [submitted] }));
+    await manager.listTasks();
+    fetch.mockResolvedValueOnce(response(completed));
+    await manager.waitForCompletion(uid);
+
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual([
+      `${origin}/open/api/v1/offline-task`,
+      `${origin}/open/api/v1/offline-task/${uid}`,
+      `${origin}/open/api/v1/offline-task/batch-query`,
+      `${origin}/open/api/v1/offline-task/page?pageNumber=1&pageSize=10`,
+      `${origin}/open/api/v1/offline-task/${uid}`,
+    ]);
   });
 
   it("maps submit fields and leaves omitted fps and reference absent", async () => {

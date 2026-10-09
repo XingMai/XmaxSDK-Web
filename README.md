@@ -442,8 +442,14 @@ this through `setStateListener`.
 
 Use `client.createNonRealtimeManager()` to submit video-file processing tasks.
 This is cloud processing, not on-device or offline execution. It uses the client's
-API key and environment endpoint, independently of realtime model endpoint overrides.
-The selected API environment must provide the `/offline-task` endpoints.
+API key and selects a dedicated task endpoint from `XmaxEnvironment`:
+
+- `china`: `https://api.xmaxai.com/open/api/v1`
+- `global`: `https://api.xmax.ai/open/api/v1`
+
+Task requests append `/offline-task` and its subpaths to this base URL.
+Realtime model endpoint overrides do not affect task requests; storage credentials
+continue to use the environment's default API endpoint.
 
 ```typescript
 import { NonRealtimeQuality, NonRealtimeTaskError } from "@xmaxai/web-sdk";
@@ -451,11 +457,16 @@ import { NonRealtimeQuality, NonRealtimeTaskError } from "@xmaxai/web-sdk";
 const manager = client.createNonRealtimeManager();
 const controller = new AbortController();
 
-// sourceVideoURL and referenceImageURL must come from the Xmax upload flow.
-// This API does not upload local files or accept blob: URLs.
+// videoFile is a File selected by the user.
+const storedVideo = await client.createStorageService().uploadVideo({
+  data: videoFile,
+  fileName: videoFile.name,
+  onProgress: (loaded, total) => console.log(loaded, total),
+});
+
 const task = await manager.submitTask({
-  videoPath: sourceVideoURL,
-  referencePath: referenceImageURL, // Optional.
+  videoPath: storedVideo.url,
+  referencePath: referenceImageURL, // Optional; obtain via uploadImage().
   prompt: "Change the character's clothing while preserving the motion.",
   quality: NonRealtimeQuality.hd,
   // Omit fps to retain the source frame rate, including fractional rates.
@@ -493,8 +504,13 @@ try {
 - `getTasks([uid, ...])` queries up to 100 IDs. `listTasks({ pageNumber, pageSize,
   status })` retrieves one page, newest first. Saved IDs can be queried or waited
   on using a new manager instance.
-- Uploaded video resources are required. Automatic video upload is not included
-  in this API; the existing storage service currently exposes image upload only.
+- Upload local videos with `client.createStorageService().uploadVideo()` before
+  submitting a task. It shares the image upload options and progress callback,
+  uploads the original bytes via COS `putObject`, and returns a `StoredFile`.
+  It does not transcode or use multipart upload; COS simple upload supports files
+  up to [5GB](https://cloud.tencent.com/document/product/436/14113).
+  MIME inference supports MP4/M4V, MOV, WebM, AVI, MKV, and OGV; successful storage
+  does not guarantee that the task processor supports the file's codec or container.
 
 ## Example Project
 

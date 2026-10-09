@@ -98,6 +98,13 @@ const CONTENT_TYPES: Record<string, string> = {
   bmp: "image/bmp",
   heic: "image/heic",
   heif: "image/heif",
+  mp4: "video/mp4",
+  m4v: "video/mp4",
+  mov: "video/quicktime",
+  webm: "video/webm",
+  avi: "video/x-msvideo",
+  mkv: "video/x-matroska",
+  ogv: "video/ogg",
 };
 
 /**
@@ -144,6 +151,20 @@ export class StorageService implements StorageServicing {
    * 上传图片并返回访问地址。
    */
   async uploadImage(options: StorageUploadOptions): Promise<StoredFile> {
+    return this.upload(options, "Image");
+  }
+
+  /**
+   * 普通上传原始视频并返回访问地址，不进行转码、压缩或分片。
+   */
+  async uploadVideo(options: StorageUploadOptions): Promise<StoredFile> {
+    return this.upload(options, "Video");
+  }
+
+  /**
+   * 获取临时凭证并通过 COS putObject 上传文件，统一处理进度、结果和错误。
+   */
+  private async upload(options: StorageUploadOptions, mediaType: "Image" | "Video"): Promise<StoredFile> {
     const startedAt = Date.now();
     try {
       const safeName = StorageService.validateFileName(options.fileName);
@@ -153,7 +174,7 @@ export class StorageService implements StorageServicing {
       if (body.size === 0) {
         throw new XmaxError(
           XmaxErrorCode.invalidConfiguration,
-          "Image data cannot be empty",
+          `${mediaType} data cannot be empty`,
         );
       }
 
