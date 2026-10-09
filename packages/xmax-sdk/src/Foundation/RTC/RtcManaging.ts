@@ -71,6 +71,15 @@ export interface RtcManaging {
   stopCameraCapture(): Promise<void>;
 
   /**
+   * 接入外部音视频轨（只准备、不发布）；适配器持有克隆轨，原轨仍归媒体源所有。
+   * 仅支持该能力的提供方实现；无音频轨时不得回退到麦克风。
+   */
+  setExternalMediaTracks?(tracks: {
+    videoTrack: MediaStreamTrack;
+    audioTrack?: MediaStreamTrack;
+  }): Promise<void>;
+
+  /**
    * 配置本地视频编码参数。
    *
    * 采集阶段不发布，编码参数只影响发送端，在发布前配置即可生效。

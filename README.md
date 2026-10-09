@@ -317,15 +317,33 @@ const realtime = client.createRealtimeManager(
 The provider is fixed for each manager: `x2.0` and `x2.0-trtc` use
 `RtcProvider.trtc`, `x2.0-agora` uses `RtcProvider.agora`, and `x2.0-pro`,
 `x2.1-preview`, and `x2.1-preview-1005` use `RtcProvider.vertc`.
-Import `RtcProvider` to specify it explicitly; unsupported
-model/provider combinations are rejected during configuration. Use the exported
+Import `RtcProvider` to specify it explicitly; unsupported known-model/provider
+combinations are rejected during configuration. Use the exported
 `supportedRtcProviders(model)` to inspect model capabilities. The SDK does not read
 `modelExtra.provider` from the backend; the resolved configuration determines how
 RTC credentials are parsed.
 
 The `x2.0-pro`, `x2.0-agora`, `x2.1-preview`, and `x2.1-preview-1005` models use
 `https://dev.xmaxai.com/open/api/v1` in both environments.
-Other models and file uploads use the configured environment's API endpoint.
+The other built-in models and file uploads use the configured environment's API endpoint.
+
+Custom realtime model names are also accepted without an SDK update:
+
+```javascript
+const realtime = client.createRealtimeManager(
+  new RealtimeConfiguration({ model: "your-new-model" })
+);
+```
+
+The model name is sent unchanged; the server determines whether it is available.
+Unknown models inherit the `x2.1-preview` defaults: VeRTC, the dev session API above
+(in both client environments), a 1024 × 1920 camera at 30 fps, and the same
+1024 × 1920 / 1920 × 1024 input resolution buckets and media rules.
+You may explicitly choose another supported `RtcProvider` for a custom model;
+`supportedRtcProviders` lists all SDK adapters for custom models, with VeRTC first,
+but this does not guarantee server-side support. `modelDisplayName` returns the
+custom name unchanged. Empty/blank or non-string model names, invalid RTC providers,
+and invalid video parameters are still rejected locally.
 
 VeRTC uses `@volcengine/rtc` 4.69.3 and the fixed AppID
 `69a177e226e9b90176a86b96`. Session credentials must contain this `rtc_app_id`,
@@ -438,6 +456,64 @@ this through `setStateListener`.
 
 <br>
 
+### Generate from a local video
+
+Use a manager configured for TRTC, Agora or VeRTC. The SDK decodes a local `File` or `Blob`, sends its video through Canvas and its audio through Web Audio, and receives the generated result over RTC. It does not upload the file to storage or request camera/microphone access.
+
+```ts
+// Call directly from a file-selection or click handler to unlock browser playback.
+const localStream = await realtime.createLocalVideoStream({
+  file,
+  videoFormat: new RealtimeVideoFormat({ width: 1920, height: 1024, fps: 30 }),
+  loop: true,
+  includeAudio: true,
+});
+
+// Optionally bind localStream.videoTrack to an SDK video view.
+const remoteStream = await realtime.startGeneration({
+  localStream,
+  context: new RealtimeContext({ prompt: "Transform the scene into an animation" }),
+});
+```
+
+Preparation stops at the first frame. After the connection is established and the start signal is sent, the file plays from the beginning; playback does not wait for a remote frame. `loop` defaults to `true`, looping both file video and audio; set it to `false` to play once. The current protocol does not acknowledge server input readiness, so frame-perfect processing of the very beginning is not guaranteed.
+
+Video is scaled proportionally to the requested model-supported dimensions, with black bars where needed. Local preview is always silent; `localAudioVolume` does not alter the file's uplink audio. File audio is enabled by default; a file without an audio track produces silence. Set `includeAudio: false` to omit the audio track entirely. Use `setRemoteAudioVolume` to hear the generated result (muted by default).
+
+`disconnect()` pauses playback and retains the source. A new generation after reconnecting starts from the beginning; updating conditions during generation does not restart playback. With looping disabled, file completion holds the final frame and leaves the RTC connection open so remote tail frames can play. `close()` releases all file resources and tracks. `updateVideoFormat()` can adjust uplink encoding without changing the original model input format.
+
+File codecs must be supported by the browser, and Canvas capture and Web Audio must be available. Keep the page foregrounded for stable frame delivery; browser background throttling can reduce the upload frame rate. Playback restrictions, decode errors and preparation timeouts are reported rather than silently sending an empty stream.
+
+### Generate from a network video
+
+Pass an HTTP or HTTPS video URL to let the server read the source directly. The SDK joins the RTC room and receives generated video and audio without capturing or publishing local media.
+
+```ts
+import { RealtimeContext, RealtimeVideoFormat, RealtimeVideoSampleMethod } from "@xmaxai/web-sdk";
+
+const localStream = await realtime.createNetworkVideoStream({
+  url: "https://example.com/source.mp4",
+  videoFormat: new RealtimeVideoFormat({ width: 1920, height: 1024, fps: 30 }),
+  sampleMethod: RealtimeVideoSampleMethod.time,
+  onFinish: () => {
+    console.log("Server finished processing the video");
+  },
+});
+
+const remoteStream = await realtime.startGeneration({
+  localStream,
+  context: new RealtimeContext({ prompt: "Transform the scene into an animation" }),
+});
+```
+
+Use a video format supported by the selected model. Bind the returned tracks to SDK video views as usual. The optional local preview plays once, muted, independently of server processing; no Canvas or local upload is involved. Creating the source does not start generation. Sampling defaults to `time`; `fps` is also available.
+
+The URL must be directly accessible to the server. Browser cookies and custom authorization headers are not forwarded. Local preview playback depends on browser codec support and page security policies; a preview failure does not stop server processing. The selected model's backend must support network video input.
+
+`onFinish` is delivered once for the current task after the server's `video_stopped` message and generation readiness. It does not mean the last remote frame has finished playing, so the SDK does not automatically disconnect. Local preview completion does not trigger this callback. Remote audio follows `setRemoteAudioVolume` (muted by default).
+
+`disconnect()` retains the source and preview for reconnection; `close()` releases them. Close the current source before creating another. `updateVideoFormat()` adjusts camera uplink encoding and is not available for a network video source.
+
 ### Non-realtime video tasks
 
 Use `client.createNonRealtimeManager()` to submit video-file processing tasks.
@@ -511,6 +587,24 @@ try {
   up to [5GB](https://cloud.tencent.com/document/product/436/14113).
   MIME inference supports MP4/M4V, MOV, WebM, AVI, MKV, and OGV; successful storage
   does not guarantee that the task processor supports the file's codec or container.
+
+### Downloading videos
+
+Call this from a user-initiated action, such as a download button:
+
+```typescript
+await client.createStorageService().downloadVideo({
+  url: videoURL,
+  fileName: "video.mp4",
+  // signal: controller.signal, // Optional cancellation.
+});
+```
+
+The method fetches the complete file as a Blob and then requests browser saving.
+The URL must be directly accessible and allow CORS for cross-origin requests;
+the SDK does not send API credentials or cookies to it. This requires a browser
+document and retains the complete file until the browser takes over. Resolution
+means saving was requested, not that the user saved the file to disk.
 
 ## Example Project
 

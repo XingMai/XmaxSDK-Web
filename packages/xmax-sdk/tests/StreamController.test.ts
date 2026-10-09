@@ -5,6 +5,7 @@ import type { RtcEventListener } from "../src/Foundation/RTC/RtcEventListener";
 import type { RoomJoinConfiguration } from "../src/Foundation/RTC/RoomJoinConfiguration";
 import type { RtcManaging } from "../src/Foundation/RTC/RtcManaging";
 import { RealtimeContext } from "../src/Service/Realtime/RealtimeContext";
+import { RealtimeVideoSampleMethod } from "../src/Service/Realtime/RealtimeReferenceVideo";
 import { RealtimeSessionConnection } from "../src/Service/Realtime/RealtimeSessionConnection";
 import { RealtimeVideoFormat } from "../src/Service/Realtime/RealtimeVideoFormat";
 import { RoomController } from "../src/Stream/Room/RoomController";
@@ -158,6 +159,142 @@ function emitRemoteVideo(
 }
 
 describe("StreamController", () => {
+  it("starts file playback after sending the start signal but before remote confirmation", async () => {
+    const { controller, rtc } = makeStream();
+    await controller.connect(connection, true, noopEnsureActive);
+    let sent!: () => void;
+    const gate = new Promise<void>(resolve => { sent = resolve; });
+    vi.spyOn(rtc, "sendRoomMessage").mockReturnValueOnce(gate);
+    const play = vi.fn(async () => {});
+    const generating = controller.beginGeneration({ taskID: "file", videoFormat, context, onStartSent: play });
+    await Promise.resolve();
+    expect(play).not.toHaveBeenCalled();
+    sent();
+    await vi.waitFor(() => expect(play).toHaveBeenCalledOnce());
+    expect(rtc.subscribeRemoteVideoCalls).toHaveLength(0);
+    emitRemoteVideo(rtc, "bot001", true);
+    await generating;
+    await controller.disconnect();
+  });
+
+  it("does not play on send failure, and rejects generation when playback fails", async () => {
+    const { controller, rtc } = makeStream();
+    await controller.connect(connection, false, noopEnsureActive);
+    const play = vi.fn(async () => {});
+    rtc.failNextSend = true;
+    await expect(controller.beginGeneration({ taskID: "fail-send", videoFormat, context, onStartSent: play })).rejects.toThrow();
+    expect(play).not.toHaveBeenCalled();
+    play.mockRejectedValueOnce(new XmaxError(XmaxErrorCode.mediaError, "play blocked"));
+    await expect(controller.beginGeneration({ taskID: "fail-play", videoFormat, context, onStartSent: play })).rejects.toThrow("play blocked");
+    expect(controller.hasGenerationTask).toBe(false);
+    await controller.disconnect();
+  });
+  const networkContext = new RealtimeContext({
+    prompt: "replace character",
+    referencePath: "https://example.com/image.jpg",
+    referenceVideo: { path: "https://example.com/video.mp4", sampleMethod: RealtimeVideoSampleMethod.fps },
+  });
+
+  it("joins without publishing and forwards downlink network statistics", async () => {
+    const { controller, rtc } = makeStream();
+    const barrier = vi.fn();
+    const statistics = vi.fn();
+    controller.setNetworkStatisticsListener(statistics);
+    await controller.connect(connection, true, noopEnsureActive, barrier, false);
+    expect(rtc.joinRoomCalls).toHaveLength(1);
+    expect(rtc.publishLocalVideoCalls).toBe(0);
+    expect(rtc.publishLocalAudioCalls).toBe(0);
+    expect(barrier).not.toHaveBeenCalled();
+    rtc.eventListener?.onNetworkStatistics?.({} as never);
+    expect(statistics).toHaveBeenCalledOnce();
+    await controller.disconnect();
+  });
+
+  it.each([true, false])("delivers completion once, whether received before activation: %s", async (early) => {
+    const { controller, rtc } = makeStream();
+    await controller.connect(connection, false, noopEnsureActive, undefined, false);
+    const starting = controller.beginGeneration({ taskID: "network-task", videoFormat, context: networkContext });
+    const finish = vi.fn();
+    const notify = (sender = "bot001", uid = "network-task", target = connection.userID) => {
+      rtc.eventListener?.onCustomMessageReceived(sender, JSON.stringify({ event: "video_stopped", uid, user_id: target }));
+    };
+    notify("other");
+    notify("bot001", "old-task");
+    notify("bot001", "network-task", "another-user");
+    if (early) {
+      notify();
+    }
+    await Promise.resolve();
+    expect(finish).not.toHaveBeenCalled();
+    emitRemoteVideo(rtc, "bot001", true);
+    await starting;
+    await controller.activateRemoteAudio();
+    controller.activateNetworkVideoCompletion(finish);
+    notify();
+    notify();
+    await Promise.resolve();
+    expect(finish).toHaveBeenCalledOnce();
+    expect(controller.hasGenerationTask).toBe(true);
+    expect(rtc.leaveRoomCalls).toBe(0);
+    expect(rtc.subscribeRemoteAudioCalls).toContainEqual(["bot001", true]);
+
+    const message = rtc.sentMessages.map(value => JSON.parse(value)).find(value => value.event === "start");
+    expect(message).toMatchObject({
+      uid: "network-task", session_uid: "network-task",
+      params: { ref_video_path: networkContext.referenceVideo!.path, sample_method: "fps", target_size: [832, 1472] },
+    });
+    await controller.updateGeneration({ taskID: "network-task", videoFormat, context: networkContext });
+    const update = rtc.sentMessages.map(value => JSON.parse(value)).find(value => value.event === "change_condition");
+    expect(update.params.ref_video_path).toBeUndefined();
+    await controller.disconnect();
+  });
+
+  it("discards a queued completion when the task is stopped and ignores old messages on restart", async () => {
+    const { controller, rtc } = makeStream();
+    await controller.connect(connection, false, noopEnsureActive, undefined, false);
+    const starting = controller.beginGeneration({ taskID: "first", videoFormat, context: networkContext });
+    emitRemoteVideo(rtc, "bot001", true);
+    await starting;
+    const finish = vi.fn();
+    controller.activateNetworkVideoCompletion(finish);
+    rtc.eventListener?.onCustomMessageReceived("bot001", JSON.stringify({ event: "video_stopped", uid: "first" }));
+    await controller.stopGeneration("first");
+    expect(finish).not.toHaveBeenCalled();
+
+    await controller.beginGeneration({ taskID: "second", videoFormat, context: networkContext });
+    controller.activateNetworkVideoCompletion(finish);
+    rtc.eventListener?.onCustomMessageReceived("bot001", JSON.stringify({ event: "video_stopped", uid: "first" }));
+    await Promise.resolve();
+    expect(finish).not.toHaveBeenCalled();
+    await controller.disconnect();
+  });
+
+  it("never delivers network completion for a camera task", async () => {
+    const { controller, rtc } = makeStream();
+    await controller.connect(connection, false, noopEnsureActive);
+    const starting = controller.beginGeneration({ taskID: "camera", videoFormat, context });
+    emitRemoteVideo(rtc, "bot001", true);
+    await starting;
+    const finish = vi.fn();
+    controller.activateNetworkVideoCompletion(finish);
+    rtc.eventListener?.onCustomMessageReceived("bot001", JSON.stringify({ event: "video_stopped", uid: "camera" }));
+    await Promise.resolve();
+    expect(finish).not.toHaveBeenCalled();
+    await controller.disconnect();
+  });
+
+  it("isolates a throwing completion callback", async () => {
+    const { controller, rtc } = makeStream();
+    await controller.connect(connection, false, noopEnsureActive, undefined, false);
+    const starting = controller.beginGeneration({ taskID: "network", videoFormat, context: networkContext });
+    emitRemoteVideo(rtc, "bot001", true);
+    await starting;
+    controller.activateNetworkVideoCompletion(() => { throw new Error("consumer failed"); });
+    rtc.eventListener?.onCustomMessageReceived("bot001", JSON.stringify({ event: "video_stopped", uid: "network" }));
+    await Promise.resolve();
+    expect(controller.hasGenerationTask).toBe(true);
+    await controller.disconnect();
+  });
   it("uses a video published during join without waiting for another publication event", async () => {
     const { controller, rtc, bindings } = makeStream();
     vi.spyOn(rtc, "joinRoom").mockImplementation(async () => { emitRemoteVideo(rtc, "bot001", true); });

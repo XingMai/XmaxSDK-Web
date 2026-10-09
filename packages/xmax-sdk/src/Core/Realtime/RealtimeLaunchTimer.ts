@@ -32,15 +32,20 @@ export class RealtimeLaunchTimer {
    * 开始新的启动周期并清空旧快照，返回记录相机创建完成的一次性回调。
    */
   startCamera(): () => void {
+    this.start();
+    return this.measure("cameraMs", this.startedAt);
+  }
+
+  /**
+   * 开始新的启动周期；非摄像头源不产生相机和发布耗时。
+   */
+  start(): void {
     this.sequence += 1;
     this.active = true;
     this.startedAt = performance.now();
     this.snapshot = Object.freeze({});
 
-    const complete = this.measure("cameraMs", this.startedAt);
     this.notify();
-
-    return complete;
   }
 
   /**

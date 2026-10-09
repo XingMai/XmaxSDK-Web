@@ -1,5 +1,5 @@
 import { RtcProvider } from "../RtcProvider";
-import type { AREAS, IAgoraRTC, IAgoraRTCClient, IAgoraRTCRemoteUser, ICameraVideoTrack, IMicrophoneAudioTrack } from "agora-rtc-sdk-ng";
+import type { AREAS, IAgoraRTC, IAgoraRTCClient, IAgoraRTCRemoteUser, ICameraVideoTrack, IMicrophoneAudioTrack, ILocalVideoTrack, ILocalAudioTrack } from "agora-rtc-sdk-ng";
 import { XmaxError, XmaxErrorCode } from "../../Errors/XmaxError";
 import { XmaxLogger } from "../../Logging/XmaxLogger";
 import { CameraPosition } from "../../Media/Camera/CameraPosition";
@@ -49,6 +49,8 @@ export class AgoraRtcManager implements RtcManaging {
   private lifecycle = 0;
   private camera?: ICameraVideoTrack;
   private microphone?: IMicrophoneAudioTrack;
+  private externalVideo?: ILocalVideoTrack;
+  private externalAudio?: ILocalAudioTrack;
   private connection?: AgoraRoomJoinConfiguration;
   private roomVersion = 0;
 
@@ -143,12 +145,16 @@ export class AgoraRtcManager implements RtcManaging {
   async destroy(): Promise<void> {
     this.lifecycle++;
     const client = this.client;
-    this.listener = undefined;
+    // 保留上层事件接收者，允许同一个 Manager close 后重新创建媒体源；旧 client 的监听单独移除。
     this.clearRoom();
     this.client = undefined;
     client?.removeAllListeners();
     this.camera?.close();
     this.microphone?.close();
+    this.externalVideo?.close();
+    this.externalAudio?.close();
+    this.externalVideo = undefined;
+    this.externalAudio = undefined;
     this.camera = undefined;
     this.microphone = undefined;
 
@@ -169,7 +175,9 @@ export class AgoraRtcManager implements RtcManaging {
    */
   async startCameraCapture(options: RtcCameraCaptureOptions): Promise<MediaStreamTrack> {
     const client = this.requireClient();
-    if (this.camera) throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Camera capture is already running");
+    if (this.camera || this.externalVideo) {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "A local video source is already active");
+    }
 
     try {
       const captureSize = rtcOrientedVideoSize(options);
@@ -205,11 +213,45 @@ export class AgoraRtcManager implements RtcManaging {
   }
 
   /**
-   * 应用公共编码配置，补偿移动端竖屏的宽高转置。
+   * 将外部原生轨包装为 Agora 本地轨，不申请设备权限；失败时释放本次克隆。
+   */
+  async setExternalMediaTracks(tracks: { videoTrack: MediaStreamTrack; audioTrack?: MediaStreamTrack }): Promise<void> {
+    this.requireClient();
+    if (this.camera || this.microphone || this.externalVideo) {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Release the current local media before attaching external tracks");
+    }
+    if (tracks.videoTrack.kind !== "video" || tracks.videoTrack.readyState !== "live" ||
+      (tracks.audioTrack && (tracks.audioTrack.kind !== "audio" || tracks.audioTrack.readyState !== "live"))) {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "External media requires live video and optional audio tracks");
+    }
+
+    const video = tracks.videoTrack.clone();
+    let audio: MediaStreamTrack | undefined;
+    let wrappedVideo: ILocalVideoTrack | undefined;
+    let wrappedAudio: ILocalAudioTrack | undefined;
+    try {
+      audio = tracks.audioTrack?.clone();
+      wrappedVideo = this.sdk!.createCustomVideoTrack({ mediaStreamTrack: video });
+      if (audio) {
+        wrappedAudio = this.sdk!.createCustomAudioTrack({ mediaStreamTrack: audio, encoderConfig: "music_standard" });
+      }
+      this.externalVideo = wrappedVideo;
+      this.externalAudio = wrappedAudio;
+    } catch (error) {
+      wrappedVideo?.close();
+      wrappedAudio?.close();
+      video.stop();
+      audio?.stop();
+      throw this.mapError(error);
+    }
+  }
+
+  /**
+   * 应用公共编码配置；仅相机源补偿移动端转置，Canvas 外部源使用原始方向。
    */
   async configureVideoEncoding(config: VideoEncodingConfiguration): Promise<void> {
-    const camera = this.requireCamera();
-    const encodingSize = rtcOrientedVideoSize(config);
+    const camera = this.requireLocalVideo();
+    const encodingSize = this.externalVideo ? config : rtcOrientedVideoSize(config);
     await this.run(async () => {
       await camera.setEncoderConfiguration({
         width: encodingSize.width,
@@ -345,12 +387,14 @@ export class AgoraRtcManager implements RtcManaging {
       throw this.cancelled();
     }
 
-    if (this.videoPublishRequested && this.camera) {
-      await this.run(() => client.publish(this.camera!));
+    const video = this.externalVideo ?? this.camera;
+    const audio = this.externalVideo ? this.externalAudio : this.microphone;
+    if (this.videoPublishRequested && video) {
+      await this.run(() => client.publish(video));
       this.ensureRoomCurrent(client, version);
     }
-    if (this.audioPublishRequested && this.microphone) {
-      await this.run(() => client.publish(this.microphone!));
+    if (this.audioPublishRequested && audio) {
+      await this.run(() => client.publish(audio));
       this.ensureRoomCurrent(client, version);
     }
 
@@ -375,7 +419,7 @@ export class AgoraRtcManager implements RtcManaging {
    */
   async publishLocalVideo(): Promise<void> {
     const client = this.requireClient();
-    const camera = this.requireCamera();
+    const camera = this.requireLocalVideo();
     this.videoPublishRequested = true;
     await this.rejoinOperation;
     if (client !== this.client || !this.videoPublishRequested) throw this.cancelled();
@@ -389,11 +433,14 @@ export class AgoraRtcManager implements RtcManaging {
   async unpublishLocalVideo(): Promise<void> {
     this.videoPublishRequested = false;
     if (this.rejoinTask || this.tokenExpired) return;
-    if (this.client && this.camera) await this.run(() => this.client!.unpublish(this.camera!));
+    const video = this.externalVideo ?? this.camera;
+    if (this.client && video) {
+      await this.run(() => this.client!.unpublish(video));
+    }
   }
 
   /**
-   * 首次发布时申请麦克风；取消后的迟到采集立即释放。
+   * 外部源只发布提供的音轨；相机源首次发布时申请麦克风，迟到采集立即释放。
    */
   async publishLocalAudio(): Promise<void> {
     const client = this.requireClient();
@@ -401,6 +448,13 @@ export class AgoraRtcManager implements RtcManaging {
     await this.rejoinOperation;
     const version = this.roomVersion;
     if (client !== this.client || !this.audioPublishRequested) throw this.cancelled();
+    if (this.externalVideo) {
+      const audio = this.externalAudio;
+      if (audio && !client.localTracks.includes(audio)) {
+        await this.run(() => client.publish(audio));
+      }
+      return;
+    }
     try {
       if (!this.microphone) {
         const track = await this.sdk!.createMicrophoneAudioTrack();
@@ -419,7 +473,10 @@ export class AgoraRtcManager implements RtcManaging {
   async unpublishLocalAudio(): Promise<void> {
     this.audioPublishRequested = false;
     if (this.rejoinTask || this.tokenExpired) return;
-    if (this.client && this.microphone) await this.run(() => this.client!.unpublish(this.microphone!));
+    const audio = this.externalVideo ? this.externalAudio : this.microphone;
+    if (this.client && audio) {
+      await this.run(() => this.client!.unpublish(audio));
+    }
   }
 
   /**
@@ -659,6 +716,17 @@ export class AgoraRtcManager implements RtcManaging {
   private requireCamera(): ICameraVideoTrack {
     if (!this.camera) throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Camera capture is not running");
     return this.camera;
+  }
+
+  /**
+   * 获取当前可编码、发布的视频轨，不要求来源为摄像头。
+   */
+  private requireLocalVideo(): ILocalVideoTrack {
+    const video = this.externalVideo ?? this.camera;
+    if (!video) {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Local video source is not prepared");
+    }
+    return video;
   }
 
   /**

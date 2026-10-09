@@ -100,6 +100,8 @@ describe("RealtimeSessionService", () => {
   it.each([
     [RealtimeModel.x2_0, "x2.0"],
     [RealtimeModel.x2_0_trtc, "x2.0-trtc"],
+    ["future-model", "future-model"],
+    [" Future/Model:v2 ", " Future/Model:v2 "],
   ] as const)("creates a %s session and parses TRTC connection info", async (model, modelID) => {
     const api = new ApiServicingStub();
     api.postResponses = [sessionPayload()];

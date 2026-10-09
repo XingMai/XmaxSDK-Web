@@ -7,6 +7,7 @@ import { RoomJoinConfiguration } from "../src/Foundation/RTC/RoomJoinConfigurati
 import type { RtcEventListener } from "../src/Foundation/RTC/RtcEventListener";
 import { RtcEngineManager, type RtcEngine } from "../src/Foundation/RTC/TRTC/RtcEngineManager";
 import { TrtcRtcManager } from "../src/Foundation/RTC/TRTC/TrtcRtcManager";
+import { RtcVideoEncoderPreference } from "../src/Foundation/RTC/VideoEncodingConfiguration";
 
 class FakeRtcEngine {
   destroyed = false;
@@ -129,6 +130,115 @@ const joinConfig = new RoomJoinConfiguration({
   sdkAppID: "1600126360",
   userSig: "sig-v1",
   privateMapKey: "pmk-v1",
+});
+
+describe("TrtcRtcManager file media", () => {
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+  function track(kind: string) {
+    const cloned = { kind, readyState: "live", stop: vi.fn() } as unknown as MediaStreamTrack;
+    const original = { kind, readyState: "live", stop: vi.fn(), clone: vi.fn(() => cloned) } as unknown as MediaStreamTrack;
+    return { original, cloned };
+  }
+
+  it.each([true, false])("prepares, publishes and rejoins with file audio=%s without device capture", async (includeAudio) => {
+    const { manager, engine } = makeManager();
+    const video = track("video"), audio = track("audio");
+    const startAudio = vi.spyOn(engine, "startLocalAudio");
+    await manager.initialize();
+    await manager.setExternalMediaTracks({ videoTrack: video.original, audioTrack: includeAudio ? audio.original : undefined });
+    expect(engine.startLocalVideoCalls).toEqual([{ publish: false, option: { videoTrack: video.cloned } }]);
+    if (includeAudio) {
+      expect(startAudio).toHaveBeenCalledWith({ publish: false, option: {
+        audioTrack: audio.cloned, echoCancellation: false, autoGainControl: false, noiseSuppression: false,
+      } });
+    } else {
+      expect(startAudio).not.toHaveBeenCalled();
+    }
+    vi.stubGlobal("navigator", { userAgent: "iPhone", maxTouchPoints: 1 });
+    vi.stubGlobal("window", { screen: { orientation: { type: "portrait-primary" } } });
+    await manager.configureVideoEncoding({ width: 1024, height: 1920, frameRate: 30, minimumBitrate: 4000, maximumBitrate: 8000, encoderPreference: RtcVideoEncoderPreference.maintainFramerate });
+    expect(engine.updateLocalVideoCalls).toContainEqual({ option: {
+      profile: { width: 1024, height: 1920, frameRate: 30, bitrate: 4000 }, qosPreference: "smooth",
+    } });
+    await manager.joinRoom(joinConfig);
+    await manager.publishLocalVideo();
+    await manager.publishLocalAudio();
+    await manager.unpublishLocalVideo();
+    await manager.unpublishLocalAudio();
+    await manager.leaveRoom();
+    await manager.joinRoom(joinConfig);
+    await manager.publishLocalVideo();
+    await manager.publishLocalAudio();
+    expect(engine.startLocalVideoCalls).toHaveLength(1);
+    expect(engine.startLocalAudioCalls).toBe(includeAudio ? 1 : 0);
+    expect(engine.updateLocalVideoCalls.at(-1)).toEqual({ publish: true });
+    expect(engine.updateLocalAudioCalls).toEqual(includeAudio ? [{ publish: true }, { publish: false }, { publish: true }] : []);
+    await manager.stopCameraCapture();
+    expect(engine.stopLocalVideoCalls).toBe(0);
+    await expect(manager.switchCameraCapture(CameraPosition.back)).rejects.toThrow("Camera capture is not running");
+    await expect(manager.startCameraCapture({ width: 640, height: 480, frameRate: 30, position: CameraPosition.front })).rejects.toThrow();
+    await manager.destroy();
+    expect(video.cloned.stop).toHaveBeenCalled();
+    expect(video.original.stop).not.toHaveBeenCalled();
+    expect(audio.original.stop).not.toHaveBeenCalled();
+    expect(audio.cloned.stop).toHaveBeenCalledTimes(includeAudio ? 1 : 0);
+  });
+
+  it("rolls back partial registration and permits retry without stopping original tracks", async () => {
+    const { manager, engine } = makeManager();
+    const video = track("video"), audio = track("audio");
+    await manager.initialize();
+    vi.spyOn(engine, "startLocalAudio").mockRejectedValueOnce(new Error("audio failed"));
+    await expect(manager.setExternalMediaTracks({ videoTrack: video.original, audioTrack: audio.original })).rejects.toThrow("audio failed");
+    expect(video.cloned.stop).toHaveBeenCalledOnce();
+    expect(audio.cloned.stop).toHaveBeenCalledOnce();
+    expect(video.original.stop).not.toHaveBeenCalled();
+    expect(engine.stopLocalVideoCalls).toBe(1);
+    await manager.setExternalMediaTracks({ videoTrack: track("video").original });
+    await manager.destroy();
+  });
+
+  it("keeps event delivery after engine recreation and ignores old engine events", async () => {
+    const engines = [new FakeRtcEngine(), new FakeRtcEngine()];
+    const manager = new TrtcRtcManager(new RtcEngineManager(async () => engines.shift()! as unknown as RtcEngine));
+    const old = engines[0]!, next = engines[1]!;
+    const listener = { onRemoteVideoPublished: vi.fn(), onCustomMessageReceived: vi.fn() };
+    manager.setEventListener(listener);
+    await manager.initialize();
+    await manager.destroy();
+    await manager.initialize();
+    old.emit("remote-video-available", { userId: "old", streamType: "main" });
+    next.emit("remote-video-available", { userId: "new", streamType: "main" });
+    expect(listener.onRemoteVideoPublished).toHaveBeenCalledOnce();
+    expect(listener.onRemoteVideoPublished).toHaveBeenCalledWith("new", true);
+    await manager.destroy();
+  });
+
+  it("cancels late preparation without starting audio on a destroyed engine", async () => {
+    const { manager, engine } = makeManager();
+    const video = track("video"), audio = track("audio");
+    await manager.initialize();
+    let finish!: () => void;
+    vi.spyOn(engine, "startLocalVideo").mockReturnValueOnce(new Promise<void>(resolve => { finish = resolve; }));
+    const pending = expect(manager.setExternalMediaTracks({ videoTrack: video.original, audioTrack: audio.original })).rejects.toMatchObject({ code: "CANCELLED" });
+    await manager.destroy();
+    finish();
+    await pending;
+    expect(engine.startLocalAudioCalls).toBe(0);
+    expect(video.original.stop).not.toHaveBeenCalled();
+    expect(video.cloned.stop).toHaveBeenCalled();
+  });
+
+  it("rejects invalid tracks and an existing camera without replacing media", async () => {
+    const { manager, engine } = makeManager();
+    await manager.initialize();
+    await expect(manager.setExternalMediaTracks({ videoTrack: track("audio").original })).rejects.toMatchObject({ code: "INVALID_CONFIGURATION" });
+    await manager.startCameraCapture({ width: 640, height: 480, frameRate: 30, position: CameraPosition.front });
+    await expect(manager.setExternalMediaTracks({ videoTrack: track("video").original })).rejects.toMatchObject({ code: "INVALID_CONFIGURATION" });
+    expect(engine.startLocalVideoCalls).toHaveLength(1);
+    await manager.destroy();
+  });
 });
 
 describe("TrtcRtcManager performance logging", () => {

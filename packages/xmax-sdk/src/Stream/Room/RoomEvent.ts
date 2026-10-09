@@ -55,9 +55,20 @@ export class RoomEvent {
   static start(options: RoomEventGenerationOptions): string {
     return RoomEvent.encode({
       event: "start",
-      params: RoomEvent.generationParameters(options),
+      params: {
+        ...RoomEvent.generationParameters(options),
+        ...(options.context.referenceVideo && {
+          ref_video_path: options.context.referenceVideo.path,
+          sample_method: options.context.referenceVideo.sampleMethod,
+          target_size: [
+            options.targetSize?.width ?? options.videoFormat.width,
+            options.targetSize?.height ?? options.videoFormat.height,
+          ],
+        }),
+      },
       user_id: options.userID,
       uid: options.taskID,
+      ...(options.context.referenceVideo && { session_uid: options.taskID }),
     });
   }
 

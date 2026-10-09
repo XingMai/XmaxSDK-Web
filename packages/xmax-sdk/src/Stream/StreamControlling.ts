@@ -33,6 +33,11 @@ export type RemoteStreamListener = (binding: RemoteStreamBinding | null) => void
  */
 export interface StreamGenerationOptions {
   /**
+   * 开始信令发送成功后启动本地文件播放，不等待生成确认；更新条件时不调用。
+   */
+  onStartSent?: () => Promise<void>;
+
+  /**
    * 当前生成任务的唯一标识。
    */
   taskID: string;
@@ -95,6 +100,7 @@ export interface StreamControlling {
    * @param includeLocalAudio 是否随本地视频一起发布本地音频。
    * @param ensureActive 在异步边界校验当前连接操作仍然有效的回调。
    * @param beforePublish 发布前的可选媒体就绪检查，不阻塞进房。
+   * @param publishLocalMedia 是否发布本地媒体，默认 true；网络视频源传 false。
    * @throws 连接已取消，或 RTC 进房、房间配置与本地流发布失败时抛出错误。
    */
   connect(
@@ -102,6 +108,7 @@ export interface StreamControlling {
     includeLocalAudio: boolean,
     ensureActive: () => void,
     beforePublish?: () => Promise<void>,
+    publishLocalMedia?: boolean,
   ): Promise<void>;
 
   /**
@@ -129,6 +136,11 @@ export interface StreamControlling {
    * @throws 当前生成流尚未确认，或 RTC 音量和订阅配置失败时抛出错误。
    */
   activateRemoteAudio(): Promise<void>;
+
+  /**
+   * 生成就绪后启用网络视频完成回调；提前收到的完成消息会延后交付一次。
+   */
+  activateNetworkVideoCompletion(onFinish?: () => void): void;
 
   /**
    * 发送生成条件变更信令。

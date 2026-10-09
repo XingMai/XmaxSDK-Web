@@ -33,7 +33,7 @@ function setup(environment = XmaxEnvironment.china) {
   const client = {
     on: vi.fn((event: string, handler: (...args: any[]) => void) => { handlers.set(event, handler); }),
     removeAllListeners: vi.fn(), join: vi.fn(async () => "rtc-user"), leave: vi.fn(async () => {}),
-    publish: vi.fn(async () => {}), unpublish: vi.fn(async () => {}),
+    publish: vi.fn(async (_track: unknown) => {}), unpublish: vi.fn(async () => {}),
     subscribe: vi.fn(async (_user: unknown, kind: string): Promise<any> => kind === "audio" ? audio : camera),
     unsubscribe: vi.fn(async () => {}), renewToken: vi.fn(async () => {}),
     sendStreamMessage: vi.fn(async (_message: string, _retry: boolean) => {}),
@@ -44,6 +44,8 @@ function setup(environment = XmaxEnvironment.china) {
     getLocalAudioStats: vi.fn(() => ({})), getRemoteAudioStats: vi.fn(() => ({})),
   };
   const sdk = { setArea: vi.fn(), setLogLevel: vi.fn(), createClient: vi.fn(() => client),
+    createCustomVideoTrack: vi.fn(() => ({ ...camera, close: vi.fn() })),
+    createCustomAudioTrack: vi.fn(() => ({ close: vi.fn() })),
     createCameraVideoTrack: vi.fn(async () => camera), createMicrophoneAudioTrack: vi.fn(async () => microphone) };
   const loadSDK = vi.fn(async () => sdk as unknown as IAgoraRTC);
   const manager = new AgoraRtcManager({ environment, loadSDK });
@@ -62,6 +64,93 @@ afterEach(async () => {
 });
 
 describe("AgoraRtcManager", () => {
+  function externalTracks(includeAudio = true) {
+    const track = (kind: string) => {
+      const cloned = { kind, readyState: "live", stop: vi.fn() };
+      return { kind, readyState: "live", stop: vi.fn(), clone: vi.fn(() => cloned) };
+    };
+    return { videoTrack: track("video"), audioTrack: includeAudio ? track("audio") : undefined };
+  }
+
+  it("publishes cloned file tracks without accessing devices and preserves custom dimensions on mobile", async () => {
+    vi.stubGlobal("navigator", { userAgent: "iPhone", maxTouchPoints: 5 });
+    vi.stubGlobal("window", { screen: { orientation: { type: "portrait-primary" } } });
+    const s = setup();
+    await s.manager.initialize();
+    const tracks = externalTracks();
+    await s.manager.setExternalMediaTracks(tracks as unknown as { videoTrack: MediaStreamTrack; audioTrack: MediaStreamTrack });
+    const video = s.sdk.createCustomVideoTrack.mock.results[0]!.value;
+    const audio = s.sdk.createCustomAudioTrack.mock.results[0]!.value;
+    expect(s.sdk.createCustomVideoTrack).toHaveBeenCalledWith({ mediaStreamTrack: tracks.videoTrack.clone.mock.results[0]!.value });
+    expect(s.client.publish).not.toHaveBeenCalled();
+    await s.manager.configureVideoEncoding({ width: 1024, height: 1920, frameRate: 30, minimumBitrate: 3000, maximumBitrate: 6000, encoderPreference: RtcVideoEncoderPreference.maintainQuality });
+    expect(video.setEncoderConfiguration).toHaveBeenCalledWith({ width: 1024, height: 1920, frameRate: 30, bitrateMin: 3000, bitrateMax: 6000 });
+    await s.manager.joinRoom(credentials);
+    await s.manager.publishLocalVideo();
+    await s.manager.publishLocalAudio();
+    expect(s.client.publish.mock.calls.map(call => call[0])).toEqual([video, audio]);
+    expect(s.sdk.createCameraVideoTrack).not.toHaveBeenCalled();
+    expect(s.sdk.createMicrophoneAudioTrack).not.toHaveBeenCalled();
+    await expect(s.manager.switchCameraCapture(CameraPosition.back)).rejects.toMatchObject({ code: "INVALID_CONFIGURATION" });
+    await s.manager.unpublishLocalVideo();
+    await s.manager.unpublishLocalAudio();
+    expect(video.close).not.toHaveBeenCalled();
+    await s.manager.destroy();
+    expect(video.close).toHaveBeenCalledOnce();
+    expect(audio.close).toHaveBeenCalledOnce();
+    expect(tracks.videoTrack.stop).not.toHaveBeenCalled();
+    expect(tracks.audioTrack!.stop).not.toHaveBeenCalled();
+  });
+
+  it("does not fall back to a microphone for an external video without audio", async () => {
+    const s = setup();
+    await s.manager.initialize();
+    await s.manager.setExternalMediaTracks(externalTracks(false) as unknown as { videoTrack: MediaStreamTrack });
+    await s.manager.joinRoom(credentials);
+    await s.manager.publishLocalAudio();
+    expect(s.client.publish).not.toHaveBeenCalled();
+    expect(s.sdk.createMicrophoneAudioTrack).not.toHaveBeenCalled();
+  });
+
+  it("restores both custom tracks after an expired-token rejoin", async () => {
+    const s = setup();
+    await s.manager.initialize();
+    await s.manager.setExternalMediaTracks(externalTracks() as unknown as { videoTrack: MediaStreamTrack; audioTrack: MediaStreamTrack });
+    await s.manager.joinRoom(credentials);
+    await s.manager.publishLocalVideo();
+    await s.manager.publishLocalAudio();
+    s.client.publish.mockClear();
+    s.emit("token-privilege-did-expire");
+    await s.manager.updateCredentials({ ...credentials, roomToken: "renewed" });
+    expect(s.client.publish.mock.calls.map(call => call[0])).toEqual([
+      s.sdk.createCustomVideoTrack.mock.results[0]!.value, s.sdk.createCustomAudioTrack.mock.results[0]!.value,
+    ]);
+    expect(s.sdk.createMicrophoneAudioTrack).not.toHaveBeenCalled();
+  });
+
+  it("cleans up a partial custom-track failure without stopping the original tracks", async () => {
+    const s = setup();
+    await s.manager.initialize();
+    const tracks = externalTracks();
+    s.sdk.createCustomAudioTrack.mockImplementationOnce(() => { throw new Error("audio failure"); });
+    await expect(s.manager.setExternalMediaTracks(tracks as unknown as { videoTrack: MediaStreamTrack; audioTrack: MediaStreamTrack })).rejects.toThrow();
+    expect(s.sdk.createCustomVideoTrack.mock.results[0]!.value.close).toHaveBeenCalledOnce();
+    expect(tracks.videoTrack.clone.mock.results[0]!.value.stop).toHaveBeenCalledOnce();
+    expect(tracks.videoTrack.stop).not.toHaveBeenCalled();
+    await s.manager.setExternalMediaTracks(tracks as unknown as { videoTrack: MediaStreamTrack; audioTrack: MediaStreamTrack });
+  });
+
+  it("rejects mixed camera and custom sources, and forwards events after close/reinitialize", async () => {
+    const s = setup();
+    await s.manager.initialize();
+    await s.manager.setExternalMediaTracks(externalTracks(false) as unknown as { videoTrack: MediaStreamTrack });
+    await expect(s.manager.startCameraCapture({ width: 1920, height: 1024, frameRate: 30, position: CameraPosition.front })).rejects.toThrow();
+    await s.manager.destroy();
+    await s.manager.initialize();
+    await s.manager.joinRoom(credentials);
+    s.emit("stream-message", "bot", "message");
+    expect(s.listener.onCustomMessageReceived).toHaveBeenCalledWith("bot", "message");
+  });
   it.each([[XmaxEnvironment.china, "CHINA"], [XmaxEnvironment.global, "GLOBAL"]])("loads lazily and maps %s to %s", async (environment, region) => {
     const s = setup(environment as XmaxEnvironment);
     expect(s.loadSDK).not.toHaveBeenCalled();

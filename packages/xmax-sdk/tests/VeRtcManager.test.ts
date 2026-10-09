@@ -30,6 +30,10 @@ function setup() {
     on: vi.fn((event: string, handler: (...args: any[]) => void) => handlers.set(event, handler)), removeAllListeners: vi.fn(),
     setVideoEncoderConfig: vi.fn(async (_config: unknown) => {}), startVideoCapture: vi.fn(async () => ({})), stopVideoCapture: vi.fn(async () => {}),
     setVideoCaptureDevice: vi.fn(async () => {}), startAudioCapture: vi.fn(async () => ({})), stopAudioCapture: vi.fn(async () => {}),
+    setVideoSourceType: vi.fn(async (_index: number, _type: number) => {}),
+    setAudioSourceType: vi.fn(async (_index: number, _type: number) => {}),
+    setExternalVideoTrack: vi.fn(async (_index: number, _track: MediaStreamTrack) => {}),
+    setExternalAudioTrack: vi.fn(async (_index: number, _track: MediaStreamTrack) => {}),
     getLocalStreamTrack: vi.fn(() => native), getRemoteStreamTrack: vi.fn((_user: string, _index: number, kind: string) => kind === "audio" ? audio : remote),
     joinRoom: vi.fn(async () => {}), leaveRoom: vi.fn(async () => {}), updateToken: vi.fn(async (_token: string) => {}),
     publishStream: vi.fn(async (_type: number) => {}), unpublishStream: vi.fn(async (_type: number) => {}),
@@ -40,6 +44,8 @@ function setup() {
     default: { createEngine: vi.fn(() => engine), destroyEngine: vi.fn(), setLogConfig: vi.fn(), events: new Proxy({}, { get: (_, name) => name }) },
     RTCAutoPlayPolicy: { PLAY_MANUALLY: 2 }, VideoCodecType: { H264: "H264" }, MediaType: { AUDIO: 1, VIDEO: 2, AUDIO_AND_VIDEO: 3 },
     StreamIndex: { STREAM_INDEX_MAIN: 0 }, RoomProfileType: { communication: "communication" }, ConnectionState: { CONNECTION_STATE_RECONNECTED: 5 },
+    VideoSourceType: { VIDEO_SOURCE_TYPE_EXTERNAL: 0, VIDEO_SOURCE_TYPE_INTERNAL: 1 },
+    AudioSourceType: { AUDIO_SOURCE_TYPE_EXTERNAL: 0, AUDIO_SOURCE_TYPE_INTERNAL: 1 },
   };
   const loadSDK = vi.fn(async () => sdk as unknown as SDK);
   const manager = new VeRtcManager({ loadSDK }); managers.push(manager);
@@ -55,6 +61,115 @@ function setup() {
 afterEach(async () => {
   for (const manager of managers.splice(0)) await manager.destroy();
   vi.unstubAllGlobals(); vi.useRealTimers();
+});
+
+describe("VeRTC file media", () => {
+  function track(kind: string) {
+    const cloned = { kind, readyState: "live", stop: vi.fn() } as unknown as MediaStreamTrack;
+    const original = { kind, readyState: "live", stop: vi.fn(), clone: vi.fn(() => cloned) } as unknown as MediaStreamTrack;
+    return { original, cloned };
+  }
+
+  it.each([true, false])("publishes and rejoins using file tracks with audio=%s", async (includeAudio) => {
+    const s = setup(), video = track("video"), audio = track("audio");
+    await s.manager.initialize();
+    await s.manager.setExternalMediaTracks({ videoTrack: video.original, audioTrack: includeAudio ? audio.original : undefined });
+    expect(s.engine.setVideoSourceType).toHaveBeenCalledWith(0, 0);
+    expect(s.engine.setExternalVideoTrack).toHaveBeenCalledWith(0, video.cloned);
+    expect(s.engine.setVideoSourceType.mock.invocationCallOrder[0]).toBeLessThan(s.engine.setExternalVideoTrack.mock.invocationCallOrder[0]!);
+    if (includeAudio) {
+      expect(s.engine.setAudioSourceType).toHaveBeenCalledWith(0, 0);
+      expect(s.engine.setExternalAudioTrack).toHaveBeenCalledWith(0, audio.cloned);
+      expect(s.engine.setAudioSourceType.mock.invocationCallOrder[0]).toBeLessThan(s.engine.setExternalAudioTrack.mock.invocationCallOrder[0]!);
+    } else {
+      expect(s.engine.setAudioSourceType).not.toHaveBeenCalled();
+      expect(s.engine.setExternalAudioTrack).not.toHaveBeenCalled();
+    }
+    expect(s.engine.publishStream).not.toHaveBeenCalled();
+    vi.stubGlobal("navigator", { userAgent: "iPhone", maxTouchPoints: 1 });
+    vi.stubGlobal("window", { screen: { orientation: { type: "portrait-primary" } } });
+    await s.manager.configureVideoEncoding({ width: 1024, height: 1920, frameRate: 30, minimumBitrate: 4000, maximumBitrate: 8000, encoderPreference: RtcVideoEncoderPreference.maintainFramerate });
+    expect(s.engine.setVideoEncoderConfig).toHaveBeenLastCalledWith({ width: 1024, height: 1920, frameRate: 30, maxKbps: 8000, preferCodecName: "H264", contentHint: "motion" });
+    await s.manager.joinRoom(credentials);
+    await s.manager.publishLocalVideo();
+    await s.manager.publishLocalAudio();
+    await s.manager.unpublishLocalVideo();
+    await s.manager.unpublishLocalAudio();
+    await s.manager.leaveRoom();
+    await s.manager.joinRoom(credentials);
+    await s.manager.publishLocalVideo();
+    await s.manager.publishLocalAudio();
+    expect(s.engine.publishStream.mock.calls.map(([type]) => type)).toEqual(includeAudio ? [2, 1, 2, 1] : [2, 2]);
+    expect(s.engine.startVideoCapture).not.toHaveBeenCalled();
+    expect(s.engine.startAudioCapture).not.toHaveBeenCalled();
+    await s.manager.stopCameraCapture();
+    expect(s.engine.stopVideoCapture).not.toHaveBeenCalled();
+    await expect(s.manager.switchCameraCapture(CameraPosition.back)).rejects.toThrow();
+    await expect(s.capture()).rejects.toThrow();
+    await s.manager.destroy();
+    expect(video.cloned.stop).toHaveBeenCalledOnce();
+    expect(audio.cloned.stop).toHaveBeenCalledTimes(includeAudio ? 1 : 0);
+    expect(video.original.stop).not.toHaveBeenCalled();
+    expect(audio.original.stop).not.toHaveBeenCalled();
+  });
+
+  it.each(["token", "publish privilege"])("restores file publication after %s expiry", async (expiry) => {
+    const s = setup();
+    await s.manager.initialize();
+    await s.manager.setExternalMediaTracks({ videoTrack: track("video").original, audioTrack: track("audio").original });
+    await s.manager.joinRoom(credentials);
+    await s.manager.publishLocalVideo();
+    await s.manager.publishLocalAudio();
+    if (expiry === "token") {
+      s.emit("onError", { errorCode: "TOKEN_EXPIRED" });
+    } else {
+      s.emit("onTokenPublishPrivilegeDidExpired");
+    }
+    await s.manager.updateCredentials({ ...credentials, roomToken: "renewed" });
+    expect(s.engine.publishStream.mock.calls.map(([type]) => type)).toEqual([2, 1, 2, 1]);
+    expect(s.engine.startAudioCapture).not.toHaveBeenCalled();
+    expect(s.engine.startVideoCapture).not.toHaveBeenCalled();
+  });
+
+  it("rolls back partial binding and can prepare another source", async () => {
+    const s = setup(), video = track("video"), audio = track("audio");
+    await s.manager.initialize();
+    s.engine.setExternalAudioTrack.mockRejectedValueOnce(new Error("audio failed"));
+    await expect(s.manager.setExternalMediaTracks({ videoTrack: video.original, audioTrack: audio.original })).rejects.toMatchObject({ code: "RTC_ERROR" });
+    expect(s.engine.setVideoSourceType).toHaveBeenLastCalledWith(0, 1);
+    expect(s.engine.setAudioSourceType).toHaveBeenLastCalledWith(0, 1);
+    expect(video.cloned.stop).toHaveBeenCalledOnce();
+    expect(audio.cloned.stop).toHaveBeenCalledOnce();
+    expect(video.original.stop).not.toHaveBeenCalled();
+    await s.manager.setExternalMediaTracks({ videoTrack: track("video").original });
+    expect(s.engine.startVideoCapture).not.toHaveBeenCalled();
+  });
+
+  it("does not continue binding on an engine destroyed during preparation", async () => {
+    const s = setup(), video = track("video"), binding = deferred<void>();
+    await s.manager.initialize();
+    s.engine.setVideoSourceType.mockReturnValueOnce(binding.promise);
+    const pending = expect(s.manager.setExternalMediaTracks({ videoTrack: video.original })).rejects.toMatchObject({ code: "CANCELLED" });
+    await s.manager.destroy();
+    binding.resolve();
+    await pending;
+    expect(s.engine.setExternalVideoTrack).not.toHaveBeenCalled();
+    expect(video.cloned.stop).toHaveBeenCalled();
+    expect(video.original.stop).not.toHaveBeenCalled();
+    await s.manager.initialize();
+    await s.manager.joinRoom(credentials);
+    s.emit("onTokenWillExpire");
+    expect(s.listener.onTokenWillExpire).toHaveBeenCalledOnce();
+  });
+
+  it("rejects invalid tracks and an existing camera without changing the source", async () => {
+    const s = setup();
+    await s.manager.initialize();
+    await expect(s.manager.setExternalMediaTracks({ videoTrack: track("audio").original })).rejects.toMatchObject({ code: "INVALID_CONFIGURATION" });
+    await s.capture();
+    await expect(s.manager.setExternalMediaTracks({ videoTrack: track("video").original })).rejects.toMatchObject({ code: "INVALID_CONFIGURATION" });
+    expect(s.engine.setVideoSourceType).not.toHaveBeenCalled();
+  });
 });
 
 describe("VeRTC media and protocol", () => {

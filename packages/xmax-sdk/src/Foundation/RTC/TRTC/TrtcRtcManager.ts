@@ -118,6 +118,12 @@ export class TrtcRtcManager implements RtcManaging {
   private isAudioCapturing = false;
 
   /**
+   * 外部媒体的克隆轨；原始轨道由媒体源管理。
+   */
+  private externalVideo?: MediaStreamTrack;
+  private externalAudio?: MediaStreamTrack;
+
+  /**
    * 房间状态
    */
   private isInRoom = false;
@@ -162,7 +168,10 @@ export class TrtcRtcManager implements RtcManaging {
   async destroy(): Promise<void> {
     const lease = this.lease;
     this.lease = undefined;
-    this.eventListener = undefined;
+    const externalVideo = this.externalVideo;
+    const externalAudio = this.externalAudio;
+    this.externalVideo = undefined;
+    this.externalAudio = undefined;
     this.isCapturing = false;
     this.isAudioCapturing = false;
     this.isInRoom = false;
@@ -171,6 +180,8 @@ export class TrtcRtcManager implements RtcManaging {
     this.removeStatsListeners = undefined;
 
     if (!lease) {
+      externalVideo?.stop();
+      externalAudio?.stop();
       return;
     }
 
@@ -186,7 +197,56 @@ export class TrtcRtcManager implements RtcManaging {
       // 引擎销毁前停止采集失败不影响租约释放。
     }
 
+    externalVideo?.stop();
+    externalAudio?.stop();
     this.engineManager.release(lease);
+  }
+
+  /**
+   * 准备外部音视频轨但不发布；失败时释放克隆轨，不影响原始媒体源。
+   */
+  async setExternalMediaTracks(tracks: { videoTrack: MediaStreamTrack; audioTrack?: MediaStreamTrack }): Promise<void> {
+    const engine = this.requireEngine();
+    if (this.isCapturing || this.isAudioCapturing || this.externalVideo) {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Release the current local media before attaching external tracks");
+    }
+    if (tracks.videoTrack.kind !== "video" || tracks.videoTrack.readyState !== "live" ||
+        (tracks.audioTrack && (tracks.audioTrack.kind !== "audio" || tracks.audioTrack.readyState !== "live"))) {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "External media tracks must be live video/audio tracks");
+    }
+
+    const video = tracks.videoTrack.clone();
+    this.externalVideo = video;
+    let audio: MediaStreamTrack | undefined;
+    try {
+      audio = tracks.audioTrack?.clone();
+      this.externalAudio = audio;
+      await engine.startLocalVideo({ publish: false, option: { videoTrack: video } });
+      if (this.lease?.engine !== engine) {
+        throw new XmaxError(XmaxErrorCode.cancelled, "External media preparation was cancelled");
+      }
+      if (audio) {
+        await engine.startLocalAudio({
+          publish: false,
+          option: { audioTrack: audio, echoCancellation: false, autoGainControl: false, noiseSuppression: false },
+        });
+        if (this.lease?.engine !== engine) {
+          throw new XmaxError(XmaxErrorCode.cancelled, "External media preparation was cancelled");
+        }
+      }
+    } catch (error) {
+      if (this.lease?.engine === engine) {
+        await engine.stopLocalAudio().catch(() => {});
+        await engine.stopLocalVideo().catch(() => {});
+      }
+      if (this.externalVideo === video) {
+        this.externalVideo = undefined;
+        this.externalAudio = undefined;
+      }
+      video.stop();
+      audio?.stop();
+      throw this.mapError(error);
+    }
   }
 
   /**
@@ -199,7 +259,7 @@ export class TrtcRtcManager implements RtcManaging {
     options: RtcCameraCaptureOptions,
   ): Promise<MediaStreamTrack> {
     const engine = this.requireEngine();
-    if (this.isCapturing) {
+    if (this.isCapturing || this.externalVideo) {
       throw new XmaxError(
         XmaxErrorCode.invalidConfiguration,
         "Camera capture is already running",
@@ -272,6 +332,9 @@ export class TrtcRtcManager implements RtcManaging {
    * 停止摄像头采集；引擎未初始化或采集未启动时不产生效果。
    */
   async stopCameraCapture(): Promise<void> {
+    if (this.externalVideo) {
+      return;
+    }
     const engine = this.lease?.engine;
     this.isCapturing = false;
     if (!engine) {
@@ -351,21 +414,21 @@ export class TrtcRtcManager implements RtcManaging {
    * TRTC 只接受单一目标码率，以 `minimumBitrate`（流畅优先档）作为目标码率；
    * 编码策略偏好映射为 TRTC 弱网偏好。
    *
-   * @throws 摄像头采集未启动或编码参数配置失败时抛出错误。
+   * @throws 本地视频未准备或编码参数配置失败时抛出错误。
    */
   async configureVideoEncoding(
     configuration: VideoEncodingConfiguration,
   ): Promise<void> {
     const engine = this.requireEngine();
-    if (!this.isCapturing) {
+    if (!this.isCapturing && !this.externalVideo) {
       throw new XmaxError(
         XmaxErrorCode.invalidConfiguration,
-        "Camera capture is not running",
+        "Local video is not prepared",
       );
     }
     try {
-      // 与采集一致：移动端竖屏时反向转置编码宽高。
-      const encodingSize = rtcOrientedVideoSize({
+      // 外部画布方向已确定；只有摄像头需要移动端反向转置。
+      const encodingSize = this.externalVideo ? configuration : rtcOrientedVideoSize({
         width: configuration.width,
         height: configuration.height,
       });
@@ -388,14 +451,14 @@ export class TrtcRtcManager implements RtcManaging {
   /**
    * 发布本地视频流。
    *
-   * @throws 摄像头采集未启动或发布失败时抛出错误。
+   * @throws 本地视频未准备或发布失败时抛出错误。
    */
   async publishLocalVideo(): Promise<void> {
     const engine = this.requireEngine();
-    if (!this.isCapturing) {
+    if (!this.isCapturing && !this.externalVideo) {
       throw new XmaxError(
         XmaxErrorCode.invalidConfiguration,
-        "Camera capture is not running",
+        "Local video is not prepared",
       );
     }
     try {
@@ -410,7 +473,7 @@ export class TrtcRtcManager implements RtcManaging {
    */
   async unpublishLocalVideo(): Promise<void> {
     const engine = this.lease?.engine;
-    if (!engine || !this.isCapturing) {
+    if (!engine || (!this.isCapturing && !this.externalVideo)) {
       return;
     }
     try {
@@ -421,14 +484,18 @@ export class TrtcRtcManager implements RtcManaging {
   }
 
   /**
-   * 发布本地音频流；首次调用时启动麦克风采集。
+   * 发布文件音频或麦克风；无文件音轨时不启动麦克风。
    *
    * @throws 引擎未初始化、麦克风权限被拒绝或发布失败时抛出错误。
    */
   async publishLocalAudio(): Promise<void> {
     const engine = this.requireEngine();
     try {
-      if (!this.isAudioCapturing) {
+      if (this.externalVideo) {
+        if (this.externalAudio) {
+          await engine.updateLocalAudio({ publish: true });
+        }
+      } else if (!this.isAudioCapturing) {
         await engine.startLocalAudio();
         this.isAudioCapturing = true;
       } else {
@@ -444,7 +511,7 @@ export class TrtcRtcManager implements RtcManaging {
    */
   async unpublishLocalAudio(): Promise<void> {
     const engine = this.lease?.engine;
-    if (!engine || !this.isAudioCapturing) {
+    if (!engine || (!this.isAudioCapturing && !this.externalAudio)) {
       return;
     }
     try {
@@ -645,21 +712,21 @@ export class TrtcRtcManager implements RtcManaging {
     };
 
     source.on(RTC_EVENT.remoteVideoAvailable, (event: RtcRemoteVideoEvent) => {
-      if (event.streamType !== STREAM_TYPE_MAIN) {
+      if (this.lease?.engine !== engine || event.streamType !== STREAM_TYPE_MAIN) {
         return;
       }
       this.eventListener?.onRemoteVideoPublished(event.userId, true);
     });
 
     source.on(RTC_EVENT.remoteVideoUnavailable, (event: RtcRemoteVideoEvent) => {
-      if (event.streamType !== STREAM_TYPE_MAIN) {
+      if (this.lease?.engine !== engine || event.streamType !== STREAM_TYPE_MAIN) {
         return;
       }
       this.eventListener?.onRemoteVideoPublished(event.userId, false);
     });
 
     source.on(RTC_EVENT.customMessage, (event: RtcCustomMessageEvent) => {
-      if (event.cmdId !== CUSTOM_MESSAGE_CMD_ID) {
+      if (this.lease?.engine !== engine || event.cmdId !== CUSTOM_MESSAGE_CMD_ID) {
         return;
       }
       let message: string;

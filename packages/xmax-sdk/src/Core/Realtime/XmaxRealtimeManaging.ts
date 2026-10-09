@@ -8,6 +8,7 @@ import type {
 } from "../../Service/Realtime/RealtimeState";
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import type { RealtimeConfiguration } from "./RealtimeConfiguration";
+import type { RealtimeVideoSampleMethod } from "../../Service/Realtime/RealtimeReferenceVideo";
 import type { RealtimeLaunchTimingListener } from "../../Service/Realtime/RealtimeLaunchTiming";
 import type { RemoteVideoStatisticsListener, VideoStatisticsListener } from "../../Foundation/RTC/VideoStatistics";
 
@@ -111,6 +112,38 @@ export interface XmaxRealtimeManaging {
   }): Promise<RealtimeMediaStream>;
 
   /**
+   * 创建服务端直接读取的 HTTP/HTTPS 网络视频源，不采集或发布本地音视频。
+   * 本地预览静音播放一次，独立于服务端进度；创建源不会开始生成。
+   * 地址必须可由服务端直接访问，不转发浏览器 Cookie 或自定义鉴权头。
+   * @param options.videoFormat 模型输入及生成画面规格，不是上行编码参数。
+   * @param options.sampleMethod 服务端采样方式，默认 time。
+   * @param options.onFinish 当前任务收到服务端完成消息且生成就绪后调用一次，不代表尾帧已播放完。
+   * @throws 地址、格式无效或已有活动媒体源时抛错；close 释放源，disconnect 保留预览。
+   */
+  createNetworkVideoStream(options: {
+    url: string;
+    videoFormat: RealtimeVideoFormat;
+    sampleMethod?: RealtimeVideoSampleMethod;
+    onFinish?: () => void;
+  }): Promise<RealtimeMediaStream>;
+
+  /**
+   * 从本地 File/Blob 创建文件视频源，支持 TRTC、Agora 和 VeRTC，不访问摄像头或麦克风。
+   * 通过 Canvas 等比缩放补黑边，文件音频独立上行，本地预览始终静音。
+   * 应从用户点击事件直接调用以解锁播放；创建后停在首帧，startGeneration 时开始播放。
+   * @param options.videoFormat 模型输入的视频规格。
+   * @param options.loop 是否循环播放文件音视频，默认 true。
+   * @param options.includeAudio 是否发送文件音频，默认 true；无音轨文件输出静音，false 不创建音频轨。
+   * @throws 提供方不支持、文件/格式无效、浏览器无法解码或播放受限时抛错。
+   */
+  createLocalVideoStream(options: {
+    file: Blob;
+    videoFormat: RealtimeVideoFormat;
+    loop?: boolean;
+    includeAudio?: boolean;
+  }): Promise<RealtimeMediaStream>;
+
+  /**
    * 更新当前本地流的上行视频格式，立即应用于 RTC 编码器，不重连或重启生成。
    * 传入完整格式；未指定的码率和编码偏好按 RealtimeVideoFormat 默认规则解析。
    * 成功后更新本地轨道的 videoFormat，后续重连继续使用该格式。
@@ -118,7 +151,7 @@ export interface XmaxRealtimeManaging {
    * 实际发送规格受设备、浏览器和网络影响，应通过统计回调确认。
    *
    * @param videoFormat 本次完整的上行尺寸、帧率和编码配置。
-   * @throws 无本地相机流、其他操作进行中、参数无效或 RTC 更新失败时抛错。
+   * @throws 无本地相机或文件视频流、其他操作进行中、参数无效或 RTC 更新失败时抛错。
    */
   updateVideoFormat(videoFormat: RealtimeVideoFormat): Promise<void>;
 
@@ -140,11 +173,11 @@ export interface XmaxRealtimeManaging {
   /**
    * 使用当前 Manager 创建的本地流建立实时连接。
    *
-   * 创建实时会话、加入 RTC 房间并发布本地流，成功后启动会话心跳。
+   * 创建实时会话、加入 RTC 房间并启动会话心跳；摄像头源发布本地流，网络视频源仅接收。
    * 启用帧检测时，发布前并行等待相机预热（固定 200ms），避免把黑帧推给 RTC。
    * 返回的远端媒体流在生成开始后承载远端生成画面。
    *
-   * @param localStream 由 `createLocalCameraStream` 创建的本地媒体流。
+   * @param localStream 由当前 Manager 创建的摄像头、本地文件或网络视频源。
    * @returns 远端生成结果占位的媒体流。
    * @throws 本地流不属于当前 Manager、已有活动连接、会话创建或进房
    * 发布失败时抛出错误；失败时自动释放连接资源并恢复本地预览。
@@ -168,7 +201,7 @@ export interface XmaxRealtimeManaging {
    * 尚未连接时先建立实时连接；已在生成时仅更新生成条件，不重启生成。
    * 首次生成必须提供条件上下文，之后缺省时复用最近一次缓存的上下文。
    *
-   * @param options.localStream 由 `createLocalCameraStream` 创建的本地媒体流。
+   * @param options.localStream 由当前 Manager 创建的摄像头、本地文件或网络视频源。
    * @param options.context 本次生成使用的条件上下文；缺省时复用缓存。
    * @returns 承载远端生成画面的媒体流。
    * @throws 本地流不属于当前 Manager、缺少可用的条件上下文、信令发送

@@ -34,12 +34,26 @@ describe("RTC provider selection", () => {
     }
   });
 
-  it("rejects unknown providers and models", () => {
-    expect(() => new RealtimeConfiguration({ model: RealtimeModel.x2_0_agora, provider: "unknown" as RtcProvider })).toThrow("Unsupported RTC provider");
-    for (const model of ["unknown", "toString", "__proto__"] as unknown as RealtimeModel[]) {
-      expect(() => supportedRtcProviders(model)).toThrow("Unsupported realtime model");
-      expect(() => new RealtimeConfiguration({ model })).toThrow("Unsupported realtime model");
+  it.each(["future-model", "toString", "__proto__", "constructor"])("accepts custom model %s with preview defaults and explicit provider overrides", (model) => {
+    const configuration = new RealtimeConfiguration({ model });
+    expect(configuration.model).toBe(model);
+    expect(configuration.provider).toBe(new RealtimeConfiguration({ model: RealtimeModel.x2_1_preview }).provider);
+    expect(Object.isFrozen(supportedRtcProviders(model))).toBe(true);
+    for (const provider of Object.values(RtcProvider)) {
+      expect(supportedRtcProviders(model)).toContain(provider);
+      expect(new RealtimeConfiguration({ model, provider }).provider).toBe(provider);
     }
+    expect(() => new RealtimeConfiguration({ model, provider: "unknown" as RtcProvider })).toThrow("Unsupported RTC provider");
+  });
+
+  it.each(["", "   ", null, undefined, 123, {}])("rejects malformed model identifiers (%j)", (model) => {
+    expect(() => new RealtimeConfiguration({ model: model as string })).toThrow(
+      expect.objectContaining({ code: XmaxErrorCode.invalidConfiguration }),
+    );
+  });
+
+  it("rejects unknown providers", () => {
+    expect(() => new RealtimeConfiguration({ model: RealtimeModel.x2_0_agora, provider: "unknown" as RtcProvider })).toThrow("Unsupported RTC provider");
     expect(() => createRtcManager("unknown" as RtcProvider, XmaxEnvironment.china)).toThrow(
       expect.objectContaining({ code: XmaxErrorCode.invalidConfiguration }),
     );

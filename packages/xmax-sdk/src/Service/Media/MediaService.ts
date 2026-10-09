@@ -5,6 +5,7 @@ import {
   RealtimeModel,
   resolutionBuckets,
   type ModelSize,
+  type RealtimeModelName,
 } from "../Realtime/RealtimeModel";
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import type { MediaServicing } from "./MediaServicing";
@@ -18,14 +19,14 @@ export class MediaService implements MediaServicing {
   /**
    * 模型约束
    */
-  readonly model: RealtimeModel;
+  readonly model: RealtimeModelName;
 
   /**
    * 创建媒体服务。
    *
    * @param model 媒体输入规则使用的模型，默认为 `x2.0-trtc`。
    */
-  constructor(model: RealtimeModel = RealtimeModel.x2_0_trtc) {
+  constructor(model: RealtimeModelName = RealtimeModel.x2_0_trtc) {
     this.model = model;
   }
 

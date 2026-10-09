@@ -46,6 +46,12 @@ interface StreamState {
   generationTaskID?: string;
   generationWaiter?: GenerationWaiter;
   activeRemoteStream?: RemoteStream;
+  networkVideoCompletion?: {
+    taskID: string;
+    finished: boolean;
+    scheduled: boolean;
+    onFinish?: () => void;
+  };
 }
 
 /**
@@ -142,6 +148,7 @@ export class StreamController implements StreamControlling {
    * 运行状态
    */
   private state: StreamState = makeInitialState();
+  private roomListener?: RoomListener;
 
   /**
    * 创建传输层控制器。
@@ -166,6 +173,13 @@ export class StreamController implements StreamControlling {
     this.remoteStreamListener = options.remoteStreamListener ?? (() => {});
     this.generationTimeoutMs = options.generationTimeoutMs ?? 30_000;
 
+    this.roomController.setListener({
+      onRoomMessage: (sender, message) => {
+        this.handleNetworkVideoCompletion(sender, message);
+        this.roomListener?.onRoomMessage(sender, message);
+      },
+    });
+
     // RTC 事件监听权归传输层：房间消息交给房间控制器组包分发。
     this.rtcManager.setEventListener({
       onTokenWillExpire: options.onCredentialsRequired,
@@ -173,7 +187,7 @@ export class StreamController implements StreamControlling {
       onRoomRejoining: () => this.handleRoomRejoining(),
       onError: (error) => this.errorListener(error),
       onNetworkStatistics: (statistics) => {
-        if (this.state.localVideoPublished) {
+        if (this.state.roomID) {
           this.networkStatisticsListener?.(statistics);
         }
       },
@@ -262,6 +276,7 @@ export class StreamController implements StreamControlling {
     includeLocalAudio: boolean,
     ensureActive: () => void,
     beforePublish?: () => Promise<void>,
+    publishLocalMedia = true,
   ): Promise<void> {
     this.configureRoom({ roomID: connection.roomID, botID: connection.botID });
     await this.roomController.join(connection, ensureActive);
@@ -273,9 +288,11 @@ export class StreamController implements StreamControlling {
         `└─ roomID: ${connection.roomID}, botID: ${connection.botID ?? "(未设置)"}`,
     );
 
-    await beforePublish?.();
-    ensureActive();
-    await this.publishLocalStream(includeLocalAudio);
+    if (publishLocalMedia) {
+      await beforePublish?.();
+      ensureActive();
+      await this.publishLocalStream(includeLocalAudio);
+    }
   }
 
   /**
@@ -341,6 +358,9 @@ export class StreamController implements StreamControlling {
     };
 
     this.state.generationTaskID = taskID;
+    this.state.networkVideoCompletion = options.context.referenceVideo
+      ? { taskID, finished: false, scheduled: false }
+      : undefined;
     this.state.generationWaiter = waiter;
     // 发送可能先失败，提前接住确认 Promise，避免产生无人处理的拒绝。
     void confirmation.catch(() => {});
@@ -353,7 +373,9 @@ export class StreamController implements StreamControlling {
         context: options.context,
       });
       const state = this.state;
-      const sent = Promise.resolve(sending).then(() => {
+      const sent = Promise.resolve(sending).then(async () => {
+        if (this.state !== state || state.generationTaskID !== taskID) return;
+        await options.onStartSent?.();
         if (this.state !== state || state.generationTaskID !== taskID) return;
         // 机器人可能在 start 之前已发布；复用已订阅轨道，不等待第二次发布事件。
         for (const userID of state.publishedRemoteUserIDs) {
@@ -470,7 +492,55 @@ export class StreamController implements StreamControlling {
    * 设置房间业务消息监听器，传入空值时清除监听器。
    */
   setRoomListener(listener?: RoomListener): void {
-    this.roomController.setListener(listener);
+    this.roomListener = listener;
+  }
+
+  /**
+   * 生成状态已提交后登记完成通知，避免快速任务在启动返回前交付完成事件。
+   */
+  activateNetworkVideoCompletion(onFinish?: () => void): void {
+    const completion = this.state.networkVideoCompletion;
+    if (completion) {
+      completion.onFinish = onFinish;
+      this.deliverNetworkVideoCompletion();
+    }
+  }
+
+  /**
+   * 仅接受当前任务和目标机器人的完成消息；不因完成事件立即退房。
+   */
+  private handleNetworkVideoCompletion(sender: string, message: Record<string, unknown>): void {
+    const state = this.state;
+    const completion = state.networkVideoCompletion;
+    if (!state.roomID || !completion || completion.taskID !== state.generationTaskID ||
+      message.event !== "video_stopped" || message.uid !== completion.taskID ||
+      !sender || (state.botID && sender !== state.botID)) {
+      return;
+    }
+    completion.finished = true;
+    this.deliverNetworkVideoCompletion();
+  }
+
+  /**
+   * 异步交付一次完成通知；执行前复核任务，隔离用户回调异常。
+   */
+  private deliverNetworkVideoCompletion(): void {
+    const state = this.state;
+    const completion = state.networkVideoCompletion;
+    if (!completion?.finished || !completion.onFinish || completion.scheduled) {
+      return;
+    }
+    completion.scheduled = true;
+    queueMicrotask(() => {
+      if (this.state !== state || state.generationTaskID !== completion.taskID) {
+        return;
+      }
+      try {
+        void Promise.resolve(completion.onFinish?.()).catch(() => {});
+      } catch {
+        // 完成回调异常不得中断远端尾帧播放或资源释放。
+      }
+    });
   }
 
   /**
@@ -744,6 +814,7 @@ export class StreamController implements StreamControlling {
     const remoteAudioUserIDs = [...this.state.subscribedRemoteAudioUserIDs];
     this.state.generationTaskID = undefined;
     this.state.generationWaiter = undefined;
+    this.state.networkVideoCompletion = undefined;
     this.state.activeRemoteStream = undefined;
     this.state.subscribedRemoteAudioUserIDs.clear();
 

@@ -28,6 +28,11 @@ export class VeRtcManager implements RtcManaging {
   private captureVersion = 0;
   private camera?: MediaStreamTrack;
   private microphone = false;
+  /**
+   * 外部媒体的克隆轨；原始轨道由媒体源管理。
+   */
+  private externalVideo?: MediaStreamTrack;
+  private externalAudio?: MediaStreamTrack;
   private connection?: VeRtcRoomJoinConfiguration;
   private joined = false;
   private roomVersion = 0;
@@ -86,19 +91,79 @@ export class VeRtcManager implements RtcManaging {
     this.captureVersion++;
     const engine = this.engine;
     const sdk = this.sdk;
-    this.listener = undefined;
     this.clearRoom();
     this.engine = undefined;
     this.sdk = undefined;
     this.camera = undefined;
     this.microphone = false;
     engine?.removeAllListeners();
-    if (engine && sdk) sdk.default.destroyEngine(engine);
+    try {
+      if (engine && sdk) sdk.default.destroyEngine(engine);
+    } finally {
+      this.externalVideo?.stop();
+      this.externalAudio?.stop();
+      this.externalVideo = undefined;
+      this.externalAudio = undefined;
+    }
+  }
+
+  /**
+   * 将克隆的文件音视频轨绑定到主流，不采集设备、不自动发布。
+   */
+  async setExternalMediaTracks(tracks: { videoTrack: MediaStreamTrack; audioTrack?: MediaStreamTrack }): Promise<void> {
+    const engine = this.requireEngine();
+    const sdk = this.sdk!;
+    if (this.camera || this.microphone || this.externalVideo) {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Release the current local media before attaching external tracks");
+    }
+    if (tracks.videoTrack.kind !== "video" || tracks.videoTrack.readyState !== "live" ||
+        (tracks.audioTrack && (tracks.audioTrack.kind !== "audio" || tracks.audioTrack.readyState !== "live"))) {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "External media tracks must be live video/audio tracks");
+    }
+
+    const video = tracks.videoTrack.clone();
+    this.externalVideo = video;
+    let audio: MediaStreamTrack | undefined;
+    const index = sdk.StreamIndex.STREAM_INDEX_MAIN;
+    const ensureCurrent = () => {
+      if (this.engine !== engine || this.externalVideo !== video) {
+        throw this.cancelled();
+      }
+    };
+    try {
+      audio = tracks.audioTrack?.clone();
+      this.externalAudio = audio;
+      await engine.setVideoSourceType(index, sdk.VideoSourceType.VIDEO_SOURCE_TYPE_EXTERNAL);
+      ensureCurrent();
+      await engine.setExternalVideoTrack(index, video);
+      ensureCurrent();
+      if (audio) {
+        await engine.setAudioSourceType(index, sdk.AudioSourceType.AUDIO_SOURCE_TYPE_EXTERNAL);
+        ensureCurrent();
+        await engine.setExternalAudioTrack(index, audio);
+        ensureCurrent();
+      }
+    } catch (error) {
+      // 还原采集模式但不启动设备；原引擎已销毁时只释放克隆轨。
+      if (this.engine === engine) {
+        await engine.setAudioSourceType(index, sdk.AudioSourceType.AUDIO_SOURCE_TYPE_INTERNAL).catch(() => {});
+        await engine.setVideoSourceType(index, sdk.VideoSourceType.VIDEO_SOURCE_TYPE_INTERNAL).catch(() => {});
+      }
+      if (this.externalVideo === video) {
+        this.externalVideo = undefined;
+        this.externalAudio = undefined;
+      }
+      video.stop();
+      audio?.stop();
+      throw this.mapError(error);
+    }
   }
 
   async startCameraCapture(options: RtcCameraCaptureOptions): Promise<MediaStreamTrack> {
     const engine = this.requireEngine();
-    if (this.camera) throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Camera capture is already running");
+    if (this.camera || this.externalVideo) {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Local video is already prepared");
+    }
     const version = ++this.captureVersion;
     await this.run(() => engine.setVideoEncoderConfig({
       ...rtcOrientedVideoSize({ width: options.width, height: options.height }), frameRate: options.frameRate, maxKbps: 1000,
@@ -134,6 +199,9 @@ export class VeRtcManager implements RtcManaging {
   }
 
   async stopCameraCapture(): Promise<void> {
+    if (this.externalVideo) {
+      return;
+    }
     this.captureVersion++;
     this.camera = undefined;
     if (this.engine) await this.run(() => this.engine!.stopVideoCapture());
@@ -141,9 +209,11 @@ export class VeRtcManager implements RtcManaging {
 
   async configureVideoEncoding(config: VideoEncodingConfiguration): Promise<void> {
     const engine = this.requireEngine();
-    this.requireCamera();
+    this.requireLocalVideo();
+    // 外部画布无需摄像头的移动端方向补偿。
+    const size = this.externalVideo ? config : rtcOrientedVideoSize(config);
     await this.run(() => engine.setVideoEncoderConfig({
-      ...rtcOrientedVideoSize({ width: config.width, height: config.height }), frameRate: config.frameRate, maxKbps: config.maximumBitrate,
+      width: size.width, height: size.height, frameRate: config.frameRate, maxKbps: config.maximumBitrate,
       contentHint: config.encoderPreference === RtcVideoEncoderPreference.maintainFramerate ? "motion" : "detail",
       preferCodecName: this.sdk!.VideoCodecType.H264,
     }));
@@ -233,7 +303,7 @@ export class VeRtcManager implements RtcManaging {
           throw this.cancelled();
         }
       }
-      if ((this.tokenExpired || this.publishPrivilegeExpired) && this.videoRequested && this.camera) {
+      if ((this.tokenExpired || this.publishPrivilegeExpired) && this.videoRequested && (this.camera || this.externalVideo)) {
         await this.run(() => engine.publishStream(this.sdk!.MediaType.VIDEO));
         this.ensureCurrent(engine, version);
         if (!this.videoRequested) {
@@ -241,7 +311,7 @@ export class VeRtcManager implements RtcManaging {
           this.ensureCurrent(engine, version);
         }
       }
-      if ((this.tokenExpired || this.publishPrivilegeExpired) && this.audioRequested && this.microphone) {
+      if ((this.tokenExpired || this.publishPrivilegeExpired) && this.audioRequested && (this.microphone || this.externalAudio)) {
         await this.run(() => engine.publishStream(this.sdk!.MediaType.AUDIO));
         this.ensureCurrent(engine, version);
         if (!this.audioRequested) {
@@ -266,7 +336,7 @@ export class VeRtcManager implements RtcManaging {
 
   async publishLocalVideo(): Promise<void> {
     const engine = this.requireEngine();
-    this.requireCamera();
+    this.requireLocalVideo();
     this.videoRequested = true;
     const version = this.roomVersion;
     await this.recovery;
@@ -282,12 +352,15 @@ export class VeRtcManager implements RtcManaging {
 
   async publishLocalAudio(): Promise<void> {
     const engine = this.requireEngine();
+    if (this.externalVideo && !this.externalAudio) {
+      return;
+    }
     this.audioRequested = true;
     const version = this.roomVersion;
     await this.recovery;
     this.ensureCurrent(engine, version);
     try {
-      if (!this.microphone) {
+      if (!this.externalVideo && !this.microphone) {
         await engine.startAudioCapture();
         if (!this.isCurrent(engine, version)) {
           await engine.stopAudioCapture().catch(() => {});
@@ -297,7 +370,9 @@ export class VeRtcManager implements RtcManaging {
       }
       if (!this.audioRequested) throw this.cancelled();
       await engine.publishStream(this.sdk!.MediaType.AUDIO);
-    } catch (error) { throw this.mapError(error, XmaxErrorCode.microphonePermissionDenied); }
+    } catch (error) {
+      throw this.mapError(error, this.externalVideo ? XmaxErrorCode.rtcError : XmaxErrorCode.microphonePermissionDenied);
+    }
   }
 
   async unpublishLocalAudio(): Promise<void> {
@@ -565,6 +640,16 @@ export class VeRtcManager implements RtcManaging {
   private requireEngine(): IRTCEngine {
     if (!this.engine) throw new XmaxError(XmaxErrorCode.rtcError, "VeRTC is not initialized");
     return this.engine;
+  }
+
+  /**
+   * 获取已准备的文件或摄像头视频轨。
+   */
+  private requireLocalVideo(): MediaStreamTrack {
+    if (this.externalVideo) {
+      return this.externalVideo;
+    }
+    return this.requireCamera();
   }
 
   private requireCamera(): MediaStreamTrack {

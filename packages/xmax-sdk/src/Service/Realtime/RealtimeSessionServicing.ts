@@ -1,4 +1,4 @@
-import type { RealtimeModel } from "./RealtimeModel";
+import type { RealtimeModelName } from "./RealtimeModel";
 import type {
   RealtimeSessionHeartbeatFailureHandler,
   RealtimeSessionHeartbeatRefreshHandler,
@@ -31,7 +31,7 @@ export interface RealtimeSessionServicing {
    * @returns 包含 RTC 连接参数的会话。
    * @throws 网络失败或响应缺少完整 RTC 连接参数时抛出错误。
    */
-  createSession(model: RealtimeModel): Promise<RealtimeSession>;
+  createSession(model: RealtimeModelName): Promise<RealtimeSession>;
 
   /**
    * 请求一次会话心跳并返回当前有效凭据，用于 RTC Token 续期。

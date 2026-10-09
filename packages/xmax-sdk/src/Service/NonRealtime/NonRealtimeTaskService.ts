@@ -29,7 +29,7 @@ export class NonRealtimeTaskService {
    */
   async submitTask(options: NonRealtimeTaskOptions): Promise<NonRealtimeTask> {
     const model = options.model?.trim();
-    if (options.model !== undefined && !model) {
+    if (!model) {
       invalid("Model must not be empty");
     }
     const prompt = options.prompt.trim();
@@ -48,7 +48,7 @@ export class NonRealtimeTaskService {
     }
 
     const payload = await this.api.post<unknown>("/offline-task", {
-      ...(model === undefined ? {} : { model }),
+      model,
       prompt,
       refVideoPath: options.videoPath.trim(),
       ...(options.referencePath === undefined ? {} : { refImagePath: options.referencePath.trim() }),

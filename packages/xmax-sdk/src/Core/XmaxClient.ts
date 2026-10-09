@@ -5,7 +5,7 @@ import type { MediaServicing } from "../Service/Media/MediaServicing";
 import { MediaService } from "../Service/Media/MediaService";
 import type { StorageServicing } from "../Service/Storage/StorageServicing";
 import { StorageService } from "../Service/Storage/StorageService";
-import { RealtimeModel, modelBaseURL } from "../Service/Realtime/RealtimeModel";
+import { RealtimeModel, modelBaseURL, type RealtimeModelName } from "../Service/Realtime/RealtimeModel";
 import type { RealtimeConfiguration } from "./Realtime/RealtimeConfiguration";
 import { XmaxRealtimeManager } from "./Realtime/XmaxRealtimeManager";
 import type { XmaxRealtimeManaging } from "./Realtime/XmaxRealtimeManaging";
@@ -87,7 +87,7 @@ export class XmaxClient {
    *
    * @param model 媒体输入规则使用的模型，默认为 `x2.0-trtc`。
    */
-  createMediaService(model: RealtimeModel = RealtimeModel.x2_0_trtc): MediaServicing {
+  createMediaService(model: RealtimeModelName = RealtimeModel.x2_0_trtc): MediaServicing {
     return new MediaService(model);
   }
 

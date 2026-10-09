@@ -1,5 +1,5 @@
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
-import type { RealtimeModel } from "./RealtimeModel";
+import type { RealtimeModelName } from "./RealtimeModel";
 import { RtcProvider } from "../../Foundation/RTC/RtcProvider";
 import type { ApiServicing } from "../Network/ApiServicing";
 import { RealtimeSession } from "./RealtimeSession";
@@ -106,7 +106,7 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
   /**
    * 创建实时会话并返回 RTC 连接信息。
    */
-  async createSession(model: RealtimeModel): Promise<RealtimeSession> {
+  async createSession(model: RealtimeModelName): Promise<RealtimeSession> {
     const payload = await this.apiService.post<SessionPayload>("/session", {
       model,
     });

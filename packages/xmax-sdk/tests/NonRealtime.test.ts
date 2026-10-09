@@ -11,6 +11,7 @@ const submitted = { uid, status: "submitted" };
 const processing = { uid, status: "processing" };
 const completed = { uid, status: "completed", result: { result_url: "https://media.example/result.mp4", upload_status: "success" } };
 const options: NonRealtimeTaskOptions = {
+  model: "x2.0",
   videoPath: "https://media.example/video.mp4", prompt: "  change clothes  ", quality: NonRealtimeQuality.hd,
 };
 
@@ -67,7 +68,7 @@ describe("NonRealtime task API", () => {
   it("maps submit fields and leaves omitted fps and reference absent", async () => {
     const { manager, fetch } = setup();
     await manager.submitTask(options);
-    expect(JSON.parse(fetch.mock.calls[0]![1].body!)).toEqual({ prompt: "change clothes", refVideoPath: options.videoPath, quality: "hd" });
+    expect(JSON.parse(fetch.mock.calls[0]![1].body!)).toEqual({ model: options.model, prompt: "change clothes", refVideoPath: options.videoPath, quality: "hd" });
     await manager.submitTask({ ...options, referencePath: "https://media.example/reference.jpg", fps: 24 });
     expect(JSON.parse(fetch.mock.calls[1]![1].body!)).toMatchObject({ refImagePath: "https://media.example/reference.jpg", fps: 24 });
   });
@@ -79,7 +80,7 @@ describe("NonRealtime task API", () => {
   });
 
   it.each([
-    { model: "" }, { model: "  " },
+    { model: undefined }, { model: "" }, { model: "  " },
     { prompt: "  " }, { prompt: "a".repeat(1025) }, { quality: "ultra" },
     { fps: 29.97 }, { fps: 7 }, { fps: 14 }, { fps: NaN }, { fps: 121 },
     { videoPath: "blob:local" }, { videoPath: "/video.mp4" }, { videoPath: "file:///video.mp4" },

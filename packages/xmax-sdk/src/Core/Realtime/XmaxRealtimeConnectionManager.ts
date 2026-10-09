@@ -2,7 +2,7 @@ import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
 import type { RemoteFrameInterpolationOptions } from "../../Render/Video/RemoteVideoFramePipeline";
 import { RealtimeMediaStream } from "../../Service/Realtime/RealtimeMediaStream";
-import type { RealtimeModel } from "../../Service/Realtime/RealtimeModel";
+import type { RealtimeModelName } from "../../Service/Realtime/RealtimeModel";
 import { connectionAppID } from "../../Service/Realtime/RealtimeSessionConnection";
 import { RealtimeSession } from "../../Service/Realtime/RealtimeSession";
 import type { RealtimeSessionServicing } from "../../Service/Realtime/RealtimeSessionServicing";
@@ -73,11 +73,12 @@ export class XmaxRealtimeConnectionManager {
   async connect(options: {
     localTrack: RealtimeVideoTrack;
     remoteVideoFormat?: RealtimeVideoTrack["videoFormat"];
-    model: RealtimeModel;
+    model: RealtimeModelName;
     includeLocalAudio: boolean;
     ensureCurrent: () => void;
     onPublished: () => void;
     beforePublish?: () => Promise<void>;
+    publishLocalMedia?: boolean;
   }): Promise<RealtimeMediaStream> {
     const sessionService = this.requireSessionService();
     const streamController = this.dependencies.streamController;
@@ -111,7 +112,10 @@ export class XmaxRealtimeConnectionManager {
         "Local video stream has no video format",
       );
     }
-    await streamController.setVideoEncoderConfig(videoFormat);
+    const publishLocalMedia = options.publishLocalMedia ?? true;
+    if (publishLocalMedia) {
+      await streamController.setVideoEncoderConfig(videoFormat);
+    }
     options.ensureCurrent();
 
     let completePublish: (() => void) | undefined;
@@ -123,8 +127,9 @@ export class XmaxRealtimeConnectionManager {
       await options.beforePublish?.();
       completeConnection();
       completePublish = this.dependencies.timing.startPublish();
-    });
+    }, publishLocalMedia);
     options.ensureCurrent();
+    completeConnection();
     completePublish?.();
     options.onPublished();
 

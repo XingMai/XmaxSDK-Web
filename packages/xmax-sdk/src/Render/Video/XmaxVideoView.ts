@@ -156,14 +156,14 @@ export class XmaxVideoView {
     to.appendChild(this.element);
 
     // 浏览器可能在移出 DOM 时暂停 MediaStream video；重新挂载要恢复解码回调。
-    if (this.videoElement.srcObject && this.videoElement.paused && typeof this.videoElement.play === "function") {
+    if ((this.videoElement.srcObject || this.videoElement.getAttribute("src")) && this.videoElement.autoplay && !this.videoElement.ended && this.videoElement.paused && typeof this.videoElement.play === "function") {
       void this.videoElement.play().catch((error) => {
         XmaxLogger.render.warning(() => `恢复视频播放失败 (Failed to Resume Video Playback)\n└─ ${String(error)}`);
       });
     }
 
     this.startInterpolation();
-    if (this.videoElement.srcObject && !this.hasNotifiedFrameDisplay) {
+    if ((this.videoElement.srcObject || this.videoElement.getAttribute("src")) && !this.hasNotifiedFrameDisplay) {
       this.armFrameDisplayNotification();
     }
   }
@@ -175,7 +175,29 @@ export class XmaxVideoView {
     this.detached = true;
     this.stopInterpolation();
     this.cancelFrameDisplayNotification();
+    if (this.videoElement.getAttribute("src")) {
+      this.videoElement.pause();
+    }
     this.element.remove();
+  }
+
+  /**
+   * 设置网络视频预览；静音播放一次，不捕获或发布媒体轨道。 @internal
+   */
+  setVideoURL(url: string | null): void {
+    this.stopInterpolation();
+    this.cancelFrameDisplayNotification();
+    this.hasNotifiedFrameDisplay = false;
+    this.videoElement.pause();
+    this.videoElement.srcObject = null;
+    this.videoElement.removeAttribute("src");
+    this.videoElement.muted = true;
+    this.videoElement.loop = false;
+    if (url) {
+      this.videoElement.src = url;
+      this.armFrameDisplayNotification();
+    }
+    this.videoElement.load();
   }
 
   /**
@@ -192,6 +214,7 @@ export class XmaxVideoView {
 
     this.videoElement.srcObject = stream;
     if (stream) {
+      this.videoElement.autoplay = true;
       this.armFrameDisplayNotification();
       this.startInterpolation();
     }
@@ -269,6 +292,9 @@ export class XmaxVideoView {
     this.setFrameInterpolation(undefined);
     this.cancelFrameDisplayNotification();
     this.videoElement.srcObject = null;
+    if (this.videoElement.getAttribute("src")) {
+      this.setVideoURL(null);
+    }
   }
 
   /**

@@ -55,6 +55,7 @@ export class XmaxRealtimeGenerationManager {
     signal: AbortSignal;
     ensureCurrent: () => void;
     waitUntilRemoteReady: () => Promise<void>;
+    onStartSent?: () => Promise<void>;
   }): Promise<string> {
     const context = this.validateContext(options.context);
     options.ensureCurrent();
@@ -65,6 +66,7 @@ export class XmaxRealtimeGenerationManager {
     try {
       const confirmation = this.streamController.beginGeneration({
         taskID, videoFormat: options.videoFormat, context,
+        ...(options.onStartSent && { onStartSent: options.onStartSent }),
       });
       await this.awaitConfirmation(confirmation, options.signal);
       options.ensureCurrent();

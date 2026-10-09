@@ -53,6 +53,8 @@ export type {
 } from "./Service/Realtime/RealtimeLaunchTiming";
 export { RealtimeContext } from "./Service/Realtime/RealtimeContext";
 export type { RealtimeContextInit } from "./Service/Realtime/RealtimeContext";
+export { RealtimeVideoSampleMethod } from "./Service/Realtime/RealtimeReferenceVideo";
+export type { RealtimeReferenceVideo } from "./Service/Realtime/RealtimeReferenceVideo";
 export { RealtimeMediaStream } from "./Service/Realtime/RealtimeMediaStream";
 export {
   RealtimeModel,
@@ -61,6 +63,7 @@ export {
   defaultCameraVideoFormat,
   defaultFrameRate,
 } from "./Service/Realtime/RealtimeModel";
+export type { RealtimeModelName } from "./Service/Realtime/RealtimeModel";
 export {
   RealtimeConnectionState,
   RealtimeReason,

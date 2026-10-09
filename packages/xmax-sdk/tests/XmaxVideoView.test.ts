@@ -3,6 +3,10 @@ import { XmaxVideoView } from "../src/Render/Video/XmaxVideoView";
 import { XmaxRealtimeVideoView } from "../src/Render/Video/XmaxRealtimeVideoView";
 import { RealtimeVideoTrack } from "../src/Service/Realtime/RealtimeVideoTrack";
 import { VideoRenderRegistry } from "../src/Service/Realtime/VideoRenderBinding";
+import { NetworkVideoController } from "../src/Media/Video/NetworkVideoController";
+import { MediaService } from "../src/Service/Media/MediaService";
+import { RealtimeVideoFormat } from "../src/Service/Realtime/RealtimeVideoFormat";
+import { RealtimeVideoSampleMethod } from "../src/Service/Realtime/RealtimeReferenceVideo";
 
 class ElementStub extends EventTarget {
   style: Record<string, string> = {};
@@ -11,6 +15,17 @@ class ElementStub extends EventTarget {
 }
 
 class VideoStub extends ElementStub {
+  src = "";
+  currentTime = 0;
+  duration = 10;
+  ended = false;
+  muted = false;
+  loop = false;
+  autoplay = true;
+  pause = vi.fn(() => { this.paused = true; });
+  load = vi.fn();
+  getAttribute(name: string): string | null { return name === "src" ? this.src || null : null; }
+  removeAttribute(name: string): void { if (name === "src") this.src = ""; }
   srcObject: MediaStream | null = null;
   paused = true;
   readyState = 0;
@@ -56,6 +71,97 @@ function makeView(useFrameCallback = true) {
   view.track = track;
   return { view, video, onBindingFrame, onViewFrame };
 }
+
+describe("network video preview", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const options = {
+    url: "https://example.com/video.mp4?signature=abc",
+    videoFormat: new RealtimeVideoFormat({ width: 1920, height: 1024, fps: 30 }),
+  };
+
+  it("renders a muted URL directly without capture, keeps progress and releases all views", () => {
+    const { view, video, onViewFrame } = makeView();
+    const source = new NetworkVideoController();
+    const stream = source.create(options, new MediaService());
+    expect(source.reference).toEqual({ path: options.url, sampleMethod: RealtimeVideoSampleMethod.time });
+    expect(stream.videoTrack?.mediaStreamTrack).toBeUndefined();
+    view.track = stream.videoTrack;
+    expect(video.src).toBe(options.url);
+    expect(video.srcObject).toBeNull();
+    expect(video.muted).toBe(true);
+    expect(video.loop).toBe(false);
+    video.nextFrame();
+    expect(onViewFrame).toHaveBeenCalledOnce();
+    video.currentTime = 3;
+    view.track = undefined;
+    expect(video.src).toBe("");
+    view.track = stream.videoTrack;
+    video.currentTime = 0;
+    video.dispatchEvent(new Event("loadedmetadata"));
+    expect(video.currentTime).toBe(3);
+
+    video.currentTime = 10;
+    video.ended = true;
+    view.track = undefined;
+    view.track = stream.videoTrack;
+    video.dispatchEvent(new Event("loadedmetadata"));
+    expect(video.currentTime).toBeCloseTo(9.999);
+    expect(video.autoplay).toBe(false);
+    expect(video.paused).toBe(true);
+    video.ended = false;
+    view.detach();
+    view.attach(new ElementStub() as unknown as HTMLElement);
+    expect(video.play).not.toHaveBeenCalled();
+
+    source.stop();
+    expect(video.src).toBe("");
+    expect(video.callbacks.size).toBe(0);
+    expect(VideoRenderRegistry.binding(stream.videoTrack!)).toBeUndefined();
+    expect(source.currentTrack).toBeUndefined();
+    expect(source.reference).toBeUndefined();
+    expect(source.onFinish).toBeUndefined();
+    source.stop();
+  });
+
+  it("does not turn preview completion or playback errors into server completion", () => {
+    const { view, video } = makeView();
+    const source = new NetworkVideoController();
+    const onFinish = vi.fn();
+    const stream = source.create({ ...options, onFinish }, new MediaService());
+    view.track = stream.videoTrack;
+    video.dispatchEvent(new Event("ended"));
+    video.dispatchEvent(new Event("error"));
+    expect(onFinish).not.toHaveBeenCalled();
+    expect(source.currentTrack).toBe(stream.videoTrack);
+    source.stop();
+  });
+
+  it("pauses a detached URL preview and resumes when remounted", () => {
+    const { view, video } = makeView();
+    const source = new NetworkVideoController();
+    view.track = source.create(options, new MediaService()).videoTrack;
+    view.detach();
+    expect(video.paused).toBe(true);
+    view.attach(new ElementStub() as unknown as HTMLElement);
+    expect(video.play).toHaveBeenCalledOnce();
+    source.stop();
+  });
+
+  it.each(["/relative.mp4", "file:///test.mp4", "blob:https://example.com/id", "data:video/mp4,test", "ftp://example.com/v.mp4", "https://user:password@example.com/v.mp4", ""]) (
+    "rejects unsupported source %s before creating a track", (url) => {
+      const source = new NetworkVideoController();
+      expect(() => source.create({ ...options, url }, new MediaService())).toThrow();
+      expect(source.currentTrack).toBeUndefined();
+    },
+  );
+
+  it("validates sampling and model dimensions", () => {
+    const source = new NetworkVideoController();
+    expect(() => source.create({ ...options, sampleMethod: "invalid" as RealtimeVideoSampleMethod }, new MediaService())).toThrow();
+    expect(() => source.create({ ...options, videoFormat: new RealtimeVideoFormat({ width: 100, height: 100, fps: 30 }) }, new MediaService())).toThrow();
+    expect(source.currentTrack).toBeUndefined();
+  });
+});
 
 describe("XmaxVideoView first frame", () => {
   afterEach(() => vi.unstubAllGlobals());

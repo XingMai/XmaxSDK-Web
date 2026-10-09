@@ -108,7 +108,7 @@ const CONTENT_TYPES: Record<string, string> = {
 };
 
 /**
- * 管理文件上传到对象存储。
+ * 管理文件上传和视频下载。
  *
  * 上传直传不经过 Xmax 服务中转：先通过 `GET /cos/sts` 获取临时凭证，
  * 再用临时凭证创建 COS 客户端直传；访问地址按 `Location`、自定义
@@ -159,6 +159,76 @@ export class StorageService implements StorageServicing {
    */
   async uploadVideo(options: StorageUploadOptions): Promise<StoredFile> {
     return this.upload(options, "Video");
+  }
+
+  /**
+   * 下载原始视频文件并交给浏览器保存，支持取消网络下载。
+   */
+  async downloadVideo(options: Parameters<StorageServicing["downloadVideo"]>[0]): Promise<void> {
+    const fileName = StorageService.validateFileName(options.fileName);
+    let url: URL;
+    try {
+      url = new URL(options.url.trim());
+    } catch {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Invalid video download URL");
+    }
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Video download requires an HTTP(S) URL without embedded credentials");
+    }
+    if (typeof document === "undefined" || !document.body) {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Video saving requires a browser document");
+    }
+
+    let objectURL: string | undefined;
+    let link: HTMLAnchorElement | undefined;
+    let saveRequested = false;
+    try {
+      if (options.signal?.aborted) {
+        throw new XmaxError(XmaxErrorCode.cancelled, "Video download was cancelled");
+      }
+
+      // 直接读取资源，不向文件地址发送 SDK API Key 或 Cookie。
+      const response = await fetch(options.url.trim(), { credentials: "omit", signal: options.signal });
+      if (!response.ok) {
+        throw new XmaxError(XmaxErrorCode.downloadError, "Video download failed", { httpStatus: response.status });
+      }
+      const data = await response.blob();
+      if (options.signal?.aborted) {
+        throw new XmaxError(XmaxErrorCode.cancelled, "Video download was cancelled");
+      }
+      if (data.size === 0) {
+        throw new XmaxError(XmaxErrorCode.downloadError, "Downloaded video is empty");
+      }
+
+      // 使用本地 Blob 地址，让浏览器按指定文件名保存跨域资源。
+      objectURL = URL.createObjectURL(data);
+      link = document.createElement("a");
+      link.href = objectURL;
+      link.download = fileName;
+      link.hidden = true;
+      document.body.appendChild(link);
+      link.click();
+      saveRequested = true;
+    } catch (error) {
+      if (options.signal?.aborted) {
+        throw new XmaxError(XmaxErrorCode.cancelled, "Video download was cancelled");
+      }
+      if (error instanceof XmaxError) {
+        throw error;
+      }
+      throw new XmaxError(XmaxErrorCode.downloadError, error instanceof Error ? error.message : String(error));
+    } finally {
+      link?.remove();
+      if (objectURL) {
+        const resourceURL = objectURL;
+        if (saveRequested) {
+          // 给浏览器时间接管下载，再释放 Blob 地址。
+          setTimeout(() => URL.revokeObjectURL(resourceURL), 60_000);
+        } else {
+          URL.revokeObjectURL(resourceURL);
+        }
+      }
+    }
   }
 
   /**
@@ -347,7 +417,7 @@ export class StorageService implements StorageServicing {
     if (!safeName || safeName.includes("/") || safeName.includes("\\")) {
       throw new XmaxError(
         XmaxErrorCode.invalidConfiguration,
-        "Invalid file name for storage upload",
+        "Invalid file name for storage operation",
       );
     }
     return safeName;

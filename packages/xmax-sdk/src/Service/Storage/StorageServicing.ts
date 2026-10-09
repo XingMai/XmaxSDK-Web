@@ -26,7 +26,7 @@ export interface StorageUploadOptions {
 }
 
 /**
- * 定义文件存储能力：上传图片或视频到对象存储并返回访问地址。
+ * 定义图片、视频上传和视频下载能力。
  */
 export interface StorageServicing {
   /**
@@ -49,4 +49,19 @@ export interface StorageServicing {
    * @throws 参数无效、凭证获取失败或上传失败时抛出错误。
    */
   uploadVideo(options: StorageUploadOptions): Promise<StoredFile>;
+
+  /**
+   * 下载完整视频文件并触发浏览器保存；跨域地址需要允许 CORS。
+   *
+   * @param options.url 可直接访问的 HTTP(S) 视频地址。
+   * @param options.fileName 保存时建议使用的文件名。
+   * @param options.signal 用于取消网络下载的信号。
+   * @returns 文件读取完成并已触发浏览器保存，不代表文件已写入磁盘。
+   * @throws 参数无效、非浏览器环境、下载失败或主动取消时抛出错误。
+   */
+  downloadVideo(options: {
+    url: string;
+    fileName: string;
+    signal?: AbortSignal;
+  }): Promise<void>;
 }
