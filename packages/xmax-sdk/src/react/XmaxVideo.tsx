@@ -2,6 +2,7 @@ import {
   VideoContentMode,
   XmaxVideoView,
   type RealtimeVideoTrack,
+  type VideoRenderStatistics,
 } from "../index";
 import {
   useEffect,
@@ -24,6 +25,11 @@ export interface XmaxVideoProps {
    * 是否镜像显示（仅影响显示，不影响发布流）。
    */
   mirrored?: boolean;
+
+  /**
+   * 当前视图的呈现帧率统计；换流或卸载时清空，不受统计面板显示开关影响。
+   */
+  onRenderStatistics?: (statistics?: VideoRenderStatistics) => void;
 
   /**
    * 容器类名。
@@ -60,6 +66,10 @@ export function XmaxVideo(props: XmaxVideoProps) {
       view.detach();
     };
   }, []);
+
+  useEffect(() => {
+    if (viewRef.current) viewRef.current.renderStatisticsHandler = props.onRenderStatistics;
+  }, [props.onRenderStatistics]);
 
   useEffect(() => {
     const view = viewRef.current;

@@ -17,6 +17,7 @@ import {
   type VideoStatistics,
   type NetworkStatistics,
   type RemoteVideoStatistics,
+  type VideoRenderStatistics,
   type RealtimeState,
   type XmaxRealtimeManaging,
 } from "@xmaxai/web-sdk";
@@ -83,6 +84,7 @@ export function App() {
   const [launchTiming, setLaunchTiming] = useState<RealtimeLaunchTiming>({});
   const [localVideoStatistics, setLocalVideoStatistics] = useState<VideoStatistics>();
   const [remoteVideoStatistics, setRemoteVideoStatistics] = useState<RemoteVideoStatistics>();
+  const [renderStatistics, setRenderStatistics] = useState<VideoRenderStatistics>();
   const [networkStatistics, setNetworkStatistics] = useState<NetworkStatistics>();
   const [errorText, setErrorText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -443,6 +445,7 @@ export function App() {
     setRemoteStream(undefined);
     setLocalVideoStatistics(undefined);
     setRemoteVideoStatistics(undefined);
+    setRenderStatistics(undefined);
     setNetworkStatistics(undefined);
     setStateText(RealtimeConnectionState.idle);
     setErrorText("");
@@ -762,6 +765,7 @@ export function App() {
             <div className="remoteVideo" key={remoteStream.id}>
               <XmaxVideo
                 track={remoteStream.videoTrack}
+                onRenderStatistics={setRenderStatistics}
                 style={{ width: "100%", height: "100%" }}
               />
             </div>
@@ -772,6 +776,7 @@ export function App() {
             <StatisticsPanel label="下行视频统计" rows={[
               { label: "下行分辨率", value: formatVideoResolution(remoteVideoStatistics) },
               { label: "下行帧率", value: formatVideoMetric(remoteVideoStatistics?.frameRate, "fps") },
+              { label: "渲染帧率", value: formatVideoMetric(renderStatistics?.frameRate, "fps"), title: "原帧与插值帧的呈现帧率；插帧时按画布提交计数，不代表屏幕实际刷新率" },
               { label: "下行码率", value: formatVideoMetric(remoteVideoStatistics?.bitrateKbps, "kbps") },
             ]} />
             <StatisticsPanel label="下行网络与延迟统计" rows={[

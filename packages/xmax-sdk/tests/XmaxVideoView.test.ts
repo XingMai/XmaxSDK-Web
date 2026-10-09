@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { FrameInterpolationManager } from "../src/Foundation/Media/Video/FrameInterpolationManager";
+import { XmaxLogger, XmaxLoggerOption } from "../src/Foundation/Logging/XmaxLogger";
 import { XmaxVideoView } from "../src/Render/Video/XmaxVideoView";
 import { XmaxRealtimeVideoView } from "../src/Render/Video/XmaxRealtimeVideoView";
 import { RealtimeVideoTrack } from "../src/Service/Realtime/RealtimeVideoTrack";
@@ -43,10 +45,12 @@ class VideoStub extends ElementStub {
     this.callbacks.delete(id);
   }
 
-  nextFrame(): void {
+  nextFrame(time = 0, frames = 1): void {
     const callbacks = [...this.callbacks.values()];
     this.callbacks.clear();
-    callbacks.forEach((callback) => callback());
+    callbacks.forEach((callback) => (callback as VideoFrameRequestCallback)(performance.now(), {
+      mediaTime: time, presentedFrames: frames, width: 320, height: 180,
+    } as VideoFrameCallbackMetadata));
   }
 }
 
@@ -71,6 +75,122 @@ function makeView(useFrameCallback = true) {
   view.track = track;
   return { view, video, onBindingFrame, onViewFrame };
 }
+
+describe("video render statistics", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout", "performance"] });
+    XmaxLogger.configure(XmaxLoggerOption.none);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+    XmaxLogger.configure(XmaxLoggerOption.none);
+  });
+
+  it("reports video frame callbacks, zero when stalled, and keeps sampling a hidden statistics UI", async () => {
+    const { view, video } = makeView();
+    const listener = vi.fn();
+    view.renderStatisticsHandler = listener;
+    video.nextFrame();
+    video.nextFrame();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(listener).toHaveBeenLastCalledWith({ source: "video", frameRate: 2, originalFrameRate: 2, interpolatedFrameRate: 0 });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(listener).toHaveBeenLastCalledWith(expect.objectContaining({ frameRate: 0 }));
+
+    view.element.style.visibility = "hidden";
+    video.nextFrame();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(listener).toHaveBeenLastCalledWith(expect.objectContaining({ frameRate: 1 }));
+    view.detach();
+    expect(listener).toHaveBeenLastCalledWith(undefined);
+    expect(video.callbacks.size).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("counts only presented canvas originals and midpoints, not source callbacks or idle vsyncs", async () => {
+    const { view, video } = makeView();
+    const listener = vi.fn();
+    view.renderStatisticsHandler = listener;
+    let slot = 0;
+    vi.spyOn(FrameInterpolationManager, "create").mockResolvedValue({
+      capture: () => slot++ % 3,
+      interpolate: async () => 3,
+      present: vi.fn(), destroy: vi.fn(),
+    } as unknown as FrameInterpolationManager);
+    let tick: FrameRequestCallback | undefined;
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { tick = callback; return 1; });
+    vi.stubGlobal("cancelAnimationFrame", () => { tick = undefined; });
+    view.setFrameInterpolation({ size: { width: 320, height: 180 }, onFailure: vi.fn() });
+    video.nextFrame(0, 1);
+    await vi.advanceTimersByTimeAsync(0);
+    video.nextFrame(0.04, 2);
+    await vi.advanceTimersByTimeAsync(40);
+    video.nextFrame(0.08, 3);
+    await vi.advanceTimersByTimeAsync(20);
+    tick?.(performance.now());
+    await vi.advanceTimersByTimeAsync(20);
+    tick?.(performance.now());
+    tick?.(performance.now());
+    await vi.advanceTimersByTimeAsync(920);
+    expect(listener).toHaveBeenLastCalledWith({ source: "canvas", frameRate: 3, originalFrameRate: 2, interpolatedFrameRate: 1 });
+
+    view.setFrameInterpolation(undefined);
+    video.nextFrame(0.12, 4);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(listener).toHaveBeenLastCalledWith({ source: "video", frameRate: 1, originalFrameRate: 1, interpolatedFrameRate: 0 });
+    view.detach();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("clears old samples on source changes and ignores queued callbacks after detach", async () => {
+    const { view, video } = makeView();
+    const listener = vi.fn();
+    view.renderStatisticsHandler = listener;
+    video.nextFrame();
+    view.setMediaStream({} as MediaStream);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(listener).toHaveBeenLastCalledWith(expect.objectContaining({ frameRate: 0 }));
+    const queued = [...video.callbacks.values()];
+    view.detach();
+    queued.forEach((callback) => callback());
+    expect(video.callbacks.size).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+    view.attach(new ElementStub() as unknown as HTMLElement);
+    video.nextFrame();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(listener).toHaveBeenLastCalledWith(expect.objectContaining({ frameRate: 1 }));
+    view.track = undefined;
+    expect(listener).toHaveBeenLastCalledWith(undefined);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("does not estimate unsupported frame callbacks from timers", () => {
+    const { view } = makeView(false);
+    const listener = vi.fn();
+    view.renderStatisticsHandler = listener;
+    expect(listener).toHaveBeenLastCalledWith(undefined);
+    expect(vi.getTimerCount()).toBe(0);
+    view.detach();
+  });
+
+  it("continues performance logs without a listener and isolates listener errors", async () => {
+    XmaxLogger.configure(XmaxLoggerOption.performance);
+    const log = vi.spyOn(console, "info").mockImplementation(() => {});
+    const { view, video } = makeView();
+    view.renderStatisticsHandler = () => { throw new Error("consumer error"); };
+    video.nextFrame();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(log.mock.calls.flat().map(String).join(" ")).toContain("original: 1.0 fps, interpolated: 0.0 fps");
+    view.renderStatisticsHandler = undefined;
+    video.nextFrame();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(log).toHaveBeenCalledTimes(2);
+    view.detach();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
 
 describe("network video preview", () => {
   afterEach(() => vi.unstubAllGlobals());

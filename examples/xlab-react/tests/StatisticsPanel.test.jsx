@@ -6,12 +6,14 @@ it("preserves the definition-list structure, metric order, zero values and place
   const html = renderToStaticMarkup(<StatisticsPanel label="下行视频统计" rows={[
     { label: "下行分辨率", value: "—" },
     { label: "下行帧率", value: "0 fps" },
+    { label: "渲染帧率", value: "49.8 fps" },
     { label: "下行码率", value: "6006.5 kbps" },
   ]} />);
 
   expect(html).toBe('<dl class="videoStatistics" aria-label="下行视频统计">'
     + '<div><dt>下行分辨率</dt><dd>—</dd></div>'
     + '<div><dt>下行帧率</dt><dd>0 fps</dd></div>'
+    + '<div><dt>渲染帧率</dt><dd>49.8 fps</dd></div>'
     + '<div><dt>下行码率</dt><dd>6006.5 kbps</dd></div></dl>');
 });
 

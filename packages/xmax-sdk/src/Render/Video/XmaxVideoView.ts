@@ -1,5 +1,7 @@
 import { VideoContentMode } from "../../Foundation/Media/Video/VideoContentMode";
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
+import type { VideoRenderStatistics } from "./VideoRenderStatistics";
+import { RenderStatisticsController } from "./RenderStatisticsController";
 import type { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
 import { VideoRenderRegistry } from "../../Service/Realtime/VideoRenderBinding";
 import { RemoteVideoFramePipeline, type RemoteFrameInterpolationOptions } from "./RemoteVideoFramePipeline";
@@ -58,6 +60,10 @@ export class XmaxVideoView {
   private interpolationPipeline?: RemoteVideoFramePipeline;
   private interpolationCanvas?: HTMLCanvasElement;
   /**
+   * 呈现统计组件
+   */
+  private readonly statisticsController: RenderStatisticsController;
+  /**
    * DOM 挂载状态
    */
   private detached = false;
@@ -76,6 +82,7 @@ export class XmaxVideoView {
     this.element.style.backgroundColor = "black";
 
     this.videoElement = document.createElement("video");
+    this.statisticsController = new RenderStatisticsController(this.videoElement);
     this.videoElement.autoplay = true;
     this.videoElement.playsInline = true;
     this.videoElement.muted = true;
@@ -95,6 +102,22 @@ export class XmaxVideoView {
    */
   get track(): RealtimeVideoTrack | undefined {
     return this.currentTrack;
+  }
+
+  /**
+   * 每秒接收当前视图的呈现统计；换流、卸载或不可统计时返回 undefined。
+   */
+  get renderStatisticsHandler(): ((statistics?: VideoRenderStatistics) => void) | undefined {
+    return this.statisticsController.handler;
+  }
+
+  /**
+   * 更新统计回调，不影响播放；日志启用时移除回调仍继续采集。
+   */
+  set renderStatisticsHandler(handler: ((statistics?: VideoRenderStatistics) => void) | undefined) {
+    this.statisticsController.handler = handler;
+    this.statisticsController.stop();
+    this.startRenderStatistics();
   }
 
   /**
@@ -163,6 +186,7 @@ export class XmaxVideoView {
     }
 
     this.startInterpolation();
+    this.startRenderStatistics();
     if ((this.videoElement.srcObject || this.videoElement.getAttribute("src")) && !this.hasNotifiedFrameDisplay) {
       this.armFrameDisplayNotification();
     }
@@ -173,6 +197,7 @@ export class XmaxVideoView {
    */
   detach(): void {
     this.detached = true;
+    this.statisticsController.stop();
     this.stopInterpolation();
     this.cancelFrameDisplayNotification();
     if (this.videoElement.getAttribute("src")) {
@@ -185,6 +210,7 @@ export class XmaxVideoView {
    * 设置网络视频预览；静音播放一次，不捕获或发布媒体轨道。 @internal
    */
   setVideoURL(url: string | null): void {
+    this.statisticsController.stop();
     this.stopInterpolation();
     this.cancelFrameDisplayNotification();
     this.hasNotifiedFrameDisplay = false;
@@ -198,6 +224,7 @@ export class XmaxVideoView {
       this.armFrameDisplayNotification();
     }
     this.videoElement.load();
+    this.startRenderStatistics();
   }
 
   /**
@@ -208,6 +235,7 @@ export class XmaxVideoView {
       return;
     }
 
+    this.statisticsController.stop();
     this.stopInterpolation();
     this.cancelFrameDisplayNotification();
     this.hasNotifiedFrameDisplay = false;
@@ -217,6 +245,7 @@ export class XmaxVideoView {
       this.videoElement.autoplay = true;
       this.armFrameDisplayNotification();
       this.startInterpolation();
+      this.startRenderStatistics();
     }
   }
 
@@ -245,7 +274,18 @@ export class XmaxVideoView {
     this.applyContentMode();
     this.element.appendChild(canvas);
 
-    const pipeline = new RemoteVideoFramePipeline(this.videoElement, canvas, this.interpolationOptions);
+    const options = this.interpolationOptions;
+    const pipeline = new RemoteVideoFramePipeline(this.videoElement, canvas, {
+      ...options,
+      onActiveChange: (active) => {
+        this.statisticsController.setInterpolationActive(active);
+        options.onActiveChange?.(active);
+      },
+      onFramePresented: (interpolated) => {
+        this.statisticsController.recordCanvasFrame(interpolated);
+        options.onFramePresented?.(interpolated);
+      },
+    });
     this.interpolationPipeline = pipeline;
     pipeline.start();
   }
@@ -285,6 +325,7 @@ export class XmaxVideoView {
    * 解绑当前轨道并清空渲染内容。
    */
   private detachCurrentTrack(): void {
+    this.statisticsController.stop();
     const track = this.currentTrack;
     if (track) {
       VideoRenderRegistry.binding(track)?.detachHandler(this);
@@ -356,5 +397,12 @@ export class XmaxVideoView {
       this.interpolationCanvas.style.objectFit = OBJECT_FIT[this.contentMode];
       this.interpolationCanvas.style.transform = this.mirrored ? "scaleX(-1)" : "";
     }
+  }
+
+  /**
+   * 视图未卸载时启动呈现统计，采样及媒体就绪检查由统计组件负责。
+   */
+  private startRenderStatistics(): void {
+    if (!this.detached) this.statisticsController.start();
   }
 }

@@ -97,4 +97,5 @@ export { StoredFile } from "./Service/Storage/StoredFile";
  * Render
  */
 export { XmaxVideoView } from "./Render/Video/XmaxVideoView";
+export type { VideoRenderStatistics } from "./Render/Video/VideoRenderStatistics";
 export { XmaxRealtimeVideoView } from "./Render/Video/XmaxRealtimeVideoView";
