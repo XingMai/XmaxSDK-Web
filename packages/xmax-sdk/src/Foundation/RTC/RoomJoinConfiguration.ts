@@ -1,3 +1,5 @@
+import { RtcProvider } from "./RtcProvider";
+
 export interface RoomJoinConfigurationInit {
   /**
    * TRTC 房间号（字符串房间号）。
@@ -32,7 +34,7 @@ export class RoomJoinConfiguration {
   /**
    * RTC 提供方。
    */
-  readonly provider = "trtc" as const;
+  readonly provider = RtcProvider.trtc;
   /**
    * 进房参数
    */
@@ -83,7 +85,7 @@ export class RoomJoinConfiguration {
  * 声网进房参数；App ID、频道、用户和 Token 必须来自同一会话。
  */
 export interface AgoraRoomJoinConfiguration {
-  readonly provider: "agora";
+  readonly provider: RtcProvider.agora;
   readonly roomID: string;
   readonly userID: string;
   readonly appID: string;
@@ -91,10 +93,10 @@ export interface AgoraRoomJoinConfiguration {
 }
 
 /**
- * 两种 RTC 的进房参数，不混用不同厂商的鉴权字段。
+ * 火山引擎进房参数，不混用不同厂商的鉴权字段。
  */
 export interface VeRtcRoomJoinConfiguration {
-  readonly provider: "vertc";
+  readonly provider: RtcProvider.vertc;
   readonly roomID: string;
   readonly userID: string;
   readonly appID: string;

@@ -46,7 +46,7 @@ function setup(options?: { deferred?: boolean; interpolationMs?: number }) {
   const onActiveChange = vi.fn();
   const onFailure = vi.fn();
   const pipeline = new RemoteVideoFramePipeline(video as unknown as HTMLVideoElement, canvas, {
-    size: { width: 320, height: 180 }, targetFrameRate: 60, onActiveChange, onFailure,
+    size: { width: 320, height: 180 }, onActiveChange, onFailure,
   }, create);
   pipeline.start();
   return { video, canvas, processor, pipeline, create, onActiveChange, onFailure, complete: () => complete() };

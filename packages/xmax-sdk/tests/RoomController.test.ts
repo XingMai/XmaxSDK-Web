@@ -1,3 +1,4 @@
+import { RtcProvider } from "../src/Foundation/RTC/RtcProvider";
 import { describe, expect, it, vi } from "vitest";
 import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import { XmaxLogger, XmaxLoggerOption } from "../src/Foundation/Logging/XmaxLogger";
@@ -82,7 +83,7 @@ class RoomHeartbeatStub extends RoomHeartbeat {
 }
 
 const connection = new RealtimeSessionConnection({
-  provider: "trtc",
+  provider: RtcProvider.trtc,
   roomID: "100000001",
   sdkAppID: "1600126360",
   userID: "rtc-user-001",
@@ -106,7 +107,7 @@ const noopEnsureActive = () => {};
 describe("RoomController", () => {
   it("uses Agora framing and RTC identity for generation, heartbeat and inbound targeting", async () => {
     const { controller, rtc, heartbeat } = makeController();
-    const credentials = { provider: "agora" as const, appID: "app", roomID: "000123", userID: "rtc-uid", roomToken: "token" };
+    const credentials = { provider: RtcProvider.agora as const, appID: "app", roomID: "000123", userID: "rtc-uid", roomToken: "token" };
     await controller.join(credentials, noopEnsureActive);
     expect(rtc.joinRoomCalls[0]).toEqual(credentials);
     expect(heartbeat.startedUserIDs).toEqual(["rtc-uid"]);
@@ -385,7 +386,7 @@ describe("RoomController", () => {
 describe("VeRTC room protocol", () => {
   it("preserves existing JSON fields and sends a long prompt without chunking", async () => {
     const { controller, rtc, heartbeat } = makeController();
-    const credentials = { provider: "vertc" as const, appID: "app", roomID: "000123", userID: "ve-user", roomToken: "token", botID: "bot" };
+    const credentials = { provider: RtcProvider.vertc as const, appID: "app", roomID: "000123", userID: "ve-user", roomToken: "token", botID: "bot" };
     await controller.join(credentials, noopEnsureActive);
     expect(rtc.joinRoomCalls[0]).toEqual(credentials);
     expect(heartbeat.startedUserIDs).toEqual(["ve-user"]);

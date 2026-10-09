@@ -1,9 +1,13 @@
 import { FrameInterpolationManager, type FrameInterpolationProcessing } from "../../Foundation/Media/Video/FrameInterpolationManager";
 import type { ModelSize } from "../../Service/Realtime/RealtimeModel";
 
+/**
+ * 插帧输出按 60 fps 预算处理，每对源帧最多插入一帧。
+ */
+const INTERPOLATION_FRAME_RATE = 60;
+
 export interface RemoteFrameInterpolationOptions {
   size: ModelSize;
-  targetFrameRate: number;
   onActiveChange?: (active: boolean) => void;
   onFailure: (error: unknown) => void;
 }
@@ -111,7 +115,9 @@ export class RemoteVideoFramePipeline {
     this.enqueue({ slot, time });
     this.startTick();
     // 跳帧或间隔超出输出预算时只显示原帧，不做插值。
-    if (!consecutive || interval < 2000 / this.options.targetFrameRate - 1 || previousSlot === undefined || this.busy) return;
+    if (!consecutive || interval < 2000 / INTERPOLATION_FRAME_RATE - 1 || previousSlot === undefined || this.busy) {
+      return;
+    }
     this.interpolate(previousSlot, slot, previous, time, interval);
   }
 

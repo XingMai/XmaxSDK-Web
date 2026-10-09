@@ -11,9 +11,12 @@ import { XmaxRealtimeManager } from "./Realtime/XmaxRealtimeManager";
 import type { XmaxRealtimeManaging } from "./Realtime/XmaxRealtimeManaging";
 import { XmaxConfiguration } from "./XmaxConfiguration";
 import { apiBaseURL } from "../Foundation/Runtime/XmaxEnvironment";
+import { NonRealtimeTaskService } from "../Service/NonRealtime/NonRealtimeTaskService";
+import { XmaxNonRealtimeManager } from "./NonRealtime/XmaxNonRealtimeManager";
+import type { XmaxNonRealtimeManaging } from "./NonRealtime/XmaxNonRealtimeManaging";
 
 /**
- * SDK 的统一入口，负责创建实时和媒体服务组件。
+ * SDK 的统一入口，负责创建实时、非实时和媒体服务组件。
  */
 export class XmaxClient {
   /**
@@ -64,6 +67,14 @@ export class XmaxClient {
       apiService,
       environment: this.configuration.environment,
     });
+  }
+
+  /**
+   * 创建非实时视频任务 Manager；复用全局 API Key 与环境地址，不使用实时模型地址覆盖。
+   * 本方法不发起网络请求或加载 RTC，任务由服务端持久化，可按 ID 恢复查询。
+   */
+  createNonRealtimeManager(): XmaxNonRealtimeManaging {
+    return new XmaxNonRealtimeManager(new NonRealtimeTaskService(this.apiService));
   }
 
   /**

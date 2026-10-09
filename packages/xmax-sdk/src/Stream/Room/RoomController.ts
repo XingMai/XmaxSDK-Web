@@ -1,3 +1,4 @@
+import { RtcProvider } from "../../Foundation/RTC/RtcProvider";
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
 import { toRoomJoinConfiguration } from "../../Service/Realtime/RealtimeSessionConnection";
@@ -110,7 +111,7 @@ export class RoomController implements RoomControlling {
 
     try {
       if (!this.customCodec) this.codec = new RoomMessageCodec(
-        connection.provider === "vertc" ? null : connection.provider === "agora" ? "__agora_chunk__" : "__trtc_chunk__",
+        connection.provider === RtcProvider.vertc ? null : connection.provider === RtcProvider.agora ? "__agora_chunk__" : "__trtc_chunk__",
       );
       await this.rtcManager.joinRoom(toRoomJoinConfiguration(connection));
       ensureActive();

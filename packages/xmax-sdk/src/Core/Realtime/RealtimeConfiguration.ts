@@ -1,91 +1,51 @@
-import type { RealtimeModel } from "../../Service/Realtime/RealtimeModel";
+import { supportedRtcProviders, type RealtimeModel } from "../../Service/Realtime/RealtimeModel";
 import { RtcProvider } from "../../Foundation/RTC/RtcProvider";
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
-
-/**
- * 远端视频插帧的开关与显示帧率配置。
- */
-export interface FrameInterpolationConfiguration {
-  /**
-   * 是否请求开启远端插帧，默认 false。不支持时自动播放原视频。
-   */
-  enabled?: boolean;
-  /**
-   * 显示帧率上限，默认 60；每对源帧最多插入一帧。取值 1–60。
-   */
-  targetFrameRate?: number;
-}
-
-export interface RealtimeConfigurationInit {
-  /**
-   * RTC 提供方，默认 TRTC；不根据模型名称自动推断。
-   */
-  provider?: RtcProvider;
-  /**
-   * 实时生成业务使用的模型。
-   */
-  model: RealtimeModel;
-
-  /**
-   * 是否默认开启远端生成画面的插帧，默认 false。
-   * frameInterpolation.enabled 显式设置时优先。
-   */
-  isFrameInterpolationEnabled?: boolean;
-  /**
-   * 插帧详细配置；enabled 显式设置时优先于简化开关。
-   */
-  frameInterpolation?: FrameInterpolationConfiguration;
-}
 
 /**
  * 创建实时 Manager 所需的业务配置。
  */
 export class RealtimeConfiguration {
   /**
-   * RTC 配置
-   */
-  readonly provider: RtcProvider;
-  /**
-   * 模型配置
-   */
-  /**
    * 实时生成业务使用的模型。
    */
   readonly model: RealtimeModel;
 
   /**
-   * 远端插帧配置
+   * 实时连接使用的 RTC 提供方。
    */
+  readonly provider: RtcProvider;
+
   /**
    * 是否默认请求开启远端生成画面的插帧。
    */
   readonly isFrameInterpolationEnabled: boolean;
-  /**
-   * 已补全默认值的只读插帧配置。
-   */
-  readonly frameInterpolation: Readonly<Required<FrameInterpolationConfiguration>>;
 
   /**
    * 创建实时业务配置。
    *
    * @param init.model 实时生成业务使用的模型。
-   * @param init.provider RTC 提供方，默认 TRTC；创建后不可切换。
-   * @param init.isFrameInterpolationEnabled 是否默认开启远端生成画面的插帧。
-   * @param init.frameInterpolation 插帧开关和显示帧率上限的详细配置。
+   * @param init.provider RTC 提供方，默认按模型定义选择；必须受模型支持，创建后不可切换。
+   * @param init.isFrameInterpolationEnabled 是否默认开启远端生成画面的插帧，默认 false。
    */
-  constructor(init: RealtimeConfigurationInit) {
-    this.provider = init.provider ?? RtcProvider.trtc;
+  constructor(init: {
+    model: RealtimeModel;
+    provider?: RtcProvider;
+    isFrameInterpolationEnabled?: boolean;
+  }) {
+    const providers = supportedRtcProviders(init.model);
+    this.provider = init.provider ?? providers[0]!;
     if (!Object.values(RtcProvider).includes(this.provider)) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Unsupported RTC provider");
     }
+    if (!providers.includes(this.provider)) {
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        `Model ${init.model} does not support RTC provider ${this.provider}`,
+      );
+    }
     this.model = init.model;
 
-    const targetFrameRate = init.frameInterpolation?.targetFrameRate ?? 60;
-    if (!Number.isFinite(targetFrameRate) || targetFrameRate < 1 || targetFrameRate > 60) {
-      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Interpolation targetFrameRate must be between 1 and 60");
-    }
-
-    this.isFrameInterpolationEnabled = init.frameInterpolation?.enabled ?? init.isFrameInterpolationEnabled ?? false;
-    this.frameInterpolation = Object.freeze({ enabled: this.isFrameInterpolationEnabled, targetFrameRate });
+    this.isFrameInterpolationEnabled = init.isFrameInterpolationEnabled ?? false;
   }
 }

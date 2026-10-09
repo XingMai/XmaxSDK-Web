@@ -9,6 +9,14 @@ export enum ApiMethod {
 }
 
 /**
+ * 请求控制选项；signal 仅取消本地 HTTP 请求，不撤销服务端已执行的操作。
+ */
+export interface ApiRequestOptions {
+  signal?: AbortSignal;
+  keepalive?: boolean;
+}
+
+/**
  * 定义 Xmax API 的基础请求能力。
  *
  * 响应统一按 `{ success, code, message, data }` 信封解析，
@@ -24,12 +32,12 @@ export interface ApiServicing {
    * @returns 统一响应中的 `data` 字段。
    * @throws 配置无效、网络失败、业务失败或响应无法解析时抛出错误。
    */
-  request<T>(method: ApiMethod, path: string, body?: unknown): Promise<T>;
+  request<T>(method: ApiMethod, path: string, body?: unknown, options?: ApiRequestOptions): Promise<T>;
 
   /**
    * 发送 GET 请求。
    */
-  get<T>(path: string): Promise<T>;
+  get<T>(path: string, options?: ApiRequestOptions): Promise<T>;
 
   /**
    * 发送 POST 请求。

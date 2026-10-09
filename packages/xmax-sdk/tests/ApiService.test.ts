@@ -43,6 +43,16 @@ function makeApiService(options?: {
 }
 
 describe("ApiService", () => {
+  it("accepts an envelope with code 200 when the optional success flag is omitted", async () => {
+    const { service } = makeApiService({ body: JSON.stringify({ code: 200, data: { value: 1 } }) });
+    await expect(service.get("/offline-task/task")).resolves.toEqual({ value: 1 });
+  });
+
+  it("does not override explicit failure with code 200", async () => {
+    const { service } = makeApiService({ body: JSON.stringify({ success: false, code: 200, data: {} }) });
+    await expect(service.get("/offline-task/task")).rejects.toMatchObject({ code: XmaxErrorCode.apiError });
+  });
+
   it("sends request with headers and parses the data envelope", async () => {
     const { service, requests } = makeApiService();
     const data = await service.post<{ value: number }>("/session", {

@@ -180,7 +180,7 @@ describe("XmaxRealtimeConnectionManager", () => {
     const { methods: stream, controller } = makeStream();
     const connection: RtcSessionConnection = provider !== RtcProvider.trtc
       ? { provider, roomID: "room", appID: "app", userID: "rtc-user", roomToken: "token-v1" }
-      : new RealtimeSessionConnection({ provider: "trtc", roomID: "room", sdkAppID: "1", userID: "user", userSig: "sig", privateMapKey: "key" });
+      : new RealtimeSessionConnection({ provider: RtcProvider.trtc, roomID: "room", sdkAppID: "1", userID: "user", userSig: "sig", privateMapKey: "key" });
     const session = new RealtimeSession({ id: "session", connection });
     const service = {
       heartbeatSession: vi.fn(async () => session),
@@ -312,7 +312,7 @@ describe("XmaxRealtimeConnectionManager", () => {
     await manager.connect(options);
     const handlers = service.startHeartbeat.mock.calls[0]![1];
     const refresh = (roomID: string) => new RealtimeSession({ id: "session", connection: new RealtimeSessionConnection({
-      provider: "trtc", roomID, sdkAppID: "1", userID: "user", userSig: "new-sig", privateMapKey: "key",
+      provider: RtcProvider.trtc, roomID, sdkAppID: "1", userID: "user", userSig: "new-sig", privateMapKey: "key",
     }) });
     await handlers.onRefresh?.(refresh("room"));
     expect(events.onHeartbeatFailure).not.toHaveBeenCalled();
@@ -326,7 +326,7 @@ describe("XmaxRealtimeConnectionManager", () => {
   it("rejects mismatched providers before joining and retains the session for cleanup", async () => {
     const { manager, service, stream, options } = setup();
     service.createSession.mockResolvedValue(new RealtimeSession({ id: "mismatch", connection: {
-      provider: "agora", roomID: "room", appID: "app", userID: "rtc-user", roomToken: "token",
+      provider: RtcProvider.agora, roomID: "room", appID: "app", userID: "rtc-user", roomToken: "token",
     } }));
     await expect(manager.connect(options)).rejects.toThrow("adapter configuration does not match");
     expect(stream.connect).not.toHaveBeenCalled();

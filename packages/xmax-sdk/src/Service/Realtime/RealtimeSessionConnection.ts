@@ -1,3 +1,4 @@
+import { RtcProvider } from "../../Foundation/RTC/RtcProvider";
 import type { XmaxError } from "../../Foundation/Errors/XmaxError";
 import type { RealtimeSession } from "./RealtimeSession";
 import { RoomJoinConfiguration, type RtcRoomJoinConfiguration, type VeRtcRoomJoinConfiguration } from "../../Foundation/RTC/RoomJoinConfiguration";
@@ -6,7 +7,7 @@ export interface RealtimeSessionConnectionInit {
   /**
    * TRTC 凭据的提供方判别字段。
    */
-  provider: "trtc";
+  provider: RtcProvider.trtc;
 
   /**
    * TRTC 房间号（字符串房间号）。
@@ -52,7 +53,7 @@ export class RealtimeSessionConnection {
   /**
    * TRTC 凭据的提供方判别字段。
    */
-  readonly provider: "trtc";
+  readonly provider: RtcProvider.trtc;
 
   /**
    * 进房参数
@@ -134,7 +135,7 @@ export interface AgoraSessionConnection {
   /**
    * 提供方与房间身份
    */
-  readonly provider: "agora";
+  readonly provider: RtcProvider.agora;
   readonly roomID: string;
   readonly appID: string;
   readonly userID: string;
@@ -157,9 +158,9 @@ export type RtcSessionConnection = RealtimeSessionConnection | AgoraSessionConne
 
 /** provider 由接入配置赋值，只在 SDK 内部区分凭据类型。 */
 export function toRoomJoinConfiguration(connection: RtcSessionConnection): RtcRoomJoinConfiguration {
-  return connection.provider === "trtc" ? new RoomJoinConfiguration(connection) : connection;
+  return connection.provider === RtcProvider.trtc ? new RoomJoinConfiguration(connection) : connection;
 }
 
 export function connectionAppID(connection: RtcSessionConnection): string {
-  return connection.provider === "trtc" ? connection.sdkAppID : connection.appID;
+  return connection.provider === RtcProvider.trtc ? connection.sdkAppID : connection.appID;
 }

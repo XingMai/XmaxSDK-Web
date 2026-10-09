@@ -302,7 +302,6 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     const size = this.interpolationSize;
     this.connectionManager.setFrameInterpolation(size ? {
       size,
-      targetFrameRate: this.options.frameInterpolation.targetFrameRate,
       onFailure: (error) => {
         if (revision === this.interpolationRevision) this.handleInterpolationFailure(error);
       },

@@ -528,6 +528,7 @@ button:disabled,
   outline-offset: 6px;
 }
 
+.sessionModel,
 .sessionTimer {
   display: inline-flex;
   align-items: center;
@@ -544,6 +545,10 @@ button:disabled,
   font-size: 13px;
   font-weight: 500;
   color: var(--text-secondary);
+}
+
+.sessionModel {
+  white-space: nowrap;
 }
 
 .stopButton {

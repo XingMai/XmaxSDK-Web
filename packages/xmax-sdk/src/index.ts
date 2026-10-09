@@ -9,9 +9,22 @@ export type { XmaxConfigurationInit } from "./Core/XmaxConfiguration";
  * Core / Realtime
  */
 export { RealtimeConfiguration } from "./Core/Realtime/RealtimeConfiguration";
-export type { RealtimeConfigurationInit } from "./Core/Realtime/RealtimeConfiguration";
-export type { FrameInterpolationConfiguration } from "./Core/Realtime/RealtimeConfiguration";
 export type { XmaxRealtimeManaging } from "./Core/Realtime/XmaxRealtimeManaging";
+
+/**
+ * Core / NonRealtime
+ */
+export type { XmaxNonRealtimeManaging, NonRealtimeWaitOptions } from "./Core/NonRealtime/XmaxNonRealtimeManaging";
+
+/**
+ * Service / NonRealtime
+ */
+export { NonRealtimeQuality, NonRealtimeTaskStatus } from "./Service/NonRealtime/NonRealtimeTask";
+export type {
+  NonRealtimeTask, NonRealtimeResult, NonRealtimeTaskOptions,
+  NonRealtimeTaskListOptions, NonRealtimeTaskPage,
+} from "./Service/NonRealtime/NonRealtimeTask";
+export { NonRealtimeTaskError } from "./Service/NonRealtime/NonRealtimeTaskError";
 
 /**
  * Foundation
@@ -43,6 +56,8 @@ export type { RealtimeContextInit } from "./Service/Realtime/RealtimeContext";
 export { RealtimeMediaStream } from "./Service/Realtime/RealtimeMediaStream";
 export {
   RealtimeModel,
+  modelDisplayName,
+  supportedRtcProviders,
   defaultCameraVideoFormat,
   defaultFrameRate,
 } from "./Service/Realtime/RealtimeModel";

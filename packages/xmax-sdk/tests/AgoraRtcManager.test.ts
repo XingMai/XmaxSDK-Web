@@ -1,3 +1,4 @@
+import { RtcProvider } from "../src/Foundation/RTC/RtcProvider";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { IAgoraRTC, IAgoraRTCRemoteUser } from "agora-rtc-sdk-ng";
 import { AgoraRtcManager } from "../src/Foundation/RTC/Agora/AgoraRtcManager";
@@ -11,7 +12,7 @@ import { RoomHeartbeat } from "../src/Stream/Room/RoomHeartbeat";
 import { RealtimeContext } from "../src/Service/Realtime/RealtimeContext";
 import { RealtimeVideoFormat } from "../src/Service/Realtime/RealtimeVideoFormat";
 
-const credentials: AgoraRoomJoinConfiguration = { provider: "agora", appID: "app", roomID: "000123", userID: "rtc-user", roomToken: "secret" };
+const credentials: AgoraRoomJoinConfiguration = { provider: RtcProvider.agora, appID: "app", roomID: "000123", userID: "rtc-user", roomToken: "secret" };
 const managers: AgoraRtcManager[] = [];
 
 function deferred<T>() {

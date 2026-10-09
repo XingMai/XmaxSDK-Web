@@ -292,37 +292,38 @@ resolution, frame rate, and bitrate depend on the device, browser, and network;
 use the statistics callbacks to observe them. Await each operation before starting
 another configuration or lifecycle operation.
 
-TRTC is the default RTC provider. To use Agora, replace the manager configuration
-above; camera capture, generation, rendering, and cleanup use the same APIs:
+Each model declares its supported RTC providers. The SDK selects the model's
+default provider when `provider` is omitted. To use Agora, replace the manager
+configuration above; camera capture, generation, rendering, and cleanup use the same APIs:
 
 ```javascript
-import { RtcProvider } from "@xmaxai/web-sdk";
-
 const realtime = client.createRealtimeManager(
   new RealtimeConfiguration({
-    provider: RtcProvider.agora,
     model: RealtimeModel.x2_0_agora,
   })
 );
 ```
 
-To use VeRTC, set both values explicitly:
+To use VeRTC, select the preview model:
 
 ```javascript
 const realtime = client.createRealtimeManager(
   new RealtimeConfiguration({
-    provider: RtcProvider.vertc,
     model: RealtimeModel.x2_1_preview,
   })
 );
 ```
 
-The provider is fixed for each manager, defaults to TRTC, and is chosen only by
-`RealtimeConfiguration.provider`. The SDK does not infer it from the model or read
-`modelExtra.provider` from the backend. The selected provider determines how RTC
-credentials are parsed.
+The provider is fixed for each manager: `x2.0` and `x2.0-trtc` use
+`RtcProvider.trtc`, `x2.0-agora` uses `RtcProvider.agora`, and `x2.0-pro`,
+`x2.1-preview`, and `x2.1-preview-1005` use `RtcProvider.vertc`.
+Import `RtcProvider` to specify it explicitly; unsupported
+model/provider combinations are rejected during configuration. Use the exported
+`supportedRtcProviders(model)` to inspect model capabilities. The SDK does not read
+`modelExtra.provider` from the backend; the resolved configuration determines how
+RTC credentials are parsed.
 
-The `x2.0-agora` and `x2.1-preview` models use
+The `x2.0-pro`, `x2.0-agora`, `x2.1-preview`, and `x2.1-preview-1005` models use
 `https://dev.xmaxai.com/open/api/v1` in both environments.
 Other models and file uploads use the configured environment's API endpoint.
 
@@ -436,6 +437,64 @@ this through `setStateListener`.
 > and live statistics, see the [example project](./examples/xlab-react).
 
 <br>
+
+### Non-realtime video tasks
+
+Use `client.createNonRealtimeManager()` to submit video-file processing tasks.
+This is cloud processing, not on-device or offline execution. It uses the client's
+API key and environment endpoint, independently of realtime model endpoint overrides.
+The selected API environment must provide the `/offline-task` endpoints.
+
+```typescript
+import { NonRealtimeQuality, NonRealtimeTaskError } from "@xmaxai/web-sdk";
+
+const manager = client.createNonRealtimeManager();
+const controller = new AbortController();
+
+// sourceVideoURL and referenceImageURL must come from the Xmax upload flow.
+// This API does not upload local files or accept blob: URLs.
+const task = await manager.submitTask({
+  videoPath: sourceVideoURL,
+  referencePath: referenceImageURL, // Optional.
+  prompt: "Change the character's clothing while preserving the motion.",
+  quality: NonRealtimeQuality.hd,
+  // Omit fps to retain the source frame rate, including fractional rates.
+});
+
+// Persist task.uid before waiting, so the task can be queried after a reload.
+try {
+  const completed = await manager.waitForCompletion(task.uid, {
+    intervalMs: 2000,
+    timeoutMs: 30 * 60 * 1000, // Optional client-side deadline.
+    signal: controller.signal,
+    onTaskUpdated: (snapshot) => console.log(snapshot.status),
+  });
+  console.log(completed.result?.url);
+} catch (error) {
+  if (error instanceof NonRealtimeTaskError) {
+    console.error(error.message, error.task);
+  } else {
+    throw error;
+  }
+}
+```
+
+- `submitTask()` returns immediately after acceptance and never automatically
+  retries. A timeout or invalid response may still mean the server created and
+  charged for the task; do not blindly resubmit.
+- `waitForCompletion()` polls serially and retries transient query failures up to
+  three consecutive times by default, with backoff. A successful query resets the
+  retry count. Without `timeoutMs`, waiting continues until completion, failure, or
+  cancellation. `controller.abort()` stops local waiting and the in-flight query;
+  it does **not** cancel or refund the server task.
+- `getTask(uid)` returns any task status, including `error`. Waiting for an `error`
+  task, or a completed task without a usable result, throws `NonRealtimeTaskError`
+  with the task snapshot attached.
+- `getTasks([uid, ...])` queries up to 100 IDs. `listTasks({ pageNumber, pageSize,
+  status })` retrieves one page, newest first. Saved IDs can be queried or waited
+  on using a new manager instance.
+- Uploaded video resources are required. Automatic video upload is not included
+  in this API; the existing storage service currently exposes image upload only.
 
 ## Example Project
 

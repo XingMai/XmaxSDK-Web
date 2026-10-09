@@ -1,3 +1,4 @@
+import { RtcProvider } from "../RtcProvider";
 import { XmaxError, XmaxErrorCode } from "../../Errors/XmaxError";
 import type { NetworkQuality, TRTCStatistics } from "trtc-sdk-v5";
 import { XmaxLogger } from "../../Logging/XmaxLogger";
@@ -289,7 +290,7 @@ export class TrtcRtcManager implements RtcManaging {
    * @throws 引擎未初始化、进房参数无效或进房失败时抛出错误。
    */
   async joinRoom(configuration: RtcRoomJoinConfiguration): Promise<void> {
-    if (configuration.provider !== "trtc") {
+    if (configuration.provider !== RtcProvider.trtc) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "TRTC credentials required");
     }
     const engine = this.requireEngine();

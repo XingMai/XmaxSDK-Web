@@ -1,3 +1,4 @@
+import { RtcProvider } from "../src/Foundation/RTC/RtcProvider";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { VeRtcManager, VERTC_APP_ID } from "../src/Foundation/RTC/VeRTC/VeRtcManager";
 import { CameraPosition } from "../src/Foundation/Media/Camera/CameraPosition";
@@ -5,7 +6,7 @@ import { RtcVideoEncoderPreference } from "../src/Foundation/RTC/VideoEncodingCo
 import type { VeRtcRoomJoinConfiguration } from "../src/Foundation/RTC/RoomJoinConfiguration";
 
 type SDK = typeof import("@volcengine/rtc");
-const credentials: VeRtcRoomJoinConfiguration = { provider: "vertc", appID: VERTC_APP_ID, roomID: "000123", userID: "ve-user", roomToken: "secret-v1" };
+const credentials: VeRtcRoomJoinConfiguration = { provider: RtcProvider.vertc, appID: VERTC_APP_ID, roomID: "000123", userID: "ve-user", roomToken: "secret-v1" };
 const managers: VeRtcManager[] = [];
 function deferred<T>() {
   let resolve!: (value: T) => void;

@@ -1,7 +1,7 @@
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
 import { XMAX_SDK_VERSION } from "../../Foundation/Runtime/RuntimeInfo";
-import { ApiMethod, type ApiServicing } from "./ApiServicing";
+import { ApiMethod, type ApiServicing, type ApiRequestOptions } from "./ApiServicing";
 
 /**
  * Xmax API 统一响应信封中的公共元数据。
@@ -99,11 +99,29 @@ export class ApiService implements ApiServicing {
    *
    * @param options.keepalive 为 true 时请求可存活于页面卸载之后。
    */
-  async request<T>(method: ApiMethod, path: string, body?: unknown, options?: { keepalive?: boolean }): Promise<T> {
+  async request<T>(method: ApiMethod, path: string, body?: unknown, options?: ApiRequestOptions): Promise<T> {
     this.validateConfiguration();
+    if (options?.signal?.aborted) {
+      throw new XmaxError(XmaxErrorCode.cancelled, "API request was cancelled");
+    }
 
     const request = this.makeRequest(method, path, body, options);
     const startedAt = Date.now();
+
+    // 同时保留单次请求超时与调用方取消，不依赖较新的 AbortSignal.any。
+    const timeoutSignal = request.init.signal!;
+    const controller = new AbortController();
+    const abortTimeout = () => controller.abort(timeoutSignal.reason);
+    const abortCaller = () => controller.abort(new DOMException("Cancelled", "AbortError"));
+    timeoutSignal.addEventListener("abort", abortTimeout, { once: true });
+    options?.signal?.addEventListener("abort", abortCaller, { once: true });
+    request.init.signal = controller.signal;
+    if (timeoutSignal.aborted) {
+      abortTimeout();
+    }
+    if (options?.signal?.aborted) {
+      abortCaller();
+    }
 
     let status: number;
     let text: string;
@@ -115,6 +133,9 @@ export class ApiService implements ApiServicing {
       const mapped = ApiService.transportError(error);
       this.logFailure(method, path, mapped, startedAt);
       throw mapped;
+    } finally {
+      timeoutSignal.removeEventListener("abort", abortTimeout);
+      options?.signal?.removeEventListener("abort", abortCaller);
     }
 
     try {
@@ -135,8 +156,8 @@ export class ApiService implements ApiServicing {
   /**
    * 发送 GET 请求。
    */
-  get<T>(path: string): Promise<T> {
-    return this.request<T>(ApiMethod.get, path);
+  get<T>(path: string, options?: ApiRequestOptions): Promise<T> {
+    return this.request<T>(ApiMethod.get, path, undefined, options);
   }
 
   /**
@@ -280,7 +301,8 @@ export class ApiService implements ApiServicing {
     }
 
     const ok = status >= 200 && status < 300;
-    if (!ok || envelope.success !== true) {
+    const succeeded = envelope.success === true || (envelope.success === undefined && envelope.code === 200);
+    if (!ok || !succeeded) {
       const message = envelope.message?.trim();
       throw new XmaxError(
         XmaxErrorCode.apiError,

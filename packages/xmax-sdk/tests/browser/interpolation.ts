@@ -67,7 +67,7 @@ function status() {
 function setEnabled(enabled: boolean) {
   state.requested = enabled;
   view.setFrameInterpolation(enabled ? {
-    size: { width: input.width, height: input.height }, targetFrameRate: 60,
+    size: { width: input.width, height: input.height },
     onActiveChange: (active) => { state.active = active; if (active) state.activations++; status(); },
     onFailure: (error) => { state.errors.push(String(error)); status(); },
   } : undefined);

@@ -1,3 +1,4 @@
+import { RtcProvider } from "../src/Foundation/RTC/RtcProvider";
 import { describe, expect, it, vi } from "vitest";
 import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import type { RtcEventListener } from "../src/Foundation/RTC/RtcEventListener";
@@ -117,7 +118,7 @@ class RoomHeartbeatStub extends RoomHeartbeat {
 }
 
 const connection = new RealtimeSessionConnection({
-  provider: "trtc",
+  provider: RtcProvider.trtc,
   roomID: "100000001",
   sdkAppID: "1600126360",
   userID: "rtc-user-001",

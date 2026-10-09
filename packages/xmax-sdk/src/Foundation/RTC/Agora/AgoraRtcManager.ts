@@ -1,3 +1,4 @@
+import { RtcProvider } from "../RtcProvider";
 import type { AREAS, IAgoraRTC, IAgoraRTCClient, IAgoraRTCRemoteUser, ICameraVideoTrack, IMicrophoneAudioTrack } from "agora-rtc-sdk-ng";
 import { XmaxError, XmaxErrorCode } from "../../Errors/XmaxError";
 import { XmaxLogger } from "../../Logging/XmaxLogger";
@@ -228,7 +229,7 @@ export class AgoraRtcManager implements RtcManaging {
     // 旧重进房操作完全结束后才允许新进房，避免迟到的 leave 影响新连接。
     await this.rejoinTask?.catch(() => {});
     const client = this.requireClient();
-    if (configuration.provider !== "agora" || this.connection) {
+    if (configuration.provider !== RtcProvider.agora || this.connection) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Agora credentials and an idle room are required");
     }
     const version = ++this.roomVersion;
@@ -265,7 +266,7 @@ export class AgoraRtcManager implements RtcManaging {
     if (signal?.aborted) throw this.cancelled();
     const current = this.connection;
     const client = this.requireClient();
-    if (!current || config.provider !== "agora" || config.appID !== current.appID || config.roomID !== current.roomID || config.userID !== current.userID) {
+    if (!current || config.provider !== RtcProvider.agora || config.appID !== current.appID || config.roomID !== current.roomID || config.userID !== current.userID) {
       throw new XmaxError(XmaxErrorCode.sessionError, "Agora session binding changed");
     }
     const version = this.roomVersion;

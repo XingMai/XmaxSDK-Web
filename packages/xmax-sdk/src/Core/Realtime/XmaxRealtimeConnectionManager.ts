@@ -177,7 +177,7 @@ export class XmaxRealtimeConnectionManager {
   async refreshCredentials(): Promise<void> {
     if (this.credentialRefresh) return this.credentialRefresh;
     const current = this.activeSession;
-    if (!current?.connection || current.connection.provider === "trtc") return;
+    if (!current?.connection || current.connection.provider === RtcProvider.trtc) return;
     const version = this.refreshVersion;
     const operation = (async () => {
       try {
@@ -350,7 +350,7 @@ export class XmaxRealtimeConnectionManager {
       return;
     }
 
-    if (next.provider !== "trtc" && (force || !previous || previous.provider === "trtc" || next.roomToken !== previous.roomToken)) {
+    if (next.provider !== RtcProvider.trtc && (force || !previous || previous.provider === RtcProvider.trtc || next.roomToken !== previous.roomToken)) {
       await this.dependencies.streamController.updateCredentials(next, this.credentialController?.signal);
       if (version !== this.refreshVersion || this.activeSession !== current) return;
     }

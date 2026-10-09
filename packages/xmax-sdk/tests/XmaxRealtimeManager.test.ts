@@ -1,3 +1,4 @@
+import { RtcProvider } from "../src/Foundation/RTC/RtcProvider";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { NetworkStatisticsListener } from "../src/Foundation/RTC/NetworkStatistics";
 import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
@@ -228,7 +229,7 @@ class RealtimeSessionServicingStub implements RealtimeSessionServicing {
     userID: "user-1",
     status: "ACTIVE",
     connection: new RealtimeSessionConnection({
-      provider: "trtc",
+      provider: RtcProvider.trtc,
       roomID: "room-1",
       sdkAppID: "app-1",
       userID: "rtc-user-1",
@@ -1328,7 +1329,7 @@ describe("XmaxRealtimeManager 断连与关闭", () => {
         id: "session-1",
         status: "ACTIVE",
         connection: new RealtimeSessionConnection({
-          provider: "trtc",
+          provider: RtcProvider.trtc,
           roomID: "room-1",
           sdkAppID: "app-1",
           userID: "rtc-user-1",
@@ -1356,7 +1357,7 @@ describe("XmaxRealtimeManager 断连与关闭", () => {
         id: "session-1",
         status: "ACTIVE",
         connection: new RealtimeSessionConnection({
-          provider: "trtc",
+          provider: RtcProvider.trtc,
           roomID: "room-2",
           sdkAppID: "app-1",
           userID: "rtc-user-1",

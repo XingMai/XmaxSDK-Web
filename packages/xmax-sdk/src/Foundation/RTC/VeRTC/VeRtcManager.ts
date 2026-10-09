@@ -1,3 +1,4 @@
+import { RtcProvider } from "../RtcProvider";
 import type { IRTCEngine } from "@volcengine/rtc";
 import { XmaxError, XmaxErrorCode } from "../../Errors/XmaxError";
 import { XmaxLogger, XmaxLoggerOption } from "../../Logging/XmaxLogger";
@@ -152,7 +153,7 @@ export class VeRtcManager implements RtcManaging {
     await this.joining?.catch(() => {});
     await this.recovery?.catch(() => {});
     const engine = this.requireEngine();
-    if (config.provider !== "vertc" || config.appID !== VERTC_APP_ID || this.connection) {
+    if (config.provider !== RtcProvider.vertc || config.appID !== VERTC_APP_ID || this.connection) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "VeRTC credentials for the configured AppID and an idle room are required");
     }
     this.clearRoom();
@@ -197,7 +198,7 @@ export class VeRtcManager implements RtcManaging {
     const engine = this.requireEngine();
     const current = this.connection;
     if (signal?.aborted) throw this.cancelled();
-    if (!current || config.provider !== "vertc" || config.appID !== current.appID || config.roomID !== current.roomID || config.userID !== current.userID) {
+    if (!current || config.provider !== RtcProvider.vertc || config.appID !== current.appID || config.roomID !== current.roomID || config.userID !== current.userID) {
       throw new XmaxError(XmaxErrorCode.sessionError, "VeRTC session binding changed");
     }
     const version = this.roomVersion;

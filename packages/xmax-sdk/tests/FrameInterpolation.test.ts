@@ -10,16 +10,11 @@ import { createHash } from "node:crypto";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("frame interpolation configuration and support", () => {
-  it("defaults off, supports the top-level flag, and gives the nested option priority", () => {
+  it("defaults off and uses the interpolation flag", () => {
     const model = RealtimeModel.x2_0_trtc;
-    expect(new RealtimeConfiguration({ model }).frameInterpolation).toEqual({ enabled: false, targetFrameRate: 60 });
-    expect(new RealtimeConfiguration({ model, isFrameInterpolationEnabled: true }).frameInterpolation.enabled).toBe(true);
-    const options = new RealtimeConfiguration({ model, isFrameInterpolationEnabled: false, frameInterpolation: { enabled: true, targetFrameRate: 30 } });
-    expect(options.isFrameInterpolationEnabled).toBe(true);
-    expect(Object.isFrozen(options.frameInterpolation)).toBe(true);
-    for (const targetFrameRate of [0, -1, 61, NaN, Infinity]) {
-      expect(() => new RealtimeConfiguration({ model, frameInterpolation: { targetFrameRate } })).toThrow();
-    }
+    expect(new RealtimeConfiguration({ model }).isFrameInterpolationEnabled).toBe(false);
+    expect(new RealtimeConfiguration({ model, isFrameInterpolationEnabled: true }).isFrameInterpolationEnabled).toBe(true);
+    expect(new RealtimeConfiguration({ model, isFrameInterpolationEnabled: false }).isFrameInterpolationEnabled).toBe(false);
   });
 
   it("preserves original dimensions above 900000 pixels, including sizes requiring GPU padding", () => {

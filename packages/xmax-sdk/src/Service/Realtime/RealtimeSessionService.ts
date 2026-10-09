@@ -301,7 +301,7 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
     }
 
     return new RealtimeSessionConnection({
-      provider: "trtc",
+      provider: RtcProvider.trtc,
       roomID,
       sdkAppID,
       userID,
