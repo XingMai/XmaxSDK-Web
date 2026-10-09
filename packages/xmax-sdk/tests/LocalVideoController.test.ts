@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LocalVideoController } from "../src/Media/Video/LocalVideoController";
 import { MediaService } from "../src/Service/Media/MediaService";
-import { RealtimeVideoFormat } from "../src/Service/Realtime/RealtimeVideoFormat";
+import { RealtimeVideoFormat, RealtimeVideoEncoderPreference } from "../src/Service/Realtime/RealtimeVideoFormat";
+import { RealtimeModel, resolutionBuckets } from "../src/Service/Realtime/RealtimeModel";
 import { VideoRenderRegistry } from "../src/Service/Realtime/VideoRenderBinding";
 import { VideoContentMode } from "../src/Foundation/Media/Video/VideoContentMode";
 
@@ -69,6 +70,55 @@ afterEach(async () => {
 });
 
 describe("LocalVideoController", () => {
+  it.each([
+    [1280, 720, 1920, 1024],
+    [720, 1280, 1024, 1920],
+    [1080, 1080, 1920, 1024],
+    [1920, 1024, 1920, 1024],
+    [1024, 1920, 1024, 1920],
+    [3840, 2160, 1920, 1024],
+    [640, 480, 1920, 1024],
+  ])("fits requested %s×%s into %s×%s and preserves encoding options", async (width, height, targetWidth, targetHeight) => {
+    const s = setup();
+    s.video.videoWidth = width;
+    s.video.videoHeight = height;
+    const videoFormat = new RealtimeVideoFormat({
+      width, height, fps: 24, minimumBitrate: 1000, maximumBitrate: 4000,
+      encoderPreference: RealtimeVideoEncoderPreference.maintainQuality,
+    });
+    const bucketsBefore = resolutionBuckets(media.model).map(size => ({ ...size }));
+    const local = await s.controller.create({ ...options, videoFormat }, media, s.signal.signal);
+    expect(local.videoTrack?.videoFormat).toEqual(videoFormat.resized(targetWidth, targetHeight));
+    expect(s.canvas.width).toBe(targetWidth);
+    expect(s.canvas.height).toBe(targetHeight);
+    expect(s.canvas.captureStream).toHaveBeenCalledWith(24);
+    const scale = Math.min(targetWidth / width, targetHeight / height);
+    expect(s.context.drawImage).toHaveBeenLastCalledWith(
+      s.video, (targetWidth - width * scale) / 2, (targetHeight - height * scale) / 2, width * scale, height * scale,
+    );
+    expect(videoFormat.width).toBe(width);
+    expect(videoFormat.height).toBe(height);
+    expect(resolutionBuckets(media.model)).toEqual(bucketsBefore);
+  });
+
+  it.each([RealtimeModel.x2_0_agora, RealtimeModel.x2_1_preview, "custom-model"])("uses the resolution buckets for %s", async (model) => {
+    const s = setup();
+    const local = await s.controller.create({
+      ...options, videoFormat: new RealtimeVideoFormat({ width: 1280, height: 720, fps: 30 }),
+    }, new MediaService(model), s.signal.signal);
+    expect(local.videoTrack?.videoFormat).toMatchObject({ width: 1920, height: 1024 });
+  });
+
+  it("keeps pixel-budget sizing for models without fixed resolutions", async () => {
+    const s = setup(), flexibleMedia = new MediaService(RealtimeModel.x2_0);
+    const videoFormat = new RealtimeVideoFormat({ width: 3840, height: 2160, fps: 30 });
+    const expected = flexibleMedia.resolveModelInputSize(videoFormat);
+    const local = await s.controller.create({ ...options, videoFormat }, flexibleMedia, s.signal.signal);
+    expect(local.videoTrack?.videoFormat).toMatchObject(expected);
+    expect(s.canvas.width).toBe(expected.width);
+    expect(s.canvas.height).toBe(expected.height);
+  });
+
   it("prepares first frame, routes file audio only to RTC, letterboxes and releases all resources", async () => {
     const s = setup();
     const local = await s.controller.create(options, media, s.signal.signal);

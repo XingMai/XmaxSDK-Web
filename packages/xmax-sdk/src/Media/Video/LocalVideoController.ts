@@ -2,6 +2,7 @@ import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
 import type { MediaService } from "../../Service/Media/MediaService";
 import { RealtimeMediaStream } from "../../Service/Realtime/RealtimeMediaStream";
+import { resolutionBuckets } from "../../Service/Realtime/RealtimeModel";
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
 import { StreamID } from "../../Service/Realtime/StreamID";
@@ -80,9 +81,7 @@ export class LocalVideoController {
     if (!(options.file instanceof Blob) || options.file.size === 0) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Local video requires a non-empty File or Blob");
     }
-    options.videoFormat.validate();
-    const size = mediaService.resolveModelInputSize(options.videoFormat);
-    const format = options.videoFormat.resized(size.width, size.height);
+    const format = this.resolveVideoFormat(options.videoFormat, mediaService);
     if (signal.aborted) {
       throw this.cancelled();
     }
@@ -317,6 +316,34 @@ export class LocalVideoController {
     context.fillStyle = "black";
     context.fillRect(0, 0, canvas.width, canvas.height);
     context.drawImage(video, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height);
+  }
+
+  /**
+   * 仅为本地文件选择最接近宽高比的模型档位；比例距离相同时优先横屏。
+   * 无固定档位时保留公共尺寸解析规则，帧率和显式编码配置不变。
+   */
+  private resolveVideoFormat(format: RealtimeVideoFormat, mediaService: MediaService): RealtimeVideoFormat {
+    format.validate();
+    const buckets = resolutionBuckets(mediaService.model);
+    let target = buckets.find(size => size.width === format.width && size.height === format.height);
+
+    if (!target && buckets.length > 0) {
+      const ratio = format.width / format.height;
+      let bestDistance = Number.POSITIVE_INFINITY;
+      for (const bucket of buckets) {
+        // 对数比例距离对横竖方向对称，避免正方形输入偏向竖屏。
+        const distance = Math.abs(Math.log((bucket.width / bucket.height) / ratio));
+        const tied = Math.abs(distance - bestDistance) < 1e-9;
+        if (distance < bestDistance - 1e-9 ||
+            (tied && bucket.width >= bucket.height && target && target.width < target.height)) {
+          target = bucket;
+          bestDistance = distance;
+        }
+      }
+    }
+
+    const size = mediaService.resolveModelInputSize(target ?? format);
+    return format.resized(size.width, size.height);
   }
 
   /**

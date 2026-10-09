@@ -315,15 +315,15 @@ const realtime = client.createRealtimeManager(
 ```
 
 The provider is fixed for each manager: `x2.0` and `x2.0-trtc` use
-`RtcProvider.trtc`, `x2.0-agora` uses `RtcProvider.agora`, and `x2.0-pro`,
-`x2.1-preview`, and `x2.1-preview-1005` use `RtcProvider.vertc`.
+`RtcProvider.trtc`, `x2.0-agora` uses `RtcProvider.agora`, and
+`x2.1-preview` uses `RtcProvider.vertc`.
 Import `RtcProvider` to specify it explicitly; unsupported known-model/provider
 combinations are rejected during configuration. Use the exported
 `supportedRtcProviders(model)` to inspect model capabilities. The SDK does not read
 `modelExtra.provider` from the backend; the resolved configuration determines how
 RTC credentials are parsed.
 
-The `x2.0-pro`, `x2.0-agora`, `x2.1-preview`, and `x2.1-preview-1005` models use
+The `x2.0-agora` and `x2.1-preview` models use
 `https://dev.xmaxai.com/open/api/v1` in both environments.
 The other built-in models and file uploads use the configured environment's API endpoint.
 
@@ -478,7 +478,7 @@ const remoteStream = await realtime.startGeneration({
 
 Preparation stops at the first frame. After the connection is established and the start signal is sent, the file plays from the beginning; playback does not wait for a remote frame. `loop` defaults to `true`, looping both file video and audio; set it to `false` to play once. The current protocol does not acknowledge server input readiness, so frame-perfect processing of the very beginning is not guaranteed.
 
-Video is scaled proportionally to the requested model-supported dimensions, with black bars where needed. Local preview is always silent; `localAudioVolume` does not alter the file's uplink audio. File audio is enabled by default; a file without an audio track produces silence. Set `includeAudio: false` to omit the audio track entirely. Use `setRemoteAudioVolume` to hear the generated result (muted by default).
+For local files, requested dimensions automatically select the model resolution with the closest aspect ratio, preferring landscape on ties; exact matches are preserved. For example, `1280×720` selects `1920×1024`. Models without fixed resolutions retain their existing pixel-budget sizing rules. The file is scaled proportionally into the resulting Canvas, with black bars where needed, and the returned track's `videoFormat` reflects that target size. This does not change camera or network-video size validation. Local preview is always silent; `localAudioVolume` does not alter the file's uplink audio. File audio is enabled by default; a file without an audio track produces silence. Set `includeAudio: false` to omit the audio track entirely. Use `setRemoteAudioVolume` to hear the generated result (muted by default).
 
 `disconnect()` pauses playback and retains the source. A new generation after reconnecting starts from the beginning; updating conditions during generation does not restart playback. With looping disabled, file completion holds the final frame and leaves the RTC connection open so remote tail frames can play. `close()` releases all file resources and tracks. `updateVideoFormat()` can adjust uplink encoding without changing the original model input format.
 

@@ -34,10 +34,8 @@ describe("XmaxConfiguration", () => {
   });
 
   it("overrides endpoints for the Agora, Pro and preview models", () => {
-    expect(modelBaseURL(RealtimeModel.x2_0_pro)).toBe("https://dev.xmaxai.com/open/api/v1");
     expect(modelBaseURL(RealtimeModel.x2_0_agora)).toBe("https://dev.xmaxai.com/open/api/v1");
     expect(modelBaseURL(RealtimeModel.x2_1_preview)).toBe("https://dev.xmaxai.com/open/api/v1");
-    expect(modelBaseURL(RealtimeModel.x2_1_preview_1005)).toBe("https://dev.xmaxai.com/open/api/v1");
     for (const model of [RealtimeModel.x2_0, RealtimeModel.x2_0_trtc]) {
       expect(modelBaseURL(model)).toBeUndefined();
     }

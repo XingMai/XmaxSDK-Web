@@ -360,8 +360,7 @@ export function App() {
     if (!realtime || !localStream || !apiKey || generationBusyRef.current) {
       return;
     }
-    generationBusyRef.current = true;
-    setBusy(true);
+    // 条件更新不锁定整个界面；连续选图由 ReferenceLibrary 的选择队列处理。
     setErrorText("");
     try {
       const remote = await realtime.startGeneration({
@@ -370,10 +369,9 @@ export function App() {
       });
       if (realtimeRef.current === realtime) setRemoteStream(remote);
     } catch (error) {
-      setErrorText(error instanceof Error ? error.message : String(error));
-    } finally {
-      generationBusyRef.current = false;
-      setBusy(false);
+      if (realtimeRef.current === realtime) {
+        setErrorText(error instanceof Error ? error.message : String(error));
+      }
     }
   }
 

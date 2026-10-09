@@ -131,7 +131,7 @@ export interface XmaxRealtimeManaging {
    * 从本地 File/Blob 创建文件视频源，支持 TRTC、Agora 和 VeRTC，不访问摄像头或麦克风。
    * 通过 Canvas 等比缩放补黑边，文件音频独立上行，本地预览始终静音。
    * 应从用户点击事件直接调用以解锁播放；创建后停在首帧，startGeneration 时开始播放。
-   * @param options.videoFormat 模型输入的视频规格。
+   * @param options.videoFormat 期望的视频规格；尺寸自动匹配最接近宽高比的模型档位，等距时优先横屏。
    * @param options.loop 是否循环播放文件音视频，默认 true。
    * @param options.includeAudio 是否发送文件音频，默认 true；无音轨文件输出静音，false 不创建音频轨。
    * @throws 提供方不支持、文件/格式无效、浏览器无法解码或播放受限时抛错。
