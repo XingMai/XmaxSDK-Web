@@ -147,7 +147,7 @@ export function defaultCameraVideoFormat(model: RealtimeModel): RealtimeVideoFor
  * 模型支持的 RTC 提供方；第一项为默认值，只读列表防止接入方修改全局能力定义。
  */
 const MODEL_RTC_PROVIDERS: Readonly<Record<RealtimeModel, readonly RtcProvider[]>> = {
-  [RealtimeModel.x2_0]: Object.freeze([RtcProvider.trtc]),
+  [RealtimeModel.x2_0]: Object.freeze([RtcProvider.vertc]),
   [RealtimeModel.x2_0_pro]: Object.freeze([RtcProvider.vertc]),
   [RealtimeModel.x2_0_trtc]: Object.freeze([RtcProvider.trtc]),
   [RealtimeModel.x2_0_agora]: Object.freeze([RtcProvider.agora]),

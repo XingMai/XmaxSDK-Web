@@ -11,7 +11,7 @@ import { XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 
 describe("RTC provider selection", () => {
   const supported = [
-    [RealtimeModel.x2_0, RtcProvider.trtc],
+    [RealtimeModel.x2_0, RtcProvider.vertc],
     [RealtimeModel.x2_0_pro, RtcProvider.vertc],
     [RealtimeModel.x2_0_trtc, RtcProvider.trtc],
     [RealtimeModel.x2_0_agora, RtcProvider.agora],
