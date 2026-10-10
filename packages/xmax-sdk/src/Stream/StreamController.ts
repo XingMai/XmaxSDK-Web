@@ -10,7 +10,7 @@ import type { RtcSessionConnection } from "../Service/Realtime/RealtimeSessionCo
 import type { RealtimeVideoFormat } from "../Service/Realtime/RealtimeVideoFormat";
 import type { RoomListener, RoomControlling } from "./Room/RoomControlling";
 import { RoomController } from "./Room/RoomController";
-import type { RoomEventTargetSize } from "./Room/RoomEvent";
+import type { ModelSize } from "../Service/Realtime/RealtimeModel";
 import type { EncodingControlling } from "./Encoding/EncodingControlling";
 import { EncodingController } from "./Encoding/EncodingController";
 import type {
@@ -262,12 +262,12 @@ export class StreamController implements StreamControlling {
    *
    * @throws 格式无效、码率区间无效或 RTC 配置失败时抛出错误。
    */
-  async setVideoEncoderConfig(videoFormat: RealtimeVideoFormat): Promise<void> {
+  async updateUplinkVideoFormat(videoFormat: RealtimeVideoFormat): Promise<void> {
     await this.encodingController.configure(videoFormat);
   }
 
   /** 不根据新帧率重新推算码率区间。 */
-  async updateVideoFrameRate(fps: number): Promise<RealtimeVideoFormat> {
+  async updateUplinkFrameRate(fps: number): Promise<RealtimeVideoFormat> {
     return this.encodingController.updateFrameRate(fps);
   }
 
@@ -452,9 +452,9 @@ export class StreamController implements StreamControlling {
    *
    * @throws 操作已取消、房间未就绪或信令发送失败时抛出错误。
    */
-  async changeTargetSize(
+  async updateDownlinkVideoResolution(
     taskID: string,
-    targetSize: RoomEventTargetSize,
+    targetSize: ModelSize,
     ensureActive: () => void,
   ): Promise<void> {
     try {

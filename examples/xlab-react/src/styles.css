@@ -407,6 +407,19 @@ button:disabled,
 }
 
 .remoteVolumeButton,
+.interpolationPill,
+.sessionModel,
+.sessionTimer {
+  border: 1px solid #e2e5ea;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #fff 0%, #f3f4f6 100%);
+  box-shadow:
+    0 1px 2px rgba(16, 24, 40, 0.08),
+    0 4px 12px rgba(16, 24, 40, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.remoteVolumeButton,
 .statisticsToggle {
   display: inline-flex;
   align-items: center;
@@ -414,17 +427,23 @@ button:disabled,
   width: 36px;
   height: 36px;
   padding: 0;
+  color: #8b919d;
+}
+
+.statisticsToggle {
   border: 1px solid #e2e5ea;
   border-radius: 50%;
   background: linear-gradient(180deg, #fff 0%, #f3f4f6 100%);
   box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
-  color: #8b919d;
 }
 
 .remoteVolumeButton.active,
 .remoteVolumeButton:not(:disabled):hover,
 .statisticsToggle:hover {
   color: var(--text);
+}
+
+.statisticsToggle:hover {
   border-color: #c7cbd3;
 }
 
@@ -536,29 +555,17 @@ button:disabled,
   gap: 3px;
   height: 36px;
   padding: 0 15px 0 12px;
-  border: 1px solid #e2e5ea;
-  border-radius: 999px;
-  background: linear-gradient(180deg, #ffffff 0%, #f3f4f6 100%);
-  box-shadow:
-    0 1px 2px rgba(16, 24, 40, 0.08),
-    0 4px 12px rgba(16, 24, 40, 0.05),
-    inset 0 1px 0 rgba(255, 255, 255, 0.9);
   color: #8b919d;
   font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
-  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  transition: color 0.15s ease;
 }
 
 .interpolationPill.active {
   color: #a96608;
   border-color: #f0cf88;
   background: linear-gradient(180deg, #fffaf0 0%, #fff0ca 100%);
-}
-
-.interpolationPill:not(:disabled):hover {
-  border-color: #c7cbd3;
-  color: var(--text);
 }
 
 .interpolationPill.active:not(:disabled):hover {
@@ -577,13 +584,6 @@ button:disabled,
   align-items: center;
   height: 36px;
   padding: 0 14px;
-  border: 1px solid #e2e5ea;
-  border-radius: 999px;
-  background: linear-gradient(180deg, #ffffff 0%, #f3f4f6 100%);
-  box-shadow:
-    0 1px 2px rgba(16, 24, 40, 0.08),
-    0 4px 12px rgba(16, 24, 40, 0.05),
-    inset 0 1px 0 rgba(255, 255, 255, 0.9);
   font-variant-numeric: tabular-nums;
   font-size: 13px;
   font-weight: 500;

@@ -139,6 +139,7 @@ export class AgoraRtcManager implements RtcManaging {
     this.sdk = sdk;
     this.client = client;
     this.registerEvents(client);
+    AgoraRtcStatistics.logUplinkBandwidth(client, "initialized");
   }
 
   /**
@@ -429,7 +430,9 @@ export class AgoraRtcManager implements RtcManaging {
     await this.rejoinOperation;
     if (client !== this.client || !this.videoPublishRequested) throw this.cancelled();
     if (client.localTracks.includes(camera)) return;
+    AgoraRtcStatistics.logUplinkBandwidth(client, "beforePublish");
     await this.run(() => client.publish(camera));
+    AgoraRtcStatistics.logUplinkBandwidth(client, "afterPublish");
   }
 
   /**

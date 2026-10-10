@@ -5,6 +5,7 @@ import type { RealtimeContext } from "../Service/Realtime/RealtimeContext";
 import type { RealtimePoint } from "../Service/Realtime/RealtimePoint";
 import type { RtcSessionConnection } from "../Service/Realtime/RealtimeSessionConnection";
 import type { RealtimeVideoFormat } from "../Service/Realtime/RealtimeVideoFormat";
+import type { ModelSize } from "../Service/Realtime/RealtimeModel";
 import type { RoomListener } from "./Room/RoomControlling";
 import type { RoomEventTargetSize } from "./Room/RoomEvent";
 
@@ -93,10 +94,10 @@ export interface StreamControlling {
    *
    * @throws 格式无效、码率区间无效或 RTC 配置失败时抛出错误。
    */
-  setVideoEncoderConfig(videoFormat: RealtimeVideoFormat): Promise<void>;
+  updateUplinkVideoFormat(videoFormat: RealtimeVideoFormat): Promise<void>;
 
   /** 保留最后成功应用的编码配置，只更新上行目标帧率。 */
-  updateVideoFrameRate(fps: number): Promise<RealtimeVideoFormat>;
+  updateUplinkFrameRate(fps: number): Promise<RealtimeVideoFormat>;
 
   /**
    * 加入 RTC 房间并发布本地媒体流。
@@ -159,9 +160,9 @@ export interface StreamControlling {
    *
    * @throws 操作已取消、房间未就绪或信令发送失败时抛出错误。
    */
-  changeTargetSize(
+  updateDownlinkVideoResolution(
     taskID: string,
-    targetSize: RoomEventTargetSize,
+    targetSize: ModelSize,
     ensureActive: () => void,
   ): Promise<void>;
 

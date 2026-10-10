@@ -161,9 +161,9 @@ function emitRemoteVideo(
 describe("StreamController", () => {
   it("delegates frame rate changes without recomputing bitrates or sending room signals", async () => {
     const { controller, rtc } = makeStream();
-    await controller.setVideoEncoderConfig(videoFormat);
+    await controller.updateUplinkVideoFormat(videoFormat);
     const initial = { ...rtc.encodingConfigurations[0]! };
-    const result = await controller.updateVideoFrameRate(24);
+    const result = await controller.updateUplinkFrameRate(24);
     expect(rtc.encodingConfigurations.at(-1)).toEqual({ ...initial, frameRate: 24 });
     expect(result).toMatchObject({ width: videoFormat.width, height: videoFormat.height, fps: 24,
       minimumBitrate: initial.minimumBitrate, maximumBitrate: initial.maximumBitrate });
@@ -730,7 +730,7 @@ describe("StreamController", () => {
     await controller.connect(connection, false, noopEnsureActive);
 
     await controller.updateGeneration({ taskID: "task-001", videoFormat, context });
-    await controller.changeTargetSize("task-001", { width: 640, height: 960 }, noopEnsureActive);
+    await controller.updateDownlinkVideoResolution("task-001", { width: 640, height: 960 }, noopEnsureActive);
     await controller.sendTracks("task-001", [{ x: 0.1, y: 0.2 } as never]);
 
     const events = rtc.sentMessages.map((raw) => JSON.parse(raw).event);

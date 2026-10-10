@@ -272,11 +272,11 @@ videoView.remoteTrack = remoteStream.videoTrack;
 Add a `video-container` element with an explicit width and height to your page.
 The view displays a local camera preview until the first generated frame arrives.
 
-Use `updateVideoFormat` after creating the local camera stream, including during
+Use `updateUplinkVideoFormat` after creating the local camera stream, including during
 generation, to change upstream encoding without reconnecting or restarting the task:
 
 ```javascript
-await realtime.updateVideoFormat(new RealtimeVideoFormat({
+await realtime.updateUplinkVideoFormat(new RealtimeVideoFormat({
   width: 1024,
   height: 1920,
   fps: 20,
@@ -295,7 +295,7 @@ another configuration or lifecycle operation.
 For a frame-rate-only experiment after connecting a local camera or file stream:
 
 ```javascript
-await realtime.updateVideoFrameRate(24);
+await realtime.updateUplinkFrameRate(24);
 ```
 
 This preserves the last successfully applied width, height, resolved bitrate limits,
@@ -318,9 +318,12 @@ relative to the generation's original dimensions. It sends only `change_target_s
 with `[width, height]`, without changing FPS, bitrate limits, or model inference.
 The protocol has no application ACK: a successful send records a requested tier,
 not a confirmed output size; use remote RTC statistics to verify actual dimensions.
-New Agora local tracks start uplink at L2 before publishing, and new generation
-tasks start downlink at L2 via `start.params.target_size`. The original L1 baseline
-is retained for recovery; reconnecting the same local track keeps its saved uplink tier.
+New Agora local tracks restore the last applied uplink tier before publishing;
+new generation tasks restore the last requested downlink tier via `start.params.target_size`.
+Each direction falls back to L2 when no valid history is available. History is stored
+in `localStorage`, separately by model and direction, with no expiry or stability window
+in this first version. Storage failures never block generation. The original L1 baseline
+is retained for recovery; reconnecting the same local track keeps its in-memory uplink tier.
 Downlink changes only resolution, not FPS. Interpolation follows the requested dimensions,
 showing raw video while frame sizes do not match. See
 [the strategy and weak-network test steps](docs/realtime-adaptive-quality.md).
@@ -521,7 +524,7 @@ Preparation stops at the first frame. After the connection is established and th
 
 For local files, requested dimensions automatically select the model resolution with the closest aspect ratio, preferring landscape on ties; exact matches are preserved. For example, `1280×720` selects `1920×1024`. Models without fixed resolutions retain their existing pixel-budget sizing rules. The file is scaled proportionally into the resulting Canvas, with black bars where needed, and the returned track's `videoFormat` reflects that target size. This does not change camera or network-video size validation. Local preview is always silent; `localAudioVolume` does not alter the file's uplink audio. File audio is enabled by default; a file without an audio track produces silence. Set `includeAudio: false` to omit the audio track entirely. Use `setRemoteAudioVolume` to hear the generated result (muted by default).
 
-`disconnect()` pauses playback and retains the source. A new generation after reconnecting starts from the beginning; updating conditions during generation does not restart playback. With looping disabled, file completion holds the final frame and leaves the RTC connection open so remote tail frames can play. `close()` releases all file resources and tracks. `updateVideoFormat()` can adjust uplink encoding without changing the original model input format.
+`disconnect()` pauses playback and retains the source. A new generation after reconnecting starts from the beginning; updating conditions during generation does not restart playback. With looping disabled, file completion holds the final frame and leaves the RTC connection open so remote tail frames can play. `close()` releases all file resources and tracks. `updateUplinkVideoFormat()` can adjust uplink encoding without changing the original model input format.
 
 File codecs must be supported by the browser, and Canvas capture and Web Audio must be available. Keep the page foregrounded for stable frame delivery; browser background throttling can reduce the upload frame rate. Playback restrictions, decode errors and preparation timeouts are reported rather than silently sending an empty stream.
 
@@ -553,7 +556,7 @@ The URL must be directly accessible to the server. Browser cookies and custom au
 
 `onFinish` is delivered once for the current task after the server's `video_stopped` message and generation readiness. It does not mean the last remote frame has finished playing, so the SDK does not automatically disconnect. Local preview completion does not trigger this callback. Remote audio follows `setRemoteAudioVolume` (muted by default).
 
-`disconnect()` retains the source and preview for reconnection; `close()` releases them. Close the current source before creating another. `updateVideoFormat()` adjusts camera uplink encoding and is not available for a network video source.
+`disconnect()` retains the source and preview for reconnection; `close()` releases them. Close the current source before creating another. `updateUplinkVideoFormat()` adjusts camera uplink encoding and is not available for a network video source.
 
 ### Non-realtime video tasks
 

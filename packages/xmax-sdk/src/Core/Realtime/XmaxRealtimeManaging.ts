@@ -161,7 +161,7 @@ export interface XmaxRealtimeManaging {
    * @param videoFormat 本次完整的上行尺寸、帧率和编码配置。
    * @throws 无本地相机或文件视频流、其他操作进行中、参数无效或 RTC 更新失败时抛错。
    */
-  updateVideoFormat(videoFormat: RealtimeVideoFormat): Promise<void>;
+  updateUplinkVideoFormat(videoFormat: RealtimeVideoFormat): Promise<void>;
 
   /**
    * 试验性上行调帧接口：连接建立后使用，保留最近应用的宽高、码率区间和编码偏好。
@@ -169,7 +169,7 @@ export interface XmaxRealtimeManaging {
    * 手动调用会重置上行质量样本，并以成功后的完整格式作为新的自适应 L1 基准。
    * 仍会重新提交完整编码配置，不保证 RTC 内部自适应状态不受影响，需用实际统计验证。
    */
-  updateVideoFrameRate(fps: number): Promise<void>;
+  updateUplinkFrameRate(fps: number): Promise<void>;
 
   /**
    * 停止本地相机流并释放本地预览与 RTC 资源。

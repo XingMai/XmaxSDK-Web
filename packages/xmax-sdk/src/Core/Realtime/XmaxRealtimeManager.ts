@@ -30,7 +30,8 @@ import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFo
 import { StreamController } from "../../Stream/StreamController";
 import { QualityController } from "../../Stream/Quality/QualityController";
 import { qualityVideoFormat, qualityVideoSize } from "../../Stream/Quality/QualityVideoFormat";
-import { INITIAL_QUALITY_LEVEL, QUALITY_TIERS } from "../../Stream/Quality/QualityTiers";
+import { QUALITY_TIERS } from "../../Stream/Quality/QualityTiers";
+import { QualityHistory } from "../../Stream/Quality/QualityHistory";
 import type { StreamControlling } from "../../Stream/StreamControlling";
 import type { RealtimeConfiguration } from "./RealtimeConfiguration";
 import {
@@ -51,6 +52,18 @@ import { XmaxRealtimeGenerationManager } from "./XmaxRealtimeGenerationManager";
  * 等待远端生成流首帧的时限（毫秒）；超时仅记录日志，不影响生成流程。
  */
 const REMOTE_FIRST_FRAME_TIMEOUT_MS = 5_000;
+
+/** 保存原始 L1 基准与当前目标档位；自动调档不改写基准。 */
+interface QualityState {
+  readonly baseline: RealtimeVideoFormat;
+  level: number;
+}
+
+/** 下行状态绑定生成任务；尺寸是已发送目标，不代表实际接收规格。 */
+interface DownlinkQualityState extends QualityState {
+  readonly taskID: string;
+  size: ModelSize;
+}
 
 /**
  * 实时能力门面：公开 API、本地媒体与连接/生成流程编排。
@@ -120,10 +133,11 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   private readonly generationManager: XmaxRealtimeGenerationManager;
   private readonly streamController: StreamControlling;
   private readonly qualityController?: QualityController;
-  private readonly qualityStates = new WeakMap<RealtimeVideoTrack, { baseline: RealtimeVideoFormat; level: number }>();
+  private readonly qualityHistory?: QualityHistory;
+  private readonly qualityStates = new WeakMap<RealtimeVideoTrack, QualityState>();
   private readonly downlinkQualityController?: QualityController;
   /** 无服务端生效 ACK；level/size 表示最后成功发送的目标，而非实际接收规格。 */
-  private downlinkQualityState?: { taskID: string; baseline: RealtimeVideoFormat; level: number; size: ModelSize };
+  private downlinkQualityState?: DownlinkQualityState;
   private adaptiveQualityPending = false;
   private adaptiveQualityRevision = 0;
 
@@ -206,6 +220,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     });
 
     if (options.provider === RtcProvider.agora) {
+      this.qualityHistory = new QualityHistory(options.model);
       this.qualityController = new QualityController(async (change, signal) => {
         if (signal.aborted || this.currentState.connectionState !== RealtimeConnectionState.generating) {
           throw new XmaxError(XmaxErrorCode.cancelled, "Adaptive video format update was cancelled");
@@ -215,12 +230,13 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
           const state = track && this.qualityStates.get(track);
           if (!track || !state) throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Adaptive video baseline is unavailable");
           const format = qualityVideoFormat(state.baseline, change.to);
-          await this.streamController.setVideoEncoderConfig(format);
+          await this.streamController.updateUplinkVideoFormat(format);
           token.ensureCurrent();
           // 生成和插帧使用原始格式；这里只提交上行编码规格和已应用档位。
           this.generationVideoFormat ??= state.baseline;
           track.updateVideoFormat(format);
           state.level = change.to;
+          this.qualityHistory?.write("uplink", change.to);
         });
       });
       this.downlinkQualityController = new QualityController(async (change, signal) => {
@@ -318,10 +334,11 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     ensureActive();
     if (!state) return;
     const size = qualityVideoSize(state.baseline, level);
-    await this.streamController.changeTargetSize(state.taskID, size, ensureActive);
+    await this.streamController.updateDownlinkVideoResolution(state.taskID, size, ensureActive);
     ensureActive();
     state.level = level;
     state.size = size;
+    this.qualityHistory?.write("downlink", level);
     // 新尺寸尚未到达时展示原视频，不能跨尺寸插帧。
     if (this.interpolationRequested) {
       this.interpolationSize = size;
@@ -695,7 +712,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    *
    * @throws 无本地相机或文件视频流、参数无效、操作冲突或底层编码更新失败时抛错。
    */
-  async updateVideoFormat(videoFormat: RealtimeVideoFormat): Promise<void> {
+  async updateUplinkVideoFormat(videoFormat: RealtimeVideoFormat): Promise<void> {
     await this.coordinator.run(RealtimeOperationKind.configuration, undefined, async (token) => {
       const track = this.localVideoController.currentTrack ?? this.cameraController.currentTrack;
       const previousFormat = track?.videoFormat;
@@ -706,27 +723,31 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       this.qualityController?.stop();
 
       // 上行尺寸不按模型分辨率桶吸附，也不发送生成条件或回传尺寸信令。
-      await this.streamController.setVideoEncoderConfig(videoFormat);
+      await this.streamController.updateUplinkVideoFormat(videoFormat);
       token.ensureCurrent();
 
       this.generationVideoFormat ??= previousFormat;
       track.updateVideoFormat(videoFormat);
       this.qualityStates.set(track, { baseline: videoFormat, level: 1 });
+      this.qualityHistory?.write("uplink", 1);
     });
   }
 
   /** 已连接时仅替换帧率；与其他配置及生命周期操作共享同一操作租约。 */
-  async updateVideoFrameRate(fps: number): Promise<void> {
+  async updateUplinkFrameRate(fps: number): Promise<void> {
     await this.coordinator.run(RealtimeOperationKind.configuration, undefined, async (token) => {
       this.qualityController?.stop();
-      await this.applyVideoFrameRate(fps, token);
+      await this.applyUplinkFrameRate(fps, token);
       const track = this.currentLocalTrack;
-      if (track?.videoFormat) this.qualityStates.set(track, { baseline: track.videoFormat, level: 1 });
+      if (track?.videoFormat) {
+        this.qualityStates.set(track, { baseline: track.videoFormat, level: 1 });
+        this.qualityHistory?.write("uplink", 1);
+      }
     });
   }
 
   /** 手动仅调帧接口，成功后的当前格式将成为新的自适应 L1 基准。 */
-  private async applyVideoFrameRate(fps: number, token: RealtimeOperationToken): Promise<void> {
+  private async applyUplinkFrameRate(fps: number, token: RealtimeOperationToken): Promise<void> {
     const track = this.localVideoController.currentTrack ?? this.cameraController.currentTrack;
     const previous = track?.videoFormat;
     const state = this.currentState.connectionState;
@@ -737,7 +758,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     if (!Number.isFinite(fps) || fps <= 0) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Video frame rate must be greater than zero");
     }
-    const format = await this.streamController.updateVideoFrameRate(fps);
+    const format = await this.streamController.updateUplinkFrameRate(fps);
     token.ensureCurrent();
     this.generationVideoFormat ??= previous;
     track.updateVideoFormat(format);
@@ -949,6 +970,18 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     await this.coordinator.terminate(RealtimeTerminationScope.all);
   }
 
+  /** 仅为尚无档位记录的本地上行选择初始档位；不应用配置或覆盖重连状态。 */
+  private resolveInitialUplinkQuality(track: RealtimeVideoTrack): QualityState | undefined {
+    if (!this.qualityController) return undefined;
+    if (this.networkVideoController.currentTrack) return undefined;
+    if (this.qualityStates.has(track)) return undefined;
+
+    const baseline = track.videoFormat;
+    if (!baseline) return undefined;
+
+    return { baseline, level: this.qualityHistory!.read("uplink") };
+  }
+
   /**
    * 建立实时连接：创建会话、进房发布、启动心跳并准备远端渲染轨道。
    *
@@ -994,20 +1027,21 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         beforePublish = () => cameraReady;
       }
 
-      // 新的 Agora 本地轨道从 L2 发布；保留 L1 基准，重连沿用已保存的档位。
-      const baseline = localTrack.videoFormat;
-      const initialQuality = this.qualityController && !this.networkVideoController.currentTrack &&
-        !this.qualityStates.has(localTrack) && baseline ? { baseline, level: INITIAL_QUALITY_LEVEL } : undefined;
-      const initialFormat = initialQuality && qualityVideoFormat(initialQuality.baseline, initialQuality.level);
+      // 新 Agora 轨道读取历史档位（缺省 L2）；保留 L1 基准，同一轨道重连优先沿用内存状态。
+      const initialQuality = this.resolveInitialUplinkQuality(localTrack);
+      const initialFormat = initialQuality
+        ? qualityVideoFormat(initialQuality.baseline, initialQuality.level)
+        : undefined;
       const remote = await this.connectionManager.connect({
         localTrack,
-        remoteVideoFormat: this.generationVideoFormat ?? baseline,
+        remoteVideoFormat: this.generationVideoFormat ?? localTrack.videoFormat,
         localVideoFormat: initialFormat,
         onVideoEncoderConfigured: () => {
           if (!initialQuality || !initialFormat) return;
           this.generationVideoFormat ??= initialQuality.baseline;
           localTrack.updateVideoFormat(initialFormat);
           this.qualityStates.set(localTrack, initialQuality);
+          this.qualityHistory?.write("uplink", initialQuality.level);
         },
         model: this.options.model,
         includeLocalAudio: this.localVideoController.isActive
@@ -1045,7 +1079,8 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     context: RealtimeContext,
   ): Promise<RealtimeMediaStream> {
     token.setFailureScope(RealtimeTerminationScope.connection);
-    const targetSize = this.downlinkQualityController ? qualityVideoSize(videoFormat, INITIAL_QUALITY_LEVEL) : undefined;
+    const initialLevel = this.qualityHistory?.read("downlink") ?? 1;
+    const targetSize = this.downlinkQualityController ? qualityVideoSize(videoFormat, initialLevel) : undefined;
     await this.prepareFrameInterpolation(targetSize ?? videoFormat, token);
 
     const completeFirstFrame = this.launchTimer.startFirstFrame();
@@ -1078,13 +1113,14 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
 
     this.downlinkQualityController?.stop();
     this.downlinkQualityState = {
-      taskID, baseline: videoFormat, level: targetSize ? INITIAL_QUALITY_LEVEL : 1,
+      taskID, baseline: videoFormat, level: initialLevel,
       size: targetSize ?? { width: videoFormat.width, height: videoFormat.height },
     };
     await this.coordinator.commit(
       new RealtimeState({ connectionState: RealtimeConnectionState.generating, sessionID, taskID }),
       token,
     );
+    this.qualityHistory?.write("downlink", initialLevel);
 
     const onFinish = this.networkVideoController.onFinish;
     if (this.networkVideoController.currentTrack) {

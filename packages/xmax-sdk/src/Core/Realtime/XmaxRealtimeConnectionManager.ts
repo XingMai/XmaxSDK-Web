@@ -116,7 +116,7 @@ export class XmaxRealtimeConnectionManager {
     }
     const publishLocalMedia = options.publishLocalMedia ?? true;
     if (publishLocalMedia) {
-      await streamController.setVideoEncoderConfig(videoFormat);
+      await streamController.updateUplinkVideoFormat(videoFormat);
       options.ensureCurrent();
       options.onVideoEncoderConfigured?.();
     }

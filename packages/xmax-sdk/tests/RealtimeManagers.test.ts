@@ -43,7 +43,7 @@ function makeStream() {
     updateCredentials: vi.fn(async (_connection: RtcSessionConnection, _signal?: AbortSignal) => {}),
     stopGeneration: vi.fn(async (_id: string) => {}),
     activateRemoteAudio: vi.fn(async () => {}),
-    setVideoEncoderConfig: vi.fn(async () => {}),
+    updateUplinkVideoFormat: vi.fn(async () => {}),
     connect: vi.fn(async () => {}),
     disconnect: vi.fn(async () => {}),
     setRemoteAudioVolume: vi.fn(),
@@ -219,7 +219,7 @@ describe("XmaxRealtimeConnectionManager", () => {
     const remote = await manager.connect(options);
     expect(manager.currentSessionID).toBe("session");
     expect(options.onPublished).toHaveBeenCalledOnce();
-    expect(stream.setVideoEncoderConfig.mock.invocationCallOrder[0]).toBeLessThan(stream.connect.mock.invocationCallOrder[0]!);
+    expect(stream.updateUplinkVideoFormat.mock.invocationCallOrder[0]).toBeLessThan(stream.connect.mock.invocationCallOrder[0]!);
     expect(stream.setRemoteAudioVolume).toHaveBeenCalledWith(0.25);
     expect(stream.beginGeneration).not.toHaveBeenCalled();
     const track = remote.videoTrack!;
@@ -289,7 +289,7 @@ describe("XmaxRealtimeConnectionManager", () => {
     op.abort.abort();
     created.resolve(session);
     await expect(pending).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
-    expect(stream.setVideoEncoderConfig).not.toHaveBeenCalled();
+    expect(stream.updateUplinkVideoFormat).not.toHaveBeenCalled();
     expect(stream.connect).not.toHaveBeenCalled();
     await manager.disconnect();
     expect(service.closeSession).toHaveBeenCalledOnce();

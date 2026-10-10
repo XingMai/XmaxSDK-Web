@@ -1,8 +1,9 @@
 import { RtcProvider } from "../src/Foundation/RTC/RtcProvider";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { IAgoraRTC, IAgoraRTCRemoteUser } from "agora-rtc-sdk-ng";
+import type { IAgoraRTC, IAgoraRTCRemoteUser, LastmileProbeResult } from "agora-rtc-sdk-ng";
 import { AgoraRtcManager } from "../src/Foundation/RTC/Agora/AgoraRtcManager";
 import { XmaxEnvironment } from "../src/Foundation/Runtime/XmaxEnvironment";
+import { XmaxLogger, XmaxLoggerOption } from "../src/Foundation/Logging/XmaxLogger";
 import { CameraPosition } from "../src/Foundation/Media/Camera/CameraPosition";
 import { RtcVideoEncoderPreference } from "../src/Foundation/RTC/VideoEncodingConfiguration";
 import type { AgoraRoomJoinConfiguration } from "../src/Foundation/RTC/RoomJoinConfiguration";
@@ -38,12 +39,13 @@ function setup(environment = XmaxEnvironment.china) {
     unsubscribe: vi.fn(async () => {}), renewToken: vi.fn(async () => {}),
     sendStreamMessage: vi.fn(async (_message: string, _retry: boolean) => {}),
     remoteUsers: [user], localTracks: [{ trackMediaType: "video" }],
-    getRTCStats: vi.fn(() => ({ RTT: 12, SendBytes: 100, RecvBytes: 200 })),
+    getRTCStats: vi.fn(() => ({ RTT: 12, SendBytes: 100, RecvBytes: 200, OutgoingAvailableBandwidth: undefined as number | undefined })),
     getLocalVideoStats: vi.fn(() => ({ sendResolutionWidth: 1920, sendResolutionHeight: 1024, sendFrameRate: 30, sendBitrate: 6000000, currentPacketLossRate: 0.02 })),
     getRemoteVideoStats: vi.fn(() => ({ bot: { receiveResolutionWidth: 1920, receiveResolutionHeight: 1024, receiveFrameRate: 25, receiveBitrate: 5000000, currentPacketLossRate: 0.03, end2EndDelay: 90, receiveDelay: 120, transportDelay: 80 } })),
     getLocalAudioStats: vi.fn(() => ({})), getRemoteAudioStats: vi.fn(() => ({})),
   };
   const sdk = { setArea: vi.fn(), setLogLevel: vi.fn(), createClient: vi.fn(() => client),
+    startLastmileProbeTest: vi.fn(async (): Promise<LastmileProbeResult> => ({ state: "complete", rtt: 32, packetLossRate: 0, jitter: 4, networkQuality: 1 })),
     createCustomVideoTrack: vi.fn(() => ({ ...camera, close: vi.fn() })),
     createCustomAudioTrack: vi.fn(() => ({ close: vi.fn() })),
     createCameraVideoTrack: vi.fn(async () => camera), createMicrophoneAudioTrack: vi.fn(async () => microphone) };
@@ -61,9 +63,65 @@ afterEach(async () => {
   for (const manager of managers.splice(0)) await manager.destroy();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  XmaxLogger.configure(XmaxLoggerOption.none);
+  vi.restoreAllMocks();
 });
 
 describe("AgoraRtcManager", () => {
+
+  it.each([undefined, 0, 6400, NaN, -1])("logs raw uplink bandwidth %s at startup and during regular statistics", async bandwidth => {
+    vi.useFakeTimers();
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    XmaxLogger.configure(XmaxLoggerOption.performance);
+    const s = setup();
+    s.client.getRTCStats.mockReturnValue({ RTT: 12, SendBytes: 100, RecvBytes: 200, OutgoingAvailableBandwidth: bandwidth });
+    await s.manager.initialize();
+    await s.manager.startCameraCapture({ width: 1920, height: 1024, frameRate: 30, position: CameraPosition.front });
+    await s.manager.joinRoom(credentials);
+    await s.manager.publishLocalVideo();
+    const bandwidthLogs = () => info.mock.calls.filter(call => String(call[0]).includes("OutgoingAvailableBandwidth"));
+    expect(bandwidthLogs().map(call => String(call[0]))).toEqual([
+      expect.stringContaining("stage: initialized"),
+      expect.stringContaining("stage: beforePublish"),
+      expect.stringContaining("stage: afterPublish"),
+    ]);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(bandwidthLogs()).toHaveLength(4);
+    for (const call of bandwidthLogs()) {
+      expect(String(call[0])).toContain(`OutgoingAvailableBandwidth: ${String(bandwidth)} Kbps`);
+    }
+    expect(s.listener.onNetworkStatistics).not.toHaveBeenCalled();
+    expect(s.client.publish).toHaveBeenCalledOnce();
+    expect(s.sdk.startLastmileProbeTest).not.toHaveBeenCalled();
+  });
+
+  it("keeps initialization and publishing working if the startup statistics read throws", async () => {
+    vi.useFakeTimers();
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    XmaxLogger.configure(XmaxLoggerOption.performance);
+    const s = setup();
+    s.client.getRTCStats.mockImplementation(() => { throw new Error("not ready"); });
+    await s.manager.initialize();
+    await s.manager.startCameraCapture({ width: 1920, height: 1024, frameRate: 30, position: CameraPosition.front });
+    await s.manager.joinRoom(credentials);
+    await s.manager.publishLocalVideo();
+    expect(s.client.publish).toHaveBeenCalledOnce();
+    expect(info.mock.calls.filter(call => String(call[0]).includes("OutgoingAvailableBandwidth"))).toHaveLength(3);
+    expect(info).toHaveBeenLastCalledWith(expect.stringContaining("unavailable (getRTCStats failed)"));
+  });
+
+  it("does not read startup bandwidth when performance logging is disabled", async () => {
+    vi.useFakeTimers();
+    XmaxLogger.configure(XmaxLoggerOption.none);
+    const s = setup();
+    await s.manager.initialize();
+    await s.manager.startCameraCapture({ width: 1920, height: 1024, frameRate: 30, position: CameraPosition.front });
+    await s.manager.joinRoom(credentials);
+    await s.manager.publishLocalVideo();
+    expect(s.client.getRTCStats).not.toHaveBeenCalled();
+    expect(s.sdk.startLastmileProbeTest).not.toHaveBeenCalled();
+  });
+
   it("invalidates network samples during reconnect and resumes only with fresh connected samples", async () => {
     const s = setup();
     await s.manager.initialize();
