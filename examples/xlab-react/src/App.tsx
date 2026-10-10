@@ -87,7 +87,7 @@ export function App() {
   const [networkStatistics, setNetworkStatistics] = useState<NetworkStatistics>();
   const [errorText, setErrorText] = useState("");
   const [busy, setBusy] = useState(false);
-  const [interpolationRequested, setInterpolationRequested] = useState(true);
+  const [interpolationRequested, setInterpolationRequested] = useState(false);
   const [interpolationSwitching, setInterpolationSwitching] = useState(false);
   const [remoteAudioVolume, setRemoteAudioVolume] = useState(0);
   const [statisticsVisible, setStatisticsVisible] = useState(
@@ -297,7 +297,7 @@ export function App() {
     const realtime = client.createRealtimeManager(
       new RealtimeConfiguration({
         model,
-        // 示例默认开启并允许会话中切换；SDK 默认仍保持关闭。
+        // 与 SDK 一致默认关闭，允许用户在会话中手动切换。
         isFrameInterpolationEnabled: interpolationRequested,
       }),
     );
