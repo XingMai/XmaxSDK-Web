@@ -33,9 +33,8 @@ describe("XmaxConfiguration", () => {
     );
   });
 
-  it("overrides endpoints for the Agora, Pro and preview models", () => {
-    expect(modelBaseURL(RealtimeModel.x2_0_agora)).toBe("https://dev.xmaxai.com/open/api/v1");
-    expect(modelBaseURL(RealtimeModel.x2_1_preview)).toBe("https://dev.xmaxai.com/open/api/v1");
+  it("uses the fixed production endpoint for preview and environment routing for the other models", () => {
+    expect(modelBaseURL(RealtimeModel.x2_1_preview)).toBe("https://cloud.xmax.22duck.cn/open/api/v1");
     for (const model of [RealtimeModel.x2_0, RealtimeModel.x2_0_trtc]) {
       expect(modelBaseURL(model)).toBeUndefined();
     }

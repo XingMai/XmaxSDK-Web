@@ -13,7 +13,7 @@ describe("custom realtime models", () => {
     const preview = RealtimeModel.x2_1_preview;
     expect(modelDisplayName(model)).toBe(model);
     expect(modelBaseURL(model)).toBe(modelBaseURL(preview));
-    expect(modelBaseURL(model)).toBe("https://dev.xmaxai.com/open/api/v1");
+    expect(modelBaseURL(model)).toBe("https://cloud.xmax.22duck.cn/open/api/v1");
     expect(resolutionBuckets(model)).toEqual(resolutionBuckets(preview));
     expect(defaultCameraVideoFormat(model)).toEqual(defaultCameraVideoFormat(preview));
     expect(defaultFrameRate(model)).toBe(defaultFrameRate(preview));
@@ -36,6 +36,8 @@ describe("custom realtime models", () => {
   it("retains the original known-model display names and environment routing", () => {
     expect(modelDisplayName(RealtimeModel.x2_0_trtc)).toBe("X2.1-preview-trtc");
     expect(modelBaseURL(RealtimeModel.x2_0_trtc)).toBeUndefined();
+    expect(modelDisplayName(RealtimeModel.x2_1_preview)).toBe("X2.1-preview-agora");
+    expect(Object.values(RealtimeModel)).toEqual(["x2.0", "x2.0-trtc", "x2.1-preview"]);
     expect(modelBaseURL(RealtimeModel.x2_0)).toBeUndefined();
     expect(resolutionBuckets(RealtimeModel.x2_0)).toEqual([]);
     expect(maximumInputPixels(RealtimeModel.x2_0)).toBe(1280000);

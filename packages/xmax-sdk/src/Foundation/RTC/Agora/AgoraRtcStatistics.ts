@@ -7,18 +7,6 @@ import type { NetworkQualityLevel } from "../NetworkStatistics";
  * 将声网统计转换为 SDK 公共单位，保留厂商缺失指标，不推算播放缓冲延迟。
  */
 export class AgoraRtcStatistics {
-  /** 临时观察启动阶段的原始带宽估计；不等待探测，不参与调档，读取失败不影响发布。 */
-  static logUplinkBandwidth(client: IAgoraRTCClient, stage: "initialized" | "beforePublish" | "afterPublish"): void {
-    XmaxLogger.rtc.info(() => {
-      const title = `Agora 上行带宽估计 (Agora Uplink Bandwidth Estimate)\n└─ stage: ${stage}`;
-      try {
-        return `${title}\n└─ OutgoingAvailableBandwidth: ${String(client.getRTCStats().OutgoingAvailableBandwidth)} Kbps`;
-      } catch {
-        return `${title}\n└─ OutgoingAvailableBandwidth: unavailable (getRTCStats failed)`;
-      }
-    }, XmaxLoggerOption.performance);
-  }
-
   /**
    * 采集已发布的视频和已订阅的结果流统计，性能日志不控制回调采集。
    */
@@ -41,9 +29,10 @@ export class AgoraRtcStatistics {
     listener?.onLocalVideoStatistics?.(localVideo && Object.freeze(localVideo));
     listener?.onRemoteVideoStatistics?.(Object.freeze(remote.map(item => Object.freeze(item))));
 
-    XmaxLogger.rtc.info(() => `Agora 运行统计 (Agora RTC Statistics)\n` +
-      `└─ OutgoingAvailableBandwidth: ${String(rtc.OutgoingAvailableBandwidth)} Kbps\n${JSON.stringify({
+    XmaxLogger.rtc.info(() => `Agora 运行统计 (Agora RTC Statistics)\n${JSON.stringify({
       rttMs: valid(rtc.RTT), sentBytes: valid(rtc.SendBytes), receivedBytes: valid(rtc.RecvBytes), localVideo, remoteVideo: remote,
+      capture: { width: valid(local.captureResolutionWidth, 1), height: valid(local.captureResolutionHeight, 1),
+        frameRate: valid(local.captureFrameRate) },
       localAudio: client.getLocalAudioStats(), remoteAudio: client.getRemoteAudioStats(),
     }, null, 2)}`, XmaxLoggerOption.performance);
   }

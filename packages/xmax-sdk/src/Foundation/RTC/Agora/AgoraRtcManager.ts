@@ -10,6 +10,7 @@ import type { RtcRoomJoinConfiguration, AgoraRoomJoinConfiguration } from "../Ro
 import { RtcVideoEncoderPreference, type VideoEncodingConfiguration } from "../VideoEncodingConfiguration";
 import { AgoraRtcStatistics } from "./AgoraRtcStatistics";
 import { rtcOrientedVideoSize } from "../RtcVideoOrientation";
+import { AgoraVideoSender } from "./AgoraVideoSender";
 
 /**
  * 固定版本 SDK 的 DataStream 扩展；官方公共类型未暴露发送方法。
@@ -52,6 +53,9 @@ export class AgoraRtcManager implements RtcManaging {
   private externalVideo?: ILocalVideoTrack;
   private externalAudio?: ILocalAudioTrack;
   private readonly appliedOptimizationModes = new WeakMap<ILocalVideoTrack, RtcVideoEncoderPreference>();
+  private cameraSenderConfiguration?: VideoEncodingConfiguration;
+  private senderUpdateTail: Promise<void> = Promise.resolve();
+  private cameraTransceiverListener?: () => void;
   private connection?: AgoraRoomJoinConfiguration;
   private roomVersion = 0;
 
@@ -139,7 +143,6 @@ export class AgoraRtcManager implements RtcManaging {
     this.sdk = sdk;
     this.client = client;
     this.registerEvents(client);
-    AgoraRtcStatistics.logUplinkBandwidth(client, "initialized");
   }
 
   /**
@@ -152,6 +155,7 @@ export class AgoraRtcManager implements RtcManaging {
     this.clearRoom();
     this.client = undefined;
     client?.removeAllListeners();
+    this.releaseCameraSender();
     this.camera?.close();
     this.microphone?.close();
     this.externalVideo?.close();
@@ -190,6 +194,17 @@ export class AgoraRtcManager implements RtcManaging {
       });
       if (this.client !== client) { camera.close(); throw this.cancelled(); }
       this.camera = camera;
+      this.cameraTransceiverListener = () => {
+        // 初次发布和显式重进房由发布流程负责；这里只处理 SDK 自动重建 sender。
+        if (this.client === client && client.localTracks.includes(camera) && this.videoPublishRequested && !this.rejoinTask) {
+          void this.restoreCameraSender(camera).catch(() => {
+            if (this.camera === camera && this.videoPublishRequested) {
+              XmaxLogger.rtc.warning(() => "Agora 发送参数恢复失败 (Agora Sender Parameters Restore Failed)");
+            }
+          });
+        }
+      };
+      camera.on("transceiver-updated", this.cameraTransceiverListener);
       return camera.getMediaStreamTrack();
     } catch (error) {
       throw this.mapError(error, XmaxErrorCode.cameraPermissionDenied);
@@ -203,6 +218,7 @@ export class AgoraRtcManager implements RtcManaging {
     const camera = this.requireCamera();
     await this.run(() => camera.setDevice({ facingMode: to === CameraPosition.front ? "user" : "environment" }));
     if (this.camera !== camera) throw this.cancelled();
+    if (this.videoPublishRequested) await this.restoreCameraSender(camera);
     return camera.getMediaStreamTrack();
   }
 
@@ -211,6 +227,7 @@ export class AgoraRtcManager implements RtcManaging {
    */
   async stopCameraCapture(): Promise<void> {
     const camera = this.camera;
+    this.releaseCameraSender();
     this.camera = undefined;
     camera?.close();
   }
@@ -250,11 +267,28 @@ export class AgoraRtcManager implements RtcManaging {
   }
 
   /**
-   * 应用公共编码配置；仅相机源补偿移动端转置，Canvas 外部源使用原始方向。
+   * 摄像头实验走原生 sender（发布前暂存）；外部视频仍走 Agora 编码配置。
    */
   async configureVideoEncoding(config: VideoEncodingConfiguration): Promise<void> {
     const camera = this.requireLocalVideo();
-    const encodingSize = this.externalVideo ? config : rtcOrientedVideoSize(config);
+    if (camera === this.camera) {
+      const client = this.requireClient(), version = this.roomVersion;
+      const published = this.videoPublishRequested;
+      await this.run(() => this.queueSenderUpdate(async () => {
+        const ensureActive = () => {
+          if (this.camera !== camera || this.client !== client || this.roomVersion !== version ||
+            (published && !this.videoPublishRequested)) throw this.cancelled();
+        };
+        ensureActive();
+        if (this.videoPublishRequested) {
+          await AgoraVideoSender.apply(camera, { ...config, ...rtcOrientedVideoSize(config) }, ensureActive);
+        }
+        // 发布前只有目标配置，sender 在 publish 返回后才可使用。
+        this.cameraSenderConfiguration = { ...config };
+      }));
+      return;
+    }
+    const encodingSize = config;
     await this.run(async () => {
       await camera.setEncoderConfiguration({
         width: encodingSize.width,
@@ -268,6 +302,33 @@ export class AgoraRtcManager implements RtcManaging {
         this.appliedOptimizationModes.set(camera, config.encoderPreference);
       }
     });
+  }
+
+  private queueSenderUpdate(operation: () => Promise<void>): Promise<void> {
+    const next = this.senderUpdateTail.then(operation);
+    this.senderUpdateTail = next.catch(() => {});
+    return next;
+  }
+
+  /** 发布/重建 sender 后恢复最近成功的目标配置；排队时不捕获过期的参数对象。 */
+  private restoreCameraSender(camera: ICameraVideoTrack): Promise<void> {
+    const client = this.client, version = this.roomVersion;
+    return this.queueSenderUpdate(async () => {
+      const ensureActive = () => {
+        if (this.camera !== camera || this.client !== client || this.roomVersion !== version || !this.videoPublishRequested) {
+          throw this.cancelled();
+        }
+      };
+      ensureActive();
+      const config = this.cameraSenderConfiguration;
+      if (config) await AgoraVideoSender.apply(camera, { ...config, ...rtcOrientedVideoSize(config) }, ensureActive);
+    });
+  }
+
+  private releaseCameraSender(): void {
+    if (this.cameraTransceiverListener) this.camera?.off("transceiver-updated", this.cameraTransceiverListener);
+    this.cameraTransceiverListener = undefined;
+    this.cameraSenderConfiguration = undefined;
   }
 
   /**
@@ -398,6 +459,7 @@ export class AgoraRtcManager implements RtcManaging {
     if (this.videoPublishRequested && video) {
       await this.run(() => client.publish(video));
       this.ensureRoomCurrent(client, version);
+      if (video === this.camera) await this.restoreCameraSender(this.camera);
     }
     if (this.audioPublishRequested && audio) {
       await this.run(() => client.publish(audio));
@@ -430,9 +492,8 @@ export class AgoraRtcManager implements RtcManaging {
     await this.rejoinOperation;
     if (client !== this.client || !this.videoPublishRequested) throw this.cancelled();
     if (client.localTracks.includes(camera)) return;
-    AgoraRtcStatistics.logUplinkBandwidth(client, "beforePublish");
     await this.run(() => client.publish(camera));
-    AgoraRtcStatistics.logUplinkBandwidth(client, "afterPublish");
+    if (camera === this.camera) await this.run(() => this.restoreCameraSender(this.camera!));
   }
 
   /**

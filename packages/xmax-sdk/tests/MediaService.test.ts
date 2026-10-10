@@ -7,7 +7,6 @@ describe("MediaService.resolveModelInputSize", () => {
   it.each([
     [RealtimeModel.x2_0, 832, 1472],
     [RealtimeModel.x2_0_trtc, 1024, 1920],
-    [RealtimeModel.x2_0_agora, 1024, 1920],
     [RealtimeModel.x2_1_preview, 1024, 1920],
   ] as const)("keeps the default camera format unchanged for %s", (model, width, height) => {
     const service = new MediaService(model);
@@ -17,7 +16,7 @@ describe("MediaService.resolveModelInputSize", () => {
     expect(service.resolveModelInputSize(format)).toEqual({ width, height });
   });
 
-  it.each([RealtimeModel.x2_0_trtc, RealtimeModel.x2_0_agora, RealtimeModel.x2_1_preview])("accepts exact resolution bucket matches for %s", (model) => {
+  it.each([RealtimeModel.x2_0_trtc, RealtimeModel.x2_1_preview])("accepts exact resolution bucket matches for %s", (model) => {
     const service = new MediaService(model);
     expect(service.resolveModelInputSize({ width: 1024, height: 1920 })).toEqual({
       width: 1024,
@@ -29,7 +28,7 @@ describe("MediaService.resolveModelInputSize", () => {
     });
   });
 
-  it.each([RealtimeModel.x2_0_trtc, RealtimeModel.x2_0_agora, RealtimeModel.x2_1_preview])("rejects non-bucket resolutions for %s", (model) => {
+  it.each([RealtimeModel.x2_0_trtc, RealtimeModel.x2_1_preview])("rejects non-bucket resolutions for %s", (model) => {
     const service = new MediaService(model);
     try {
       service.resolveModelInputSize({ width: 832, height: 1472 });

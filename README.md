@@ -214,10 +214,8 @@ The following JavaScript snippet creates a camera stream, starts real-time gener
 and binds the output to a video view. Run this within an async function in the browser,
 after a user action such as clicking a Start button.
 
-Choose a model with `RealtimeModel.x2_0` (`x2.0`) or
-`RealtimeModel.x2_0_trtc` (`x2.0-trtc`). For Agora, use
-`RealtimeModel.x2_0_agora` (`x2.0-agora`) with `RtcProvider.agora`. For VeRTC, use
-`RealtimeModel.x2_1_preview` (`x2.1-preview`) with `RtcProvider.vertc`.
+For Agora, use `RealtimeModel.x2_1_preview` (`x2.1-preview`). For TRTC, use
+`RealtimeModel.x2_0_trtc` (`x2.0-trtc`). `RealtimeModel.x2_0` (`x2.0`) uses VeRTC.
 
 ```javascript
 import {
@@ -303,11 +301,26 @@ and encoding preference. It does not recalculate default bitrates for the new fr
 rate or copy measured send statistics into the configuration. The complete encoder
 configuration is still resubmitted, so preservation of RTC's internal adaptation
 state is not guaranteed. Validate actual send statistics under weak networks.
+
+**Agora camera sender-only experiment:** camera capture stays at its initial settings.
+Camera updates use `RTCRtpSender.setParameters()` (`scaleResolutionDownBy`,
+`maxFramerate`, `maxBitrate` in bps), not Agora's `setEncoderConfiguration()`.
+Only the maximum bitrate is applied; the standard sender API cannot enforce the
+configured minimum bitrate. Pre-publish updates are queued and applied immediately
+after publication, so the very first transmitted frames may use the initial profile.
+Scaling uses the actual captured dimensions, preserves aspect ratio, and does not upscale.
+Sender replacement/rejoin reapplies the latest target. Unsupported or silently ignored
+parameters are reported as errors, without falling back to camera constraints.
+Read-back confirms accepted parameters, not actual frame dimensions or persistent
+ownership against Agora's later adjustments; validate Chrome/Safari using RTC statistics.
+Search `Agora Sender Parameters` for accepted limits and `Agora RTC Statistics` for
+capture/send dimensions. File-video encoding and other RTC providers are unchanged.
+
 Agora uplink and downlink adaptation are always enabled; no configuration flag or manual
 selector is needed. Other RTC providers are not yet integrated. After generation
 starts, three consecutive poor uplink quality samples lower one tier, and five good
 samples probe an upgrade. Five tiers jointly change resolution and frame rate:
-1024×1920/30, 768×1440/24, 640×1200/24, 480×900/20, and 384×720/16.
+1024×1920/30, 768×1440/24, 640×1200/24, 512×960/20, and 384×720/16.
 Landscape dimensions are swapped; custom sources scale proportionally from their
 initial or most recently manually applied format, with even dimensions and FPS
 capped by that baseline. Automatic updates preserve this baseline across reconnects.
@@ -318,7 +331,8 @@ relative to the generation's original dimensions. It sends only `change_target_s
 with `[width, height]`, without changing FPS, bitrate limits, or model inference.
 The protocol has no application ACK: a successful send records a requested tier,
 not a confirmed output size; use remote RTC statistics to verify actual dimensions.
-New Agora local tracks restore the last applied uplink tier before publishing;
+New Agora local tracks read the last applied uplink tier before publishing
+(the camera sender-only experiment applies it immediately after publication);
 new generation tasks restore the last requested downlink tier via `start.params.target_size`.
 Each direction falls back to L2 when no valid history is available. History is stored
 in `localStorage`, separately by model and direction, with no expiry or stability window
@@ -335,33 +349,33 @@ configuration above; camera capture, generation, rendering, and cleanup use the 
 ```javascript
 const realtime = client.createRealtimeManager(
   new RealtimeConfiguration({
-    model: RealtimeModel.x2_0_agora,
-  })
-);
-```
-
-To use VeRTC, select the preview model:
-
-```javascript
-const realtime = client.createRealtimeManager(
-  new RealtimeConfiguration({
     model: RealtimeModel.x2_1_preview,
   })
 );
 ```
 
-The provider is fixed for each manager: `x2.0` and `x2.0-trtc` use
-`RtcProvider.trtc`, `x2.0-agora` uses `RtcProvider.agora`, and
-`x2.1-preview` uses `RtcProvider.vertc`.
+To use VeRTC, select `x2.0`:
+
+```javascript
+const realtime = client.createRealtimeManager(
+  new RealtimeConfiguration({
+    model: RealtimeModel.x2_0,
+  })
+);
+```
+
+The provider is fixed for each manager: `x2.0-trtc` uses `RtcProvider.trtc`,
+`x2.1-preview` uses `RtcProvider.agora`, and `x2.0` uses `RtcProvider.vertc`.
 Import `RtcProvider` to specify it explicitly; unsupported known-model/provider
 combinations are rejected during configuration. Use the exported
 `supportedRtcProviders(model)` to inspect model capabilities. The SDK does not read
 `modelExtra.provider` from the backend; the resolved configuration determines how
 RTC credentials are parsed.
 
-The `x2.0-agora` and `x2.1-preview` models use
-`https://dev.xmaxai.com/open/api/v1` in both environments.
-The other built-in models and file uploads use the configured environment's API endpoint.
+The `x2.1-preview` model uses `https://cloud.xmax.22duck.cn/open/api/v1` in both environments.
+The other built-in models and file uploads use the configured
+environment's production API endpoint: `https://cloud.xmax.22duck.cn/open/api/v1`
+for China and `https://api.xmax.cloud/open/api/v1` for Global.
 
 Custom realtime model names are also accepted without an SDK update:
 
@@ -372,11 +386,11 @@ const realtime = client.createRealtimeManager(
 ```
 
 The model name is sent unchanged; the server determines whether it is available.
-Unknown models inherit the `x2.1-preview` defaults: VeRTC, the dev session API above
+Unknown models inherit the `x2.1-preview` defaults: Agora, the production session API above
 (in both client environments), a 1024 × 1920 camera at 30 fps, and the same
 1024 × 1920 / 1920 × 1024 input resolution buckets and media rules.
 You may explicitly choose another supported `RtcProvider` for a custom model;
-`supportedRtcProviders` lists all SDK adapters for custom models, with VeRTC first,
+`supportedRtcProviders` lists all SDK adapters for custom models, with Agora first,
 but this does not guarantee server-side support. `modelDisplayName` returns the
 custom name unchanged. Empty/blank or non-string model names, invalid RTC providers,
 and invalid video parameters are still rejected locally.

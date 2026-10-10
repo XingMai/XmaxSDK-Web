@@ -163,8 +163,8 @@ describe("RealtimeSessionService", () => {
   it.each([false, true])("parses Agora credentials with JSON encoding %s and sends the chosen model", async (encoded) => {
     const api = new ApiServicingStub();
     api.postResponses = [sessionPayload({ modelExtra: encoded ? JSON.stringify(agoraModelExtra) : agoraModelExtra })];
-    const session = await makeService(api, RtcProvider.agora).createSession(RealtimeModel.x2_0_agora);
-    expect(api.requests[0]?.body).toEqual({ model: "x2.0-agora" });
+    const session = await makeService(api, RtcProvider.agora).createSession(RealtimeModel.x2_1_preview);
+    expect(api.requests[0]?.body).toEqual({ model: "x2.1-preview" });
     expect(session.userID).toBe("user-001");
     expect(session.connection).toEqual({ provider: RtcProvider.agora, roomID: "000123", appID: "agora-app",
       userID: "rtc-user", botID: "bot-agora", roomToken: "token-v1" });
@@ -174,7 +174,7 @@ describe("RealtimeSessionService", () => {
     const api = new ApiServicingStub();
     api.postResponses = [sessionPayload({ modelExtra: { ...agoraModelExtra, [field]: "" } })];
     api.deleteResponses = [{}];
-    await expect(makeService(api, RtcProvider.agora).createSession(RealtimeModel.x2_0_agora)).rejects.toMatchObject({ code: XmaxErrorCode.sessionError });
+    await expect(makeService(api, RtcProvider.agora).createSession(RealtimeModel.x2_1_preview)).rejects.toMatchObject({ code: XmaxErrorCode.sessionError });
     expect(api.requests.at(-1)).toMatchObject({ method: ApiMethod.delete, path: "/session/ums-001", keepalive: true });
   });
 
@@ -183,7 +183,7 @@ describe("RealtimeSessionService", () => {
     api.postResponses = [sessionPayload({ modelExtra: agoraModelExtra })];
     api.putResponses = [sessionPayload({ modelExtra: { room_token: "token-v2" } }), sessionPayload({})];
     const service = makeService(api, RtcProvider.agora);
-    await service.createSession(RealtimeModel.x2_0_agora);
+    await service.createSession(RealtimeModel.x2_1_preview);
     const [first, second] = await Promise.all([service.heartbeatSession("ums-001"), service.heartbeatSession("ums-001")]);
     expect(first).toBe(second);
     expect(first.connection).toMatchObject({ provider: RtcProvider.agora, roomID: "000123", userID: "rtc-user", roomToken: "token-v2" });
@@ -196,7 +196,7 @@ describe("RealtimeSessionService", () => {
     api.postResponses = [sessionPayload({ modelExtra: agoraModelExtra })];
     api.putResponses = [sessionPayload({ modelExtra: "not json" }), { ...sessionPayload({}), sessionUid: "other" }];
     const service = makeService(api, RtcProvider.agora);
-    await service.createSession(RealtimeModel.x2_0_agora);
+    await service.createSession(RealtimeModel.x2_1_preview);
     await expect(service.heartbeatSession("ums-001")).rejects.toThrow("Invalid heartbeat RTC credentials");
     await expect(service.heartbeatSession("ums-001")).rejects.toThrow("identity changed");
   });

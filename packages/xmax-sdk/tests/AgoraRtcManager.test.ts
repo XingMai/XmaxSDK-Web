@@ -25,8 +25,18 @@ function deferred<T>() {
 
 function setup(environment = XmaxEnvironment.china) {
   const handlers = new Map<string, (...args: any[]) => void>();
-  const native = { kind: "video" } as MediaStreamTrack;
-  const camera = { getMediaStreamTrack: vi.fn(() => native), close: vi.fn(), setDevice: vi.fn(async () => {}),
+  const native = { kind: "video", getSettings: vi.fn(() => ({ width: 1920, height: 1024, frameRate: 30 })) } as unknown as MediaStreamTrack;
+  let parameters = { encodings: [{}] } as RTCRtpSendParameters;
+  const sender = {
+    track: native,
+    getParameters: vi.fn(() => structuredClone(parameters)),
+    setParameters: vi.fn(async (next: RTCRtpSendParameters) => { parameters = structuredClone(next); }),
+  };
+  const trackHandlers = new Map<string, () => void>();
+  const camera = { trackMediaType: "video", getMediaStreamTrack: vi.fn(() => native), close: vi.fn(), setDevice: vi.fn(async () => {}),
+    getRTCRtpTransceiver: vi.fn(() => ({ sender } as unknown as RTCRtpTransceiver)),
+    on: vi.fn((event: string, handler: () => void) => { trackHandlers.set(event, handler); }),
+    off: vi.fn((event: string) => { trackHandlers.delete(event); }),
     setEncoderConfiguration: vi.fn(async () => {}), setOptimizationMode: vi.fn(async () => {}) };
   const microphone = { close: vi.fn() };
   const audio = { play: vi.fn(), stop: vi.fn(), setVolume: vi.fn() };
@@ -56,7 +66,9 @@ function setup(environment = XmaxEnvironment.china) {
     onTokenWillExpire: vi.fn(), onRoomRejoining: vi.fn(),
     onNetworkStatistics: vi.fn(), onLocalVideoStatistics: vi.fn(), onRemoteVideoStatistics: vi.fn(), onError: vi.fn() };
   manager.setEventListener(listener);
-  return { manager, client, sdk, loadSDK, camera, microphone, native, audio, user, listener, emit: (event: string, ...args: unknown[]) => handlers.get(event)?.(...args) };
+  return { manager, client, sdk, loadSDK, camera, microphone, native, audio, user, listener, sender,
+    emitTrack: (event: string) => trackHandlers.get(event)?.(),
+    emit: (event: string, ...args: unknown[]) => handlers.get(event)?.(...args) };
 }
 
 afterEach(async () => {
@@ -69,57 +81,28 @@ afterEach(async () => {
 
 describe("AgoraRtcManager", () => {
 
-  it.each([undefined, 0, 6400, NaN, -1])("logs raw uplink bandwidth %s at startup and during regular statistics", async bandwidth => {
+  it.each([XmaxLoggerOption.none, XmaxLoggerOption.performance])("does not sample startup bandwidth or log bandwidth with options %s", async options => {
     vi.useFakeTimers();
     const info = vi.spyOn(console, "info").mockImplementation(() => {});
-    XmaxLogger.configure(XmaxLoggerOption.performance);
+    XmaxLogger.configure(options);
     const s = setup();
-    s.client.getRTCStats.mockReturnValue({ RTT: 12, SendBytes: 100, RecvBytes: 200, OutgoingAvailableBandwidth: bandwidth });
-    await s.manager.initialize();
-    await s.manager.startCameraCapture({ width: 1920, height: 1024, frameRate: 30, position: CameraPosition.front });
-    await s.manager.joinRoom(credentials);
-    await s.manager.publishLocalVideo();
-    const bandwidthLogs = () => info.mock.calls.filter(call => String(call[0]).includes("OutgoingAvailableBandwidth"));
-    expect(bandwidthLogs().map(call => String(call[0]))).toEqual([
-      expect.stringContaining("stage: initialized"),
-      expect.stringContaining("stage: beforePublish"),
-      expect.stringContaining("stage: afterPublish"),
-    ]);
-    await vi.advanceTimersByTimeAsync(2000);
-    expect(bandwidthLogs()).toHaveLength(4);
-    for (const call of bandwidthLogs()) {
-      expect(String(call[0])).toContain(`OutgoingAvailableBandwidth: ${String(bandwidth)} Kbps`);
-    }
-    expect(s.listener.onNetworkStatistics).not.toHaveBeenCalled();
-    expect(s.client.publish).toHaveBeenCalledOnce();
-    expect(s.sdk.startLastmileProbeTest).not.toHaveBeenCalled();
-  });
-
-  it("keeps initialization and publishing working if the startup statistics read throws", async () => {
-    vi.useFakeTimers();
-    const info = vi.spyOn(console, "info").mockImplementation(() => {});
-    XmaxLogger.configure(XmaxLoggerOption.performance);
-    const s = setup();
-    s.client.getRTCStats.mockImplementation(() => { throw new Error("not ready"); });
-    await s.manager.initialize();
-    await s.manager.startCameraCapture({ width: 1920, height: 1024, frameRate: 30, position: CameraPosition.front });
-    await s.manager.joinRoom(credentials);
-    await s.manager.publishLocalVideo();
-    expect(s.client.publish).toHaveBeenCalledOnce();
-    expect(info.mock.calls.filter(call => String(call[0]).includes("OutgoingAvailableBandwidth"))).toHaveLength(3);
-    expect(info).toHaveBeenLastCalledWith(expect.stringContaining("unavailable (getRTCStats failed)"));
-  });
-
-  it("does not read startup bandwidth when performance logging is disabled", async () => {
-    vi.useFakeTimers();
-    XmaxLogger.configure(XmaxLoggerOption.none);
-    const s = setup();
+    s.client.getRTCStats.mockReturnValue({ RTT: 12, SendBytes: 100, RecvBytes: 200, OutgoingAvailableBandwidth: 4621 });
     await s.manager.initialize();
     await s.manager.startCameraCapture({ width: 1920, height: 1024, frameRate: 30, position: CameraPosition.front });
     await s.manager.joinRoom(credentials);
     await s.manager.publishLocalVideo();
     expect(s.client.getRTCStats).not.toHaveBeenCalled();
+    expect(info).not.toHaveBeenCalled();
     expect(s.sdk.startLastmileProbeTest).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(s.client.getRTCStats).toHaveBeenCalledOnce();
+    expect(s.listener.onLocalVideoStatistics).toHaveBeenCalledOnce();
+    expect(s.listener.onRemoteVideoStatistics).toHaveBeenCalledOnce();
+    const logs = info.mock.calls.map(call => String(call[0])).join("\n");
+    expect(logs).not.toContain("OutgoingAvailableBandwidth");
+    expect(logs).not.toContain("Uplink Bandwidth Estimate");
+    if (options === XmaxLoggerOption.performance) expect(logs).toContain("Agora RTC Statistics");
+    else expect(info).not.toHaveBeenCalled();
   });
 
   it("invalidates network samples during reconnect and resumes only with fresh connected samples", async () => {
@@ -141,39 +124,86 @@ describe("AgoraRtcManager", () => {
     s.emit("token-privilege-did-expire");
     expect(onNetworkStatistics).toHaveBeenLastCalledWith(undefined);
   });
-  it("resubmits fixed size/bitrate with new FPS without repeating the same optimization mode", async () => {
+  it("defers camera encoding until publication then updates only sender parameters", async () => {
     const s = setup();
     await s.manager.initialize();
     await s.manager.startCameraCapture({ width: 1920, height: 1024, frameRate: 30, position: CameraPosition.front });
     const config = { width: 1920, height: 1024, frameRate: 30, minimumBitrate: 3000, maximumBitrate: 6000,
       encoderPreference: RtcVideoEncoderPreference.maintainFramerate };
     await s.manager.configureVideoEncoding(config);
+    expect(s.sender.setParameters).not.toHaveBeenCalled();
+    expect(s.camera.setEncoderConfiguration).not.toHaveBeenCalled();
+    await s.manager.joinRoom(credentials);
+    await s.manager.publishLocalVideo();
     await s.manager.configureVideoEncoding({ ...config, frameRate: 24 });
-    expect(s.camera.setEncoderConfiguration).toHaveBeenLastCalledWith({ width: 1920, height: 1024, frameRate: 24, bitrateMin: 3000, bitrateMax: 6000 });
-    expect(s.camera.setOptimizationMode).toHaveBeenCalledTimes(1);
-    expect(s.camera.setOptimizationMode).toHaveBeenCalledWith("motion");
+    expect(s.sender.getParameters().encodings[0]).toMatchObject({ scaleResolutionDownBy: 1, maxFramerate: 24, maxBitrate: 6000000 });
+    expect(s.sender.getParameters().degradationPreference).toBe("maintain-framerate");
     await s.manager.configureVideoEncoding({ ...config, encoderPreference: RtcVideoEncoderPreference.maintainQuality });
-    expect(s.camera.setOptimizationMode).toHaveBeenCalledTimes(2);
-    expect(s.camera.setOptimizationMode).toHaveBeenLastCalledWith("detail");
+    expect(s.sender.getParameters().degradationPreference).toBe("maintain-resolution");
+    expect(s.camera.setEncoderConfiguration).not.toHaveBeenCalled();
+    expect(s.camera.setOptimizationMode).not.toHaveBeenCalled();
   });
 
-  it("retries optimization after failure and configures it for each new video track", async () => {
+  it("keeps the last successful target on failure and restores it after sender replacement", async () => {
     const s = setup();
     await s.manager.initialize();
     await s.manager.startCameraCapture({ width: 1920, height: 1024, frameRate: 30, position: CameraPosition.front });
     const config = { width: 1920, height: 1024, frameRate: 30, minimumBitrate: 3000, maximumBitrate: 6000,
       encoderPreference: RtcVideoEncoderPreference.maintainFramerate };
-    s.camera.setOptimizationMode.mockRejectedValueOnce(new Error("failed"));
-    await expect(s.manager.configureVideoEncoding(config)).rejects.toThrow();
     await s.manager.configureVideoEncoding(config);
-    expect(s.camera.setOptimizationMode).toHaveBeenCalledTimes(2);
+    await s.manager.joinRoom(credentials);
+    await s.manager.publishLocalVideo();
+    s.sender.setParameters.mockRejectedValueOnce(new Error("failed"));
+    await expect(s.manager.configureVideoEncoding({ ...config, width: 960, height: 512, frameRate: 20 })).rejects.toThrow();
+    const replacement = setup().sender;
+    s.camera.getRTCRtpTransceiver.mockReturnValue({ sender: replacement } as unknown as RTCRtpTransceiver);
+    s.client.localTracks = [s.camera];
+    s.emitTrack("transceiver-updated");
+    await vi.waitFor(() => expect(replacement.setParameters).toHaveBeenCalledOnce());
+    expect(replacement.getParameters().encodings[0]).toMatchObject({ scaleResolutionDownBy: 1, maxFramerate: 30 });
     await s.manager.stopCameraCapture();
-    const next = { ...s.camera, setOptimizationMode: vi.fn(async () => {}) };
-    s.sdk.createCameraVideoTrack.mockResolvedValueOnce(next);
-    await s.manager.startCameraCapture({ width: 1920, height: 1024, frameRate: 30, position: CameraPosition.front });
-    await s.manager.configureVideoEncoding(config);
-    expect(next.setOptimizationMode).toHaveBeenCalledWith("motion");
+    expect(s.camera.off).toHaveBeenCalledWith("transceiver-updated", expect.any(Function));
+    expect(s.camera.setEncoderConfiguration).not.toHaveBeenCalled();
   });
+  it("restores camera sending limits after an expired-token rejoin", async () => {
+    const s = setup();
+    await s.manager.initialize();
+    await s.manager.startCameraCapture({ width: 1920, height: 1024, frameRate: 30, position: CameraPosition.front });
+    await s.manager.configureVideoEncoding({ width: 960, height: 512, frameRate: 24,
+      minimumBitrate: 1000, maximumBitrate: 2000, encoderPreference: RtcVideoEncoderPreference.maintainFramerate });
+    await s.manager.joinRoom(credentials);
+    await s.manager.publishLocalVideo();
+    s.sender.setParameters.mockClear();
+    s.emit("token-privilege-did-expire");
+    await s.manager.updateCredentials({ ...credentials, roomToken: "renewed" });
+    expect(s.sender.setParameters).toHaveBeenCalledOnce();
+    expect(s.sender.getParameters().encodings[0]).toMatchObject({ scaleResolutionDownBy: 2, maxFramerate: 24, maxBitrate: 2000000 });
+    expect(s.camera.setEncoderConfiguration).not.toHaveBeenCalled();
+  });
+
+  it("serializes sender updates and rejects a result after leaving the room", async () => {
+    const s = setup();
+    await s.manager.initialize();
+    await s.manager.startCameraCapture({ width: 1920, height: 1024, frameRate: 30, position: CameraPosition.front });
+    await s.manager.joinRoom(credentials);
+    await s.manager.publishLocalVideo();
+    const config = { width: 960, height: 512, frameRate: 24, minimumBitrate: 1000, maximumBitrate: 2000,
+      encoderPreference: RtcVideoEncoderPreference.maintainFramerate };
+    const gate = deferred<void>();
+    const setParameters = s.sender.setParameters.getMockImplementation()!;
+    s.sender.setParameters.mockImplementationOnce(async parameters => { await gate.promise; await setParameters(parameters); });
+    const first = s.manager.configureVideoEncoding(config);
+    const second = s.manager.configureVideoEncoding({ ...config, frameRate: 16 });
+    const failed = Promise.all([expect(first).rejects.toMatchObject({ code: "CANCELLED" }),
+      expect(second).rejects.toMatchObject({ code: "CANCELLED" })]);
+    await vi.waitFor(() => expect(s.sender.setParameters).toHaveBeenCalledOnce());
+    await s.manager.leaveRoom();
+    gate.resolve();
+    await failed;
+    expect(s.sender.setParameters).toHaveBeenCalledOnce();
+    expect(s.camera.setEncoderConfiguration).not.toHaveBeenCalled();
+  });
+
   function externalTracks(includeAudio = true) {
     const track = (kind: string) => {
       const cloned = { kind, readyState: "live", stop: vi.fn() };
@@ -301,8 +331,8 @@ describe("AgoraRtcManager", () => {
     expect(s.sdk.createCameraVideoTrack).toHaveBeenCalledWith({ facingMode: "user", encoderConfig: { width: 1024, height: 1920, frameRate: 30 } });
     expect(s.client.publish).not.toHaveBeenCalled();
     await s.manager.configureVideoEncoding({ width: 1024, height: 1920, frameRate: 30, minimumBitrate: 3000, maximumBitrate: 6000, encoderPreference: RtcVideoEncoderPreference.maintainFramerate });
-    expect(s.camera.setEncoderConfiguration).toHaveBeenCalledWith({ width: 1024, height: 1920, frameRate: 30, bitrateMin: 3000, bitrateMax: 6000 });
-    expect(s.camera.setOptimizationMode).toHaveBeenCalledWith("motion");
+    expect(s.camera.setEncoderConfiguration).not.toHaveBeenCalled();
+    expect(s.camera.setOptimizationMode).not.toHaveBeenCalled();
     await s.manager.switchCameraCapture(CameraPosition.back);
     expect(s.camera.setDevice).toHaveBeenCalledWith({ facingMode: "environment" });
     await s.manager.publishLocalVideo();
@@ -326,6 +356,7 @@ describe("AgoraRtcManager", () => {
 
     const requestedSize = { width: 1024, height: 1920 };
     const expectedSize = transpose ? { width: 1920, height: 1024 } : requestedSize;
+    vi.spyOn(s.native, "getSettings").mockReturnValue({ ...expectedSize, frameRate: 30 });
     const capture = { ...requestedSize, frameRate: 30, position: CameraPosition.front };
     expect(await s.manager.startCameraCapture(capture)).toBe(s.native);
     expect(s.sdk.createCameraVideoTrack).toHaveBeenCalledWith({
@@ -337,10 +368,10 @@ describe("AgoraRtcManager", () => {
     const encoding = { ...requestedSize, frameRate: 30, minimumBitrate: 3000, maximumBitrate: 6000,
       encoderPreference: RtcVideoEncoderPreference.maintainFramerate };
     await s.manager.configureVideoEncoding(encoding);
-    expect(s.camera.setEncoderConfiguration).toHaveBeenCalledWith({
-      ...expectedSize, frameRate: 30, bitrateMin: 3000, bitrateMax: 6000,
-    });
-    expect(s.camera.setOptimizationMode).toHaveBeenCalledWith("motion");
+    await s.manager.joinRoom(credentials);
+    await s.manager.publishLocalVideo();
+    expect(s.camera.setEncoderConfiguration).not.toHaveBeenCalled();
+    expect(s.sender.getParameters().encodings[0]).toMatchObject({ scaleResolutionDownBy: 1, maxFramerate: 30, maxBitrate: 6000000 });
     expect(capture).toMatchObject(requestedSize);
     expect(encoding).toMatchObject(requestedSize);
   });

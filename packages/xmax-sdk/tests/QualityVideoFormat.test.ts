@@ -13,7 +13,7 @@ describe("qualityVideoFormat", () => {
     expect(QUALITY_TIERS.L5).toEqual({ width: 384, height: 720, frameRate: 16 });
   });
   const portraitTiers = [
-    [1024, 1920, 30], [768, 1440, 24], [640, 1200, 24], [480, 900, 20], [384, 720, 16],
+    [1024, 1920, 30], [768, 1440, 24], [640, 1200, 24], [512, 960, 20], [384, 720, 16],
   ];
 
   it.each([false, true])("matches all five tiers with landscape=%s", landscape => {

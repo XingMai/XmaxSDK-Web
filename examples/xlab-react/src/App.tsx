@@ -69,10 +69,10 @@ export function App() {
   const [apiKey, setApiKey] = useState(
     () => localStorage.getItem(API_KEY_STORAGE) ?? "",
   );
-  const [model, setModel] = useState<RealtimeModel>(RealtimeModel.x2_0_agora);
+  const [model, setModel] = useState<RealtimeModel>(RealtimeModel.x2_1_preview);
   const [wechatOpen, setWechatOpen] = useState(false);
   const [keyEditorOpen, setKeyEditorOpen] = useState(false);
-  const [useMicrophone, setUseMicrophone] = useState(true);
+  const [useMicrophone, setUseMicrophone] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [activeModeKey, setActiveModeKey] = useState<ExampleModeKey>("charx");
   const [localStream, setLocalStream] = useState<RealtimeMediaStream | undefined>();
@@ -610,7 +610,6 @@ export function App() {
                 onChange={(event) => setModel(event.target.value as RealtimeModel)}>
                 {[
                   RealtimeModel.x2_0_trtc,
-                  RealtimeModel.x2_0_agora,
                   RealtimeModel.x2_1_preview,
                 ].map((option) => (
                   <option key={option} value={option}>{modelDisplayName(option)}</option>

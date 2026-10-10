@@ -334,7 +334,7 @@ describe("XmaxRealtimeConnectionManager", () => {
 
   it.each([RtcProvider.agora, RtcProvider.vertc] as const)("renews %s credentials through heartbeat and coalesces expiry notifications", async (provider) => {
     const { manager, service, stream, options, events } = setup(provider);
-    await manager.connect({ ...options, model: RealtimeModel.x2_0_agora });
+    await manager.connect({ ...options, model: RealtimeModel.x2_1_preview });
     const refreshed = new RealtimeSession({ id: "session", connection: {
       provider, roomID: "room", appID: "app", userID: "rtc-user", roomToken: "token-v2",
     } });

@@ -5,9 +5,8 @@ import { RtcProvider } from "../src/Foundation/RTC/RtcProvider";
 
 describe("RealtimeConfiguration", () => {
   it.each([
-    [RealtimeModel.x2_0_agora, RtcProvider.agora],
     [RealtimeModel.x2_0_trtc, RtcProvider.trtc],
-    [RealtimeModel.x2_1_preview, RtcProvider.vertc],
+    [RealtimeModel.x2_1_preview, RtcProvider.agora],
   ] as const)("keeps the public configuration minimal for %s", (model, provider) => {
     expect(new RealtimeConfiguration({ model })).toEqual({ model, provider, isFrameInterpolationEnabled: false });
   });

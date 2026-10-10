@@ -6,6 +6,6 @@ export const QUALITY_TIERS = {
   L1: { width: 1024, height: 1920, frameRate: 30 },
   L2: { width: 768, height: 1440, frameRate: 24 },
   L3: { width: 640, height: 1200, frameRate: 24 },
-  L4: { width: 480, height: 900, frameRate: 20 },
+  L4: { width: 512, height: 960, frameRate: 20 },
   L5: { width: 384, height: 720, frameRate: 16 },
 } as const;
