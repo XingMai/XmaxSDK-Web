@@ -1,8 +1,7 @@
-import { XmaxLogger, XmaxLoggerOption } from "../../Foundation/Logging/XmaxLogger";
 import type { VideoRenderStatistics } from "./VideoRenderStatistics";
 
 /**
- * 单个视频视图的呈现统计采集器，管理帧观察、采样窗口、统计回调和日志。
+ * 单个视频视图的呈现统计采集器，管理帧观察、采样窗口和统计回调。
  * 不控制视频播放或插帧，仅观察原视频帧与画布呈现提交。 @internal
  */
 export class RenderStatisticsController {
@@ -25,6 +24,7 @@ export class RenderStatisticsController {
   private originalFrames = 0;
   private interpolatedFrames = 0;
   private interpolationActive = false;
+  private previousPresentedFrames?: number;
 
   /**
    * 绑定用于观察原视频帧的元素，调用 start 后才开始采集。
@@ -32,12 +32,12 @@ export class RenderStatisticsController {
   constructor(private readonly video: HTMLVideoElement) {}
 
   /**
-   * 独立于统计面板可见性采集；没有监听者且未开启性能日志时不占用定时器。
+   * 独立于统计面板可见性采集；没有监听者时不占用定时器。
    */
   start(): void {
     if (this.timer !== undefined ||
         (!this.video.srcObject && !this.video.getAttribute("src")) ||
-        (!this.handler && !XmaxLogger.isEnabled(XmaxLoggerOption.performance)) ||
+        !this.handler ||
         typeof this.video.requestVideoFrameCallback !== "function") {
       return;
     }
@@ -45,13 +45,16 @@ export class RenderStatisticsController {
     this.reset();
     const sequence = this.sequence;
     const observe = () => {
-      this.callbackID = this.video.requestVideoFrameCallback(() => {
+      this.callbackID = this.video.requestVideoFrameCallback((_now, metadata) => {
         if (sequence !== this.sequence) {
           return;
         }
         this.callbackID = undefined;
         if (!this.interpolationActive && !document.hidden) {
-          this.originalFrames++;
+          this.recordVideoFrames(metadata.presentedFrames);
+        } else {
+          // 画布接管或页面隐藏期间的原视频帧不归入后续可见窗口。
+          this.previousPresentedFrames = undefined;
         }
         observe();
       });
@@ -80,6 +83,27 @@ export class RenderStatisticsController {
   }
 
   /**
+   * 按浏览器累计呈现帧数的增量统计，包含两次回调之间已呈现但未回调的帧。
+   */
+  private recordVideoFrames(presentedFrames: number): void {
+    if (!Number.isSafeInteger(presentedFrames) || presentedFrames < 0) {
+      this.previousPresentedFrames = undefined;
+      return;
+    }
+
+    const previous = this.previousPresentedFrames;
+    this.previousPresentedFrames = presentedFrames;
+
+    // 首次观察或计数回退时只计当前帧，不能把此前播放的累计帧数加进来。
+    if (previous === undefined || presentedFrames < previous) {
+      this.originalFrames += presentedFrames > 0 ? 1 : 0;
+      return;
+    }
+
+    this.originalFrames += presentedFrames - previous;
+  }
+
+  /**
    * 取消采样及帧观察，忽略已排队的旧回调并清空对外统计。
    */
   stop(): void {
@@ -100,6 +124,7 @@ export class RenderStatisticsController {
     this.startedAt = performance.now();
     this.originalFrames = 0;
     this.interpolatedFrames = 0;
+    this.previousPresentedFrames = undefined;
     this.notify(undefined);
   }
 
@@ -124,10 +149,6 @@ export class RenderStatisticsController {
     this.originalFrames = 0;
     this.interpolatedFrames = 0;
     this.notify(statistics);
-    XmaxLogger.render.info(() => `渲染帧率 (Render Frame Rate)\n` +
-      `├─ source: ${statistics.source}, fps: ${statistics.frameRate.toFixed(1)}\n` +
-      `└─ original: ${statistics.originalFrameRate.toFixed(1)} fps, interpolated: ${statistics.interpolatedFrameRate.toFixed(1)} fps`,
-    XmaxLoggerOption.performance);
   }
 
   /**

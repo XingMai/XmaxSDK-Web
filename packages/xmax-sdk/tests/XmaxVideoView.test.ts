@@ -33,6 +33,7 @@ class VideoStub extends ElementStub {
   readyState = 0;
   play = vi.fn(async () => { this.paused = false; });
   private sequence = 0;
+  private presentedFrames = 0;
   readonly callbacks = new Map<number, () => void>();
 
   requestVideoFrameCallback(callback: () => void): number {
@@ -45,7 +46,8 @@ class VideoStub extends ElementStub {
     this.callbacks.delete(id);
   }
 
-  nextFrame(time = 0, frames = 1): void {
+  nextFrame(time = 0, frames = this.presentedFrames + 1): void {
+    this.presentedFrames = frames;
     const callbacks = [...this.callbacks.values()];
     this.callbacks.clear();
     callbacks.forEach((callback) => (callback as VideoFrameRequestCallback)(performance.now(), {
@@ -88,14 +90,14 @@ describe("video render statistics", () => {
     XmaxLogger.configure(XmaxLoggerOption.none);
   });
 
-  it("reports video frame callbacks, zero when stalled, and keeps sampling a hidden statistics UI", async () => {
+  it("reports presented frame deltas, zero when stalled, and keeps sampling a hidden statistics UI", async () => {
     const { view, video } = makeView();
     const listener = vi.fn();
     view.renderStatisticsHandler = listener;
-    video.nextFrame();
-    video.nextFrame();
+    video.nextFrame(0, 100);
+    video.nextFrame(0, 123);
     await vi.advanceTimersByTimeAsync(1000);
-    expect(listener).toHaveBeenLastCalledWith({ source: "video", frameRate: 2, originalFrameRate: 2, interpolatedFrameRate: 0 });
+    expect(listener).toHaveBeenLastCalledWith({ source: "video", frameRate: 24, originalFrameRate: 24, interpolatedFrameRate: 0 });
     await vi.advanceTimersByTimeAsync(1000);
     expect(listener).toHaveBeenLastCalledWith(expect.objectContaining({ frameRate: 0 }));
 
@@ -175,18 +177,24 @@ describe("video render statistics", () => {
     view.detach();
   });
 
-  it("continues performance logs without a listener and isolates listener errors", async () => {
+  it("reports statistics without performance logs and isolates listener errors", async () => {
     XmaxLogger.configure(XmaxLoggerOption.performance);
     const log = vi.spyOn(console, "info").mockImplementation(() => {});
     const { view, video } = makeView();
-    view.renderStatisticsHandler = () => { throw new Error("consumer error"); };
+    const listener = vi.fn(() => { throw new Error("consumer error"); });
+    view.renderStatisticsHandler = listener;
     video.nextFrame();
     await vi.advanceTimersByTimeAsync(1000);
-    expect(log.mock.calls.flat().map(String).join(" ")).toContain("original: 1.0 fps, interpolated: 0.0 fps");
+    expect(listener).toHaveBeenLastCalledWith({ source: "video", frameRate: 1, originalFrameRate: 1, interpolatedFrameRate: 0 });
+    video.nextFrame();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(listener).toHaveBeenLastCalledWith({ source: "video", frameRate: 1, originalFrameRate: 1, interpolatedFrameRate: 0 });
+    expect(log).not.toHaveBeenCalled();
     view.renderStatisticsHandler = undefined;
+    expect(vi.getTimerCount()).toBe(0);
     video.nextFrame();
     await vi.advanceTimersByTimeAsync(1000);
-    expect(log).toHaveBeenCalledTimes(2);
+    expect(log).not.toHaveBeenCalled();
     view.detach();
     expect(vi.getTimerCount()).toBe(0);
   });

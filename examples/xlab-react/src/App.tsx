@@ -17,7 +17,6 @@ import {
   type VideoStatistics,
   type NetworkStatistics,
   type RemoteVideoStatistics,
-  type VideoRenderStatistics,
   type RealtimeState,
   type XmaxRealtimeManaging,
 } from "@xmaxai/web-sdk";
@@ -29,6 +28,7 @@ import { ReferenceLibrary, type ReferenceItem } from "./ReferenceLibrary";
 import { ReferenceList } from "./ReferenceList";
 import { RemoteVolumeControl } from "./RemoteVolumeControl";
 import { StatisticsToggle } from "./StatisticsToggle";
+import { FrameInterpolationToggle } from "./FrameInterpolationToggle";
 import { StatisticsPanel } from "./StatisticsPanel";
 import { compressReferenceImage } from "./compressReferenceImage";
 
@@ -84,10 +84,11 @@ export function App() {
   const [launchTiming, setLaunchTiming] = useState<RealtimeLaunchTiming>({});
   const [localVideoStatistics, setLocalVideoStatistics] = useState<VideoStatistics>();
   const [remoteVideoStatistics, setRemoteVideoStatistics] = useState<RemoteVideoStatistics>();
-  const [renderStatistics, setRenderStatistics] = useState<VideoRenderStatistics>();
   const [networkStatistics, setNetworkStatistics] = useState<NetworkStatistics>();
   const [errorText, setErrorText] = useState("");
   const [busy, setBusy] = useState(false);
+  const [interpolationRequested, setInterpolationRequested] = useState(true);
+  const [interpolationSwitching, setInterpolationSwitching] = useState(false);
   const [remoteAudioVolume, setRemoteAudioVolume] = useState(0);
   const [statisticsVisible, setStatisticsVisible] = useState(
     () => !window.matchMedia("(max-width: 720px)").matches,
@@ -164,6 +165,18 @@ export function App() {
     const timer = setInterval(() => {
       setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
     }, 1000);
+    return () => clearInterval(timer);
+  }, [localStream]);
+
+  // 只同步功能开关和故障降级，不使用逐帧插值状态驱动按钮。
+  useEffect(() => {
+    if (!localStream) return;
+    const update = () => {
+      const realtime = realtimeRef.current;
+      if (realtime) setInterpolationRequested(realtime.isFrameInterpolationEnabled);
+    };
+    update();
+    const timer = setInterval(update, 250);
     return () => clearInterval(timer);
   }, [localStream]);
 
@@ -284,6 +297,8 @@ export function App() {
     const realtime = client.createRealtimeManager(
       new RealtimeConfiguration({
         model,
+        // 示例默认开启并允许会话中切换；SDK 默认仍保持关闭。
+        isFrameInterpolationEnabled: interpolationRequested,
       }),
     );
     realtimeRef.current = realtime;
@@ -345,6 +360,29 @@ export function App() {
     } finally {
       generationBusyRef.current = false;
       setBusy(false);
+    }
+  }
+
+  async function handleToggleInterpolation() {
+    const realtime = realtimeRef.current;
+    if (!realtime || generationBusyRef.current) return;
+    generationBusyRef.current = true;
+    setBusy(true);
+    setInterpolationSwitching(true);
+    setErrorText("");
+    try {
+      await realtime.setFrameInterpolationEnabled(!realtime.isFrameInterpolationEnabled);
+    } catch (error) {
+      if (realtimeRef.current === realtime) {
+        setErrorText(error instanceof Error ? error.message : String(error));
+      }
+    } finally {
+      if (realtimeRef.current === realtime) {
+        setInterpolationRequested(realtime.isFrameInterpolationEnabled);
+      }
+      generationBusyRef.current = false;
+      setBusy(false);
+      setInterpolationSwitching(false);
     }
   }
 
@@ -445,7 +483,6 @@ export function App() {
     setRemoteStream(undefined);
     setLocalVideoStatistics(undefined);
     setRemoteVideoStatistics(undefined);
-    setRenderStatistics(undefined);
     setNetworkStatistics(undefined);
     setStateText(RealtimeConnectionState.idle);
     setErrorText("");
@@ -736,6 +773,8 @@ export function App() {
           <StatisticsToggle visible={statisticsVisible} onChange={setStatisticsVisible} />
           <RemoteVolumeControl volume={remoteAudioVolume} disabled={!sessionActive || !realtimeRef.current}
             onChange={handleRemoteVolumeChange} />
+          <FrameInterpolationToggle enabled={interpolationRequested} switching={interpolationSwitching}
+            disabled={busy || !sessionActive || !realtimeRef.current} onToggle={handleToggleInterpolation} />
           <span className="sessionTimer">{formatElapsed(elapsedSeconds)}</span>
           <button
             className="stopButton"
@@ -765,7 +804,6 @@ export function App() {
             <div className="remoteVideo" key={remoteStream.id}>
               <XmaxVideo
                 track={remoteStream.videoTrack}
-                onRenderStatistics={setRenderStatistics}
                 style={{ width: "100%", height: "100%" }}
               />
             </div>
@@ -776,7 +814,6 @@ export function App() {
             <StatisticsPanel label="下行视频统计" rows={[
               { label: "下行分辨率", value: formatVideoResolution(remoteVideoStatistics) },
               { label: "下行帧率", value: formatVideoMetric(remoteVideoStatistics?.frameRate, "fps") },
-              { label: "渲染帧率", value: formatVideoMetric(renderStatistics?.frameRate, "fps"), title: "原帧与插值帧的呈现帧率；插帧时按画布提交计数，不代表屏幕实际刷新率" },
               { label: "下行码率", value: formatVideoMetric(remoteVideoStatistics?.bitrateKbps, "kbps") },
             ]} />
             <StatisticsPanel label="下行网络与延迟统计" rows={[

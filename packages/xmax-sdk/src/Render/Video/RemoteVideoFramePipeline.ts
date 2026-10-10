@@ -1,6 +1,5 @@
 import { FrameInterpolationManager, type FrameInterpolationProcessing } from "../../Foundation/Media/Video/FrameInterpolationManager";
 import type { ModelSize } from "../../Service/Realtime/RealtimeModel";
-import { XmaxLogger, XmaxLoggerOption } from "../../Foundation/Logging/XmaxLogger";
 
 /**
  * 插帧输出按 60 fps 预算处理，每对源帧最多插入一帧。
@@ -60,21 +59,6 @@ export class RemoteVideoFramePipeline {
    */
   private timeSource: "mediaTime" | "callback" = "mediaTime";
 
-  /**
-   * 低频诊断：只记录计数和状态，不参与播放、插值或降级决策。
-   */
-  private diagnosticTimer?: ReturnType<typeof setInterval>;
-  private diagnosticStartedAt = 0;
-  private lastCallbackAt?: number;
-  private lastInput?: { width: number; height: number; mediaTime: number; presentedFrames: number };
-  private gpuStartedAt?: number;
-  private lastGpuDuration?: number;
-  private readonly diagnosticCounts = {
-    callbacks: 0, hidden: 0, sizeMismatch: 0, invalidTimestamp: 0, duplicateFrames: 0,
-    captured: 0, gpuStarted: 0, gpuCompleted: 0, lateMidpoints: 0,
-    ticks: 0, presentSubmitted: 0,
-  };
-
   constructor(
     private readonly video: HTMLVideoElement,
     private readonly canvas: HTMLCanvasElement,
@@ -90,7 +74,6 @@ export class RemoteVideoFramePipeline {
       this.fail(new Error("Video frame callbacks are unavailable"));
       return;
     }
-    this.startDiagnostics();
     this.observe();
   }
 
@@ -105,20 +88,11 @@ export class RemoteVideoFramePipeline {
   }
 
   private frame(now: number, metadata: VideoFrameCallbackMetadata): void {
-    this.diagnosticCounts.callbacks++;
-    this.lastCallbackAt = performance.now();
-    this.lastInput = {
-      width: metadata.width, height: metadata.height,
-      mediaTime: metadata.mediaTime, presentedFrames: metadata.presentedFrames,
-    };
-
     if (typeof document !== "undefined" && document.hidden) {
-      this.diagnosticCounts.hidden++;
       this.resetTimeline();
       return;
     }
     if (metadata.width !== this.options.size.width || metadata.height !== this.options.size.height) {
-      this.diagnosticCounts.sizeMismatch++;
       // 回传尺寸变更在生效前继续显示原视频，不能跨尺寸做插值。
       this.resetTimeline();
       return;
@@ -138,7 +112,6 @@ export class RemoteVideoFramePipeline {
     this.previousTime = time;
     this.previousPresented = metadata.presentedFrames;
     const slot = this.processor.capture(this.video);
-    this.diagnosticCounts.captured++;
     this.previousSlot = slot;
     if (previous === undefined || interval > 250) {
       // 首帧与断流恢复直接显示当前帧；旧队列内容都已过期。
@@ -164,19 +137,16 @@ export class RemoteVideoFramePipeline {
   private resolveFrameTime(now: number, metadata: VideoFrameCallbackMetadata): number | undefined {
     // 帧序号没有前进时仍然丢弃，不能将同一帧当作时间戳兼容问题。
     if (this.previousPresented !== undefined && metadata.presentedFrames <= this.previousPresented) {
-      this.diagnosticCounts.duplicateFrames++;
       return undefined;
     }
 
     let time = this.timeSource === "mediaTime" ? metadata.mediaTime * 1000 : now;
     if (!Number.isFinite(time) || (this.previousTime !== undefined && time <= this.previousTime)) {
-      this.diagnosticCounts.invalidTimestamp++;
       if (this.timeSource === "callback" || !Number.isFinite(now)) return undefined;
 
       // 切换时清空旧时间基准的原帧、中间帧及显示锚点，迟到的 GPU 结果按版本丢弃。
       this.timeSource = "callback";
       this.resetTimeline(true);
-      this.logDiagnostics("clock-fallback");
       time = now;
     }
 
@@ -195,17 +165,12 @@ export class RemoteVideoFramePipeline {
     const generation = this.generation;
     const midpoint = (previousTime + currentTime) / 2;
     const startedAt = performance.now();
-    this.gpuStartedAt = startedAt;
-    this.diagnosticCounts.gpuStarted++;
     this.busy = true;
     this.stallTimer = setTimeout(() => {
       if (this.busy) this.fail(new Error("Interpolation GPU submission timed out"));
     }, Math.max(100, interval * 3));
     void this.processor!.interpolate(previousSlot, currentSlot).then((slot) => {
       if (this.stopped) return;
-      this.diagnosticCounts.gpuCompleted++;
-      this.lastGpuDuration = performance.now() - startedAt;
-      this.gpuStartedAt = undefined;
       this.busy = false;
       clearTimeout(this.stallTimer);
       this.stallTimer = undefined;
@@ -218,7 +183,6 @@ export class RemoteVideoFramePipeline {
       }
       // 显示时钟已越过中点的中间帧直接丢弃，不补播。
       if (this.position(performance.now()) >= midpoint) {
-        this.diagnosticCounts.lateMidpoints++;
         return;
       }
       this.enqueue({ slot, time: midpoint, interpolated: true });
@@ -234,7 +198,6 @@ export class RemoteVideoFramePipeline {
   /** vsync 显示节拍：弹出到点的帧并显示最新的一张。 */
   private readonly tick = (now: number): void => {
     if (this.stopped) return;
-    this.diagnosticCounts.ticks++;
     this.raf = requestAnimationFrame(this.tick);
     const position = this.position(now);
     let frame: QueuedFrame | undefined;
@@ -252,7 +215,6 @@ export class RemoteVideoFramePipeline {
     // 环形槽位会复用，按时间戳去重而不是按槽位。
     if (this.displayedTime === frame.time) return;
     this.processor!.present(frame.slot);
-    this.diagnosticCounts.presentSubmitted++;
     this.displayedTime = frame.time;
     this.canvas.style.visibility = "visible";
     this.setActive(true);
@@ -276,7 +238,6 @@ export class RemoteVideoFramePipeline {
       clearTimeout(this.initializationTimer);
       this.initializationTimer = undefined;
       this.loading = false;
-      if (this.processor && !this.stopped) this.logDiagnostics("ready");
     }
   }
 
@@ -308,16 +269,12 @@ export class RemoteVideoFramePipeline {
 
   private fail(error: unknown): void {
     if (this.stopped) return;
-    this.logDiagnostics("failed", error);
     this.stop();
     this.options.onFailure(error);
   }
 
   stop(): void {
     if (this.stopped) return;
-    this.logDiagnostics("stopped");
-    clearInterval(this.diagnosticTimer);
-    this.diagnosticTimer = undefined;
     this.stopped = true;
     this.abort.abort();
     if (this.callback !== undefined) this.video.cancelVideoFrameCallback(this.callback);
@@ -326,37 +283,5 @@ export class RemoteVideoFramePipeline {
     this.resetTimeline();
     this.processor?.destroy();
     this.processor = undefined;
-  }
-
-  /**
-   * 用独立定时器观察帧回调停止的情况；日志关闭时不启动定时器。
-   */
-  private startDiagnostics(): void {
-    this.diagnosticStartedAt = performance.now();
-    if (!XmaxLogger.isEnabled(XmaxLoggerOption.business) || this.diagnosticTimer !== undefined) return;
-
-    this.logDiagnostics("started");
-    this.diagnosticTimer = setInterval(() => this.logDiagnostics("sample"), 2_000);
-  }
-
-  /**
-   * 输出累计计数及最近状态；呈现计数仅表示提交成功，不代表 GPU 已实际显示。
-   */
-  private logDiagnostics(event: string, error?: unknown): void {
-    XmaxLogger.render.info(() => {
-      const now = performance.now();
-      const age = (at?: number) => at === undefined ? "n/a" : `${Math.round(now - at)} ms`;
-      const input = this.lastInput;
-      const counts = this.diagnosticCounts;
-      return `插帧诊断 (Frame Interpolation Diagnostics)\n` +
-        `├─ event: ${event}, elapsed: ${age(this.diagnosticStartedAt)}, loading: ${this.loading}, ready: ${!!this.processor}, active: ${this.active}, timeSource: ${this.timeSource}\n` +
-        `├─ input: ${input ? `${input.width}×${input.height}` : "n/a"}, expected: ${this.options.size.width}×${this.options.size.height}, mediaTime: ${input?.mediaTime ?? "n/a"}, presentedFrames: ${input?.presentedFrames ?? "n/a"}\n` +
-        `├─ callbacks: ${counts.callbacks}, lastCallbackAge: ${age(this.lastCallbackAt)}, captured: ${counts.captured}\n` +
-        `├─ input checks: hidden=${counts.hidden}, sizeMismatch=${counts.sizeMismatch}, invalidTimestamp=${counts.invalidTimestamp}, duplicateFrames=${counts.duplicateFrames}\n` +
-        `├─ GPU: started=${counts.gpuStarted}, completed=${counts.gpuCompleted}, busy=${this.busy}, pendingAge=${age(this.gpuStartedAt)}, lastDuration=${this.lastGpuDuration?.toFixed(1) ?? "n/a"} ms, lateMidpoints=${counts.lateMidpoints}\n` +
-        `├─ output: ticks=${counts.ticks}, presentSubmitted=${counts.presentSubmitted}, displayedTime=${this.displayedTime ?? "n/a"} ms, queued=${this.queue.length}, canvas=${this.canvas.style.visibility}\n` +
-        `└─ video: paused=${this.video.paused}, ended=${this.video.ended}, readyState=${this.video.readyState}, currentTime=${this.video.currentTime}, pageHidden=${typeof document !== "undefined" && document.hidden}` +
-        (error === undefined ? "" : `\n   error: ${String(error)}`);
-    });
   }
 }

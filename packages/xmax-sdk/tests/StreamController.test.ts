@@ -159,6 +159,17 @@ function emitRemoteVideo(
 }
 
 describe("StreamController", () => {
+  it("delegates frame rate changes without recomputing bitrates or sending room signals", async () => {
+    const { controller, rtc } = makeStream();
+    await controller.setVideoEncoderConfig(videoFormat);
+    const initial = { ...rtc.encodingConfigurations[0]! };
+    const result = await controller.updateVideoFrameRate(24);
+    expect(rtc.encodingConfigurations.at(-1)).toEqual({ ...initial, frameRate: 24 });
+    expect(result).toMatchObject({ width: videoFormat.width, height: videoFormat.height, fps: 24,
+      minimumBitrate: initial.minimumBitrate, maximumBitrate: initial.maximumBitrate });
+    expect(rtc.sentMessages).toEqual([]);
+    expect(rtc.publishLocalVideoCalls).toBe(0);
+  });
   it("starts file playback after sending the start signal but before remote confirmation", async () => {
     const { controller, rtc } = makeStream();
     await controller.connect(connection, true, noopEnsureActive);
@@ -507,7 +518,7 @@ describe("StreamController", () => {
     ).toThrowError(expect.objectContaining({ code: XmaxErrorCode.rtcError }));
   });
 
-  it("confirms generation when the bot publishes its video stream", async () => {
+  it.each([true, false])("forwards mirror=%s and confirms generation when the bot publishes", async (mirror) => {
     const { controller, rtc, bindings } = makeStream();
     await controller.connect(connection, false, noopEnsureActive);
 
@@ -515,10 +526,12 @@ describe("StreamController", () => {
       taskID: "task-001",
       videoFormat,
       context,
+      mirror,
     });
     expect(controller.hasGenerationTask).toBe(true);
     await vi.waitFor(() => expect(rtc.sentMessages.length).toBeGreaterThan(0));
     expect(JSON.parse(rtc.sentMessages[0]!).event).toBe("start");
+    expect(JSON.parse(rtc.sentMessages[0]!).params.mirror).toBe(mirror);
 
     emitRemoteVideo(rtc, "bot001", true);
     await confirmation;

@@ -222,6 +222,11 @@ export class RealtimeCoordinator {
     return this.state;
   }
 
+  /** 后台自动调档仅在没有前台操作或清理时申请操作租约。 */
+  get isBusy(): boolean {
+    return this.activeOperation !== undefined || this.termination !== undefined;
+  }
+
   /**
    * 设置实时状态监听器；设置后立即回放当前状态。
    *

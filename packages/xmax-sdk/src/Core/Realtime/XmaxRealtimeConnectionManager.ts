@@ -45,7 +45,6 @@ export class XmaxRealtimeConnectionManager {
       sessionService?: RealtimeSessionServicing;
       streamController: StreamControlling;
       timing: RealtimeLaunchTimer;
-      isMirrored: () => boolean;
       remoteAudioVolume: () => number;
       onHeartbeatFailure: (sessionID: string, error: XmaxError) => void;
       onFrameDisplayed: () => void;
@@ -73,6 +72,9 @@ export class XmaxRealtimeConnectionManager {
   async connect(options: {
     localTrack: RealtimeVideoTrack;
     remoteVideoFormat?: RealtimeVideoTrack["videoFormat"];
+    /** 发布前实际应用的上行编码格式；与原始生成/远端格式分开。 */
+    localVideoFormat?: RealtimeVideoTrack["videoFormat"];
+    onVideoEncoderConfigured?: () => void;
     model: RealtimeModelName;
     includeLocalAudio: boolean;
     ensureCurrent: () => void;
@@ -105,7 +107,7 @@ export class XmaxRealtimeConnectionManager {
     this.credentialController = new AbortController();
 
     // 发布本地流之前配置编码参数：采集阶段不发布，此处配置即可生效到发送端。
-    const videoFormat = options.localTrack.videoFormat;
+    const videoFormat = options.localVideoFormat ?? options.localTrack.videoFormat;
     if (!videoFormat) {
       throw new XmaxError(
         XmaxErrorCode.internalError,
@@ -115,6 +117,8 @@ export class XmaxRealtimeConnectionManager {
     const publishLocalMedia = options.publishLocalMedia ?? true;
     if (publishLocalMedia) {
       await streamController.setVideoEncoderConfig(videoFormat);
+      options.ensureCurrent();
+      options.onVideoEncoderConfigured?.();
     }
     options.ensureCurrent();
 
@@ -274,7 +278,8 @@ export class XmaxRealtimeConnectionManager {
       attachHandler: (view) => {
         this.remoteTarget?.setFrameInterpolation?.(undefined);
 
-        view.isMirrored = this.dependencies.isMirrored();
+        // 输入镜像由 start.params.mirror 告知后端，生成结果不再二次翻转。
+        view.isMirrored = false;
         this.remoteTarget = view;
         this.dependencies.onRenderAttached();
 
@@ -290,15 +295,6 @@ export class XmaxRealtimeConnectionManager {
         view.setMediaStream(null);
       },
     });
-  }
-
-  /**
-   * 同步远端结果画面的镜像状态：与当前本地摄像头位置保持一致。
-   */
-  updateRemoteMirror(): void {
-    if (this.remoteTarget) {
-      this.remoteTarget.isMirrored = this.dependencies.isMirrored();
-    }
   }
 
   /**

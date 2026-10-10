@@ -37,6 +37,13 @@ export interface XmaxRealtimeManaging {
   setFrameInterpolationEnabled(enabled: boolean): Promise<void>;
 
   /**
+   * 手动升/降一档下行输出尺寸，便于调试 change_target_size；仅支持正在生成的 Agora 会话。
+   * 仅改变分辨率，成功发送后同步目标档位与插帧尺寸；自动调档仍保持开启。
+   * 到达 L1/L5 边界时不重复发送；发送成功不代表服务端已生效。
+   */
+  adjustDownlinkQuality(direction: "upgrade" | "downgrade"): Promise<void>;
+
+  /**
    * 当前本地媒体预览音量，取值范围为 `0...1`。
    */
   readonly localAudioVolume: number;
@@ -149,11 +156,20 @@ export interface XmaxRealtimeManaging {
    * 成功后更新本地轨道的 videoFormat，后续重连继续使用该格式。
    * 模型生成及远端插帧仍使用创建本地流时的格式；此接口不改变生成尺寸。
    * 实际发送规格受设备、浏览器和网络影响，应通过统计回调确认。
+   * Agora 上行自适应以本次成功应用的完整格式作为新的 L1 基准，后续五档按比例调整尺寸和帧率。
    *
    * @param videoFormat 本次完整的上行尺寸、帧率和编码配置。
    * @throws 无本地相机或文件视频流、其他操作进行中、参数无效或 RTC 更新失败时抛错。
    */
   updateVideoFormat(videoFormat: RealtimeVideoFormat): Promise<void>;
+
+  /**
+   * 试验性上行调帧接口：连接建立后使用，保留最近应用的宽高、码率区间和编码偏好。
+   * 成功后更新本地轨道格式，重连沿用；不修改服务端生成或输出规格。
+   * 手动调用会重置上行质量样本，并以成功后的完整格式作为新的自适应 L1 基准。
+   * 仍会重新提交完整编码配置，不保证 RTC 内部自适应状态不受影响，需用实际统计验证。
+   */
+  updateVideoFrameRate(fps: number): Promise<void>;
 
   /**
    * 停止本地相机流并释放本地预览与 RTC 资源。

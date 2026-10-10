@@ -292,6 +292,39 @@ resolution, frame rate, and bitrate depend on the device, browser, and network;
 use the statistics callbacks to observe them. Await each operation before starting
 another configuration or lifecycle operation.
 
+For a frame-rate-only experiment after connecting a local camera or file stream:
+
+```javascript
+await realtime.updateVideoFrameRate(24);
+```
+
+This preserves the last successfully applied width, height, resolved bitrate limits,
+and encoding preference. It does not recalculate default bitrates for the new frame
+rate or copy measured send statistics into the configuration. The complete encoder
+configuration is still resubmitted, so preservation of RTC's internal adaptation
+state is not guaranteed. Validate actual send statistics under weak networks.
+Agora uplink and downlink adaptation are always enabled; no configuration flag or manual
+selector is needed. Other RTC providers are not yet integrated. After generation
+starts, three consecutive poor uplink quality samples lower one tier, and five good
+samples probe an upgrade. Five tiers jointly change resolution and frame rate:
+1024×1920/30, 768×1440/24, 640×1200/24, 480×900/20, and 384×720/16.
+Landscape dimensions are swapped; custom sources scale proportionally from their
+initial or most recently manually applied format, with even dimensions and FPS
+capped by that baseline. Automatic updates preserve this baseline across reconnects.
+Default bitrate limits are recalculated for each tier; explicit limits and encoding
+preference are preserved. Uplink changes do not alter generation or result-stream sizes.
+Downlink independently uses the same quality thresholds and five resolution tiers,
+relative to the generation's original dimensions. It sends only `change_target_size`
+with `[width, height]`, without changing FPS, bitrate limits, or model inference.
+The protocol has no application ACK: a successful send records a requested tier,
+not a confirmed output size; use remote RTC statistics to verify actual dimensions.
+New Agora local tracks start uplink at L2 before publishing, and new generation
+tasks start downlink at L2 via `start.params.target_size`. The original L1 baseline
+is retained for recovery; reconnecting the same local track keeps its saved uplink tier.
+Downlink changes only resolution, not FPS. Interpolation follows the requested dimensions,
+showing raw video while frame sizes do not match. See
+[the strategy and weak-network test steps](docs/realtime-adaptive-quality.md).
+
 Each model declares its supported RTC providers. The SDK selects the model's
 default provider when `provider` is omitted. To use Agora, replace the manager
 configuration above; camera capture, generation, rendering, and cleanup use the same APIs:
@@ -421,6 +454,14 @@ workflow are also available through `state.reason` after cleanup completes.
 For camera input, bind the returned video track to a preview view. The SDK enters
 `ready` after it has received a valid frame and the preview view is bound; observe
 this through `setStateListener`.
+
+At generation start, the SDK sends `params.mirror: true` for the front camera
+and `false` for the rear camera, local files, and network videos. The backend
+mirrors the input; generated results are not automatically mirrored in the
+browser. The front-camera local preview remains mirrored independently.
+This flag is sent only with `start`: switching cameras during an active generation
+does not update it. Disconnect and start generation again to apply the new camera
+position to the backend.
 
 <br>
 

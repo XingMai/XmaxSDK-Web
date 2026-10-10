@@ -266,6 +266,11 @@ export class StreamController implements StreamControlling {
     await this.encodingController.configure(videoFormat);
   }
 
+  /** 不根据新帧率重新推算码率区间。 */
+  async updateVideoFrameRate(fps: number): Promise<RealtimeVideoFormat> {
+    return this.encodingController.updateFrameRate(fps);
+  }
+
   /**
    * 加入 RTC 房间并发布本地媒体流。
    *
@@ -368,6 +373,7 @@ export class StreamController implements StreamControlling {
     try {
       const sending = this.roomController.startGeneration({
         taskID,
+        mirror: options.mirror ?? false,
         videoFormat: options.videoFormat,
         targetSize: options.targetSize,
         context: options.context,

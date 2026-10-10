@@ -3,10 +3,12 @@ import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
 import type { RealtimeContext } from "../../Service/Realtime/RealtimeContext";
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import type { StreamControlling } from "../../Stream/StreamControlling";
+import type { RoomEventTargetSize } from "../../Stream/Room/RoomEvent";
 import { RealtimeCoordinator } from "./RealtimeCoordinator";
 
 interface GenerationOptions {
   videoFormat: RealtimeVideoFormat;
+  targetSize?: RoomEventTargetSize;
   context?: RealtimeContext;
 }
 
@@ -52,6 +54,8 @@ export class XmaxRealtimeGenerationManager {
    * 条件上下文在生成确认后缓存；启动失败时尽力停止本次任务并保留原始错误。
    */
   async start(options: GenerationOptions & {
+    /** 是否由后端水平翻转输入；仅用于开始信令。 */
+    mirror?: boolean;
     signal: AbortSignal;
     ensureCurrent: () => void;
     waitUntilRemoteReady: () => Promise<void>;
@@ -66,6 +70,8 @@ export class XmaxRealtimeGenerationManager {
     try {
       const confirmation = this.streamController.beginGeneration({
         taskID, videoFormat: options.videoFormat, context,
+        ...(options.targetSize && { targetSize: options.targetSize }),
+        mirror: options.mirror ?? false,
         ...(options.onStartSent && { onStartSent: options.onStartSent }),
       });
       await this.awaitConfirmation(confirmation, options.signal);
@@ -97,6 +103,7 @@ export class XmaxRealtimeGenerationManager {
 
     await this.streamController.updateGeneration({
       taskID, videoFormat: options.videoFormat, context,
+      ...(options.targetSize && { targetSize: options.targetSize }),
     });
     if (this.activeTaskID !== taskID) throw RealtimeCoordinator.cancelledError();
     this.currentContext = context;

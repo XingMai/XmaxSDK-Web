@@ -112,7 +112,7 @@ export class XmaxVideoView {
   }
 
   /**
-   * 更新统计回调，不影响播放；日志启用时移除回调仍继续采集。
+   * 更新统计回调，不影响播放；移除回调时停止采集。
    */
   set renderStatisticsHandler(handler: ((statistics?: VideoRenderStatistics) => void) | undefined) {
     this.statisticsController.handler = handler;

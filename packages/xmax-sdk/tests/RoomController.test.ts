@@ -181,13 +181,14 @@ describe("RoomController", () => {
     expect(rtc.leaveRoomCalls).toBe(1);
   });
 
-  it("sends start generation signaling with full generation parameters", async () => {
+  it.each([true, false, undefined])("sends start generation signaling with mirror=%s", async (mirror) => {
     const { controller, rtc } = makeController();
     await controller.join(connection, noopEnsureActive);
 
     await controller.startGeneration({
       taskID: "task-001",
       videoFormat,
+      mirror,
       targetSize: { width: 416, height: 736 },
       context,
     });
@@ -198,6 +199,7 @@ describe("RoomController", () => {
     expect(message.user_id).toBe("rtc-user-001");
     expect(message.uid).toBe("task-001");
     expect(message.params).toMatchObject({
+      mirror: mirror ?? false,
       model: "default",
       size: [832, 1472],
       target_size: [416, 736],
@@ -256,7 +258,9 @@ describe("RoomController", () => {
       "stop",
       "tracks",
     ]);
-    expect(events[1].params.target_size).toEqual([640, 960]);
+    expect(events[1].params).toEqual({ target_size: [640, 960] });
+    expect(events[1]).toMatchObject({ user_id: connection.userID, uid: "task-001" });
+    expect(events[0].params).not.toHaveProperty("mirror");
     expect(events[3].tracks).toEqual([[0.5, 0.25]]);
   });
 

@@ -64,6 +64,58 @@ afterEach(async () => {
 });
 
 describe("AgoraRtcManager", () => {
+  it("invalidates network samples during reconnect and resumes only with fresh connected samples", async () => {
+    const s = setup();
+    await s.manager.initialize();
+    await s.manager.joinRoom(credentials);
+    const onNetworkStatistics = vi.fn();
+    s.manager.setEventListener({ onNetworkStatistics } as any);
+    s.emit("network-quality", { uplinkNetworkQuality: 4, downlinkNetworkQuality: 1 });
+    expect(onNetworkStatistics).toHaveBeenLastCalledWith({ uplinkQuality: 4, downlinkQuality: 1 });
+    s.emit("connection-state-change", "RECONNECTING", "CONNECTED");
+    expect(onNetworkStatistics).toHaveBeenLastCalledWith(undefined);
+    s.emit("network-quality", { uplinkNetworkQuality: 4, downlinkNetworkQuality: 1 });
+    expect(onNetworkStatistics).toHaveBeenCalledTimes(2);
+    s.emit("connection-state-change", "CONNECTED", "RECONNECTING");
+    expect(onNetworkStatistics).toHaveBeenCalledTimes(2);
+    s.emit("network-quality", { uplinkNetworkQuality: 2, downlinkNetworkQuality: 1 });
+    expect(onNetworkStatistics).toHaveBeenLastCalledWith({ uplinkQuality: 2, downlinkQuality: 1 });
+    s.emit("token-privilege-did-expire");
+    expect(onNetworkStatistics).toHaveBeenLastCalledWith(undefined);
+  });
+  it("resubmits fixed size/bitrate with new FPS without repeating the same optimization mode", async () => {
+    const s = setup();
+    await s.manager.initialize();
+    await s.manager.startCameraCapture({ width: 1920, height: 1024, frameRate: 30, position: CameraPosition.front });
+    const config = { width: 1920, height: 1024, frameRate: 30, minimumBitrate: 3000, maximumBitrate: 6000,
+      encoderPreference: RtcVideoEncoderPreference.maintainFramerate };
+    await s.manager.configureVideoEncoding(config);
+    await s.manager.configureVideoEncoding({ ...config, frameRate: 24 });
+    expect(s.camera.setEncoderConfiguration).toHaveBeenLastCalledWith({ width: 1920, height: 1024, frameRate: 24, bitrateMin: 3000, bitrateMax: 6000 });
+    expect(s.camera.setOptimizationMode).toHaveBeenCalledTimes(1);
+    expect(s.camera.setOptimizationMode).toHaveBeenCalledWith("motion");
+    await s.manager.configureVideoEncoding({ ...config, encoderPreference: RtcVideoEncoderPreference.maintainQuality });
+    expect(s.camera.setOptimizationMode).toHaveBeenCalledTimes(2);
+    expect(s.camera.setOptimizationMode).toHaveBeenLastCalledWith("detail");
+  });
+
+  it("retries optimization after failure and configures it for each new video track", async () => {
+    const s = setup();
+    await s.manager.initialize();
+    await s.manager.startCameraCapture({ width: 1920, height: 1024, frameRate: 30, position: CameraPosition.front });
+    const config = { width: 1920, height: 1024, frameRate: 30, minimumBitrate: 3000, maximumBitrate: 6000,
+      encoderPreference: RtcVideoEncoderPreference.maintainFramerate };
+    s.camera.setOptimizationMode.mockRejectedValueOnce(new Error("failed"));
+    await expect(s.manager.configureVideoEncoding(config)).rejects.toThrow();
+    await s.manager.configureVideoEncoding(config);
+    expect(s.camera.setOptimizationMode).toHaveBeenCalledTimes(2);
+    await s.manager.stopCameraCapture();
+    const next = { ...s.camera, setOptimizationMode: vi.fn(async () => {}) };
+    s.sdk.createCameraVideoTrack.mockResolvedValueOnce(next);
+    await s.manager.startCameraCapture({ width: 1920, height: 1024, frameRate: 30, position: CameraPosition.front });
+    await s.manager.configureVideoEncoding(config);
+    expect(next.setOptimizationMode).toHaveBeenCalledWith("motion");
+  });
   function externalTracks(includeAudio = true) {
     const track = (kind: string) => {
       const cloned = { kind, readyState: "live", stop: vi.fn() };

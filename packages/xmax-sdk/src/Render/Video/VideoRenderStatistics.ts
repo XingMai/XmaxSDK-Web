@@ -3,7 +3,7 @@
  */
 export interface VideoRenderStatistics {
   /**
-   * video 按视频帧回调计数；canvas 按实际呈现提交计数。
+   * video 按浏览器 presentedFrames 增量计数；canvas 按实际呈现提交计数。
    */
   readonly source: "video" | "canvas";
   /**

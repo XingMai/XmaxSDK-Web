@@ -32,6 +32,8 @@ export type RemoteStreamListener = (binding: RemoteStreamBinding | null) => void
  * 生成开始/变更信令的公共参数。
  */
 export interface StreamGenerationOptions {
+  /** 后端输入镜像，仅用于 start；非前置摄像头输入为 false。 */
+  mirror?: boolean;
   /**
    * 开始信令发送成功后启动本地文件播放，不等待生成确认；更新条件时不调用。
    */
@@ -92,6 +94,9 @@ export interface StreamControlling {
    * @throws 格式无效、码率区间无效或 RTC 配置失败时抛出错误。
    */
   setVideoEncoderConfig(videoFormat: RealtimeVideoFormat): Promise<void>;
+
+  /** 保留最后成功应用的编码配置，只更新上行目标帧率。 */
+  updateVideoFrameRate(fps: number): Promise<RealtimeVideoFormat>;
 
   /**
    * 加入 RTC 房间并发布本地媒体流。

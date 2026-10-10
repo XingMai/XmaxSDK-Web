@@ -2,10 +2,11 @@ import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import type { RtcManaging } from "../../Foundation/RTC/RtcManaging";
 import {
   RtcVideoEncoderPreference,
+  type VideoEncodingConfiguration,
 } from "../../Foundation/RTC/VideoEncodingConfiguration";
 import {
   RealtimeVideoEncoderPreference,
-  type RealtimeVideoFormat,
+  RealtimeVideoFormat,
 } from "../../Service/Realtime/RealtimeVideoFormat";
 import type { EncodingControlling } from "./EncodingControlling";
 
@@ -47,6 +48,7 @@ export class EncodingController implements EncodingControlling {
    * 基础层组件
    */
   private readonly rtcManager: RtcManaging;
+  private lastAppliedConfiguration?: VideoEncodingConfiguration;
 
   /**
    * 创建编码控制器。
@@ -96,14 +98,37 @@ export class EncodingController implements EncodingControlling {
       );
     }
 
-    await this.rtcManager.configureVideoEncoding({
+    const configuration: VideoEncodingConfiguration = {
       width: videoFormat.width,
       height: videoFormat.height,
       frameRate: videoFormat.fps,
       minimumBitrate: minimum,
       maximumBitrate: maximum,
       encoderPreference: ENCODER_PREFERENCE_MAP[videoFormat.encoderPreference],
+    };
+    await this.rtcManager.configureVideoEncoding(configuration);
+    this.lastAppliedConfiguration = { ...configuration };
+  }
+
+  /** 只替换目标帧率，保留最近成功应用的尺寸、已解析码率区间和偏好。 */
+  async updateFrameRate(fps: number): Promise<RealtimeVideoFormat> {
+    const previous = this.lastAppliedConfiguration;
+    if (!previous) {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Apply an encoder configuration before updating frame rate");
+    }
+    const format = new RealtimeVideoFormat({
+      width: previous.width, height: previous.height, fps,
+      minimumBitrate: previous.minimumBitrate, maximumBitrate: previous.maximumBitrate,
+      encoderPreference: previous.encoderPreference === RtcVideoEncoderPreference.maintainFramerate
+        ? RealtimeVideoEncoderPreference.maintainFramerate : RealtimeVideoEncoderPreference.maintainQuality,
     });
+    format.validate();
+    if (fps !== previous.frameRate) {
+      const next = { ...previous, frameRate: fps };
+      await this.rtcManager.configureVideoEncoding(next);
+      this.lastAppliedConfiguration = next;
+    }
+    return format;
   }
 
   /**

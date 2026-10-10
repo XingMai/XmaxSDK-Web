@@ -380,7 +380,7 @@ describe("CameraController", () => {
     expect(readyCount).toBe(1);
   });
 
-  it("mirrors the preview for the front camera", async () => {
+  it("mirrors only the front-camera preview and updates it when switching", async () => {
     const { controller } = makeController();
     const stream = await controller.createLocalCameraStream({
       videoFormat: defaultFormat,
@@ -388,6 +388,10 @@ describe("CameraController", () => {
       useMicrophone: false,
     });
     const view = attachPreview(stream.videoTrack as never);
+    expect(view.isMirrored).toBe(true);
+    await controller.switchCamera();
+    expect(view.isMirrored).toBe(false);
+    await controller.switchCamera();
     expect(view.isMirrored).toBe(true);
   });
 });

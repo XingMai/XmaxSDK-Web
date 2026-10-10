@@ -164,6 +164,8 @@ export class RoomController implements RoomControlling {
    * @throws 房间未就绪或信令发送失败时抛出错误。
    */
   startGeneration(options: {
+    /** 是否由后端镜像输入画面，默认 false。 */
+    mirror?: boolean;
     taskID: string;
     videoFormat: RealtimeVideoFormat;
     targetSize?: RoomEventTargetSize;
@@ -171,6 +173,7 @@ export class RoomController implements RoomControlling {
   }): Promise<void> {
     return this.send(
       RoomEvent.start({
+        mirror: options.mirror ?? false,
         userID: this.requireUserID(),
         taskID: options.taskID,
         videoFormat: options.videoFormat,

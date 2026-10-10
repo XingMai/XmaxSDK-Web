@@ -67,93 +67,32 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("interpolation diagnostics", () => {
-  function enableLogs() {
-    XmaxLogger.configure(XmaxLoggerOption.business);
-    return vi.spyOn(console, "info").mockImplementation(() => {});
-  }
-
-  it("samples stopped input callbacks without changing playback or triggering fallback", async () => {
-    const log = enableLogs();
-    const s = setup();
-    s.video.frame(0, 1);
-    await advance(0);
-    s.video.frame(0.04, 2);
-    await advance(4000);
-
-    const samples = log.mock.calls.flat().map(String).filter((text) => text.includes("event: sample"));
-    expect(samples).toHaveLength(2);
-    expect(samples[1]).toContain("callbacks: 2, lastCallbackAge: 4000 ms, captured: 1");
-    expect(samples[1]).toContain("presentSubmitted=1");
-    expect(s.canvas.style.visibility).toBe("visible");
-    expect(s.processor.destroy).not.toHaveBeenCalled();
-    expect(s.onFailure).not.toHaveBeenCalled();
-
-    s.pipeline.stop();
-    expect(vi.getTimerCount()).toBe(0);
-    const count = log.mock.calls.length;
-    await advance(4000);
-    expect(log).toHaveBeenCalledTimes(count);
-  });
-
-  it("distinguishes non-advancing timestamps and mismatched dimensions from missing callbacks", async () => {
-    const log = enableLogs();
-    const s = setup();
-    s.video.frame(0, 1);
-    await advance(0);
-    s.video.frame(0.04, 2);
-    s.video.frame(0.04, 3);
-    s.video.frame(0.03, 4);
-    s.video.frame(0.08, 5, 640, 360);
-    await advance(2000);
-
-    const sample = String(log.mock.calls.at(-1)?.[0]);
-    expect(sample).toContain("input: 640×360, expected: 320×180");
-    expect(sample).toContain("callbacks: 5");
-    expect(sample).toContain("sizeMismatch=1, invalidTimestamp=2");
-    expect(s.onFailure).not.toHaveBeenCalled();
-    s.pipeline.stop();
-  });
-
-  it("reports pending initialization and the existing GPU timeout without adding recovery", async () => {
-    const log = enableLogs();
-    const initializing = setup({ deferred: true });
-    initializing.video.frame(0, 1);
-    await advance(2000);
-    expect(String(log.mock.calls.at(-1)?.[0])).toContain("loading: true, ready: false");
-    initializing.pipeline.stop();
-    initializing.complete();
-    await advance(0);
-
-    const s = setup({ interpolationMs: 500 });
-    s.video.frame(0, 1);
-    await advance(0);
-    s.video.frame(0.04, 2);
-    await advance(40);
-    s.video.frame(0.08, 3);
-    await advance(120);
-    const failure = log.mock.calls.flat().map(String).find((text) => text.includes("event: failed"));
-    expect(failure).toContain("started=1, completed=0, busy=true, pendingAge=120 ms");
-    expect(failure).toContain("Interpolation GPU submission timed out");
-    expect(s.onFailure).toHaveBeenCalledTimes(1);
-    await advance(500);
-    expect(vi.getTimerCount()).toBe(0);
-  });
-
-  it("does not start a diagnostic timer with logging disabled", async () => {
+describe("interpolation logging", () => {
+  it("does not emit diagnostics or retain a diagnostic timer even with all logging enabled", async () => {
+    XmaxLogger.configure(XmaxLoggerOption.all);
     const log = vi.spyOn(console, "info").mockImplementation(() => {});
     const s = setup();
-    expect(vi.getTimerCount()).toBe(0);
+    s.video.frame(0, 1);
+    await advance(0);
+    s.video.frame(0, 2);
+    await advance(40);
+    s.video.frame(0, 3);
     await advance(4000);
-    expect(log).not.toHaveBeenCalled();
+
+    expect(s.canvas.style.visibility).toBe("visible");
+    expect(s.processor.capture).toHaveBeenCalledTimes(2);
+    expect(s.processor.destroy).not.toHaveBeenCalled();
+    expect(s.onFailure).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+
     s.pipeline.stop();
+    expect(log).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
 
 describe("remote interpolation timeline presentation", () => {
   it("interpolates new frames when Safari keeps mediaTime at zero", async () => {
-    XmaxLogger.configure(XmaxLoggerOption.business);
-    const log = vi.spyOn(console, "info").mockImplementation(() => {});
     const s = setup();
     await advance(1000);
     s.video.frame(0, 1);
@@ -175,9 +114,6 @@ describe("remote interpolation timeline presentation", () => {
     expect(s.processor.present).toHaveBeenLastCalledWith(2);
     expect(s.processor.capture).toHaveBeenCalledTimes(3);
     expect(s.onFailure).not.toHaveBeenCalled();
-    const switches = log.mock.calls.flat().map(String).filter((text) => text.includes("event: clock-fallback"));
-    expect(switches).toHaveLength(1);
-    expect(switches[0]).toContain("timeSource: callback");
     s.pipeline.stop();
   });
 

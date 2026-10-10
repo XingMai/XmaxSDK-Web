@@ -41,6 +41,48 @@ function lastConfiguration(
   return configuration;
 }
 
+describe("EncodingController.updateFrameRate", () => {
+  it("preserves resolved bitrates, size and preference through all four tiers", async () => {
+    const { controller, rtcManager } = makeController();
+    await controller.configure(new RealtimeVideoFormat({ width: 1920, height: 1024, fps: 30 }));
+    const original = { ...lastConfiguration(rtcManager) };
+    for (const fps of [24, 20, 16, 20, 24, 30]) {
+      const result = await controller.updateFrameRate(fps);
+      expect(lastConfiguration(rtcManager)).toEqual({ ...original, frameRate: fps });
+      expect(result).toMatchObject({ width: 1920, height: 1024, fps,
+        minimumBitrate: original.minimumBitrate, maximumBitrate: original.maximumBitrate });
+    }
+    const calls = rtcManager.encodingConfigurations.length;
+    await controller.updateFrameRate(30);
+    expect(rtcManager.encodingConfigurations).toHaveLength(calls);
+  });
+
+  it("requires a baseline, validates FPS, and does not commit failed changes", async () => {
+    const { controller, rtcManager } = makeController();
+    await expect(controller.updateFrameRate(24)).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    await controller.configure(new RealtimeVideoFormat({ width: 1024, height: 1920, fps: 30,
+      minimumBitrate: 0, maximumBitrate: 6000, encoderPreference: RealtimeVideoEncoderPreference.maintainQuality }));
+    const original = { ...lastConfiguration(rtcManager) };
+    for (const fps of [0, -1, NaN, Infinity]) {
+      await expect(controller.updateFrameRate(fps)).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    }
+    rtcManager.encodingError = new XmaxError(XmaxErrorCode.rtcError, "failed");
+    await expect(controller.updateFrameRate(24)).rejects.toBe(rtcManager.encodingError);
+    await expect(controller.configure(new RealtimeVideoFormat({ width: 640, height: 360, fps: 16 }))).rejects.toBe(rtcManager.encodingError);
+    rtcManager.encodingError = undefined;
+    await controller.updateFrameRate(24);
+    expect(lastConfiguration(rtcManager)).toEqual({ ...original, frameRate: 24 });
+  });
+
+  it("replaces the baseline when the caller explicitly applies a new full format", async () => {
+    const { controller, rtcManager } = makeController();
+    await controller.configure(new RealtimeVideoFormat({ width: 1920, height: 1024, fps: 30 }));
+    await controller.configure(new RealtimeVideoFormat({ width: 640, height: 360, fps: 20, minimumBitrate: 0, maximumBitrate: 700 }));
+    await controller.updateFrameRate(16);
+    expect(lastConfiguration(rtcManager)).toMatchObject({ width: 640, height: 360, frameRate: 16, minimumBitrate: 0, maximumBitrate: 700 });
+  });
+});
+
 describe("EncodingController.configure", () => {
   it("applies explicit bitrates and encoder preference", async () => {
     const { controller, rtcManager } = makeController();

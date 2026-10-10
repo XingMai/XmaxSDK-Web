@@ -166,6 +166,13 @@ class StreamControllingStub implements StreamControlling {
   confirmationDeferreds: Deferred<void>[] = [];
   encoderConfigFormats: RealtimeVideoFormat[] = [];
 
+  async updateVideoFrameRate(fps: number): Promise<RealtimeVideoFormat> {
+    const previous = this.encoderConfigFormats.at(-1)!;
+    const format = new RealtimeVideoFormat({ ...previous, fps, minimumBitrate: 1000, maximumBitrate: 4000 });
+    await this.setVideoEncoderConfig(format);
+    return format;
+  }
+
   async setVideoEncoderConfig(videoFormat: RealtimeVideoFormat): Promise<void> {
     if (this.failEncoderConfig) {
       throw this.failEncoderConfig;
@@ -308,6 +315,502 @@ function makeLocalStream(camera: CameraControllingStub): RealtimeMediaStream {
 
 const testContext = new RealtimeContext({ prompt: "a red cube" });
 
+describe("XmaxRealtimeManager adaptive quality", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  function setup(fps = 30, model = RealtimeModel.x2_0_agora, interpolation = false) {
+    const s = makeManager(async () => true, interpolation, model);
+    if (model === RealtimeModel.x2_0_agora) {
+      vi.spyOn(s.session, "createSession").mockResolvedValue(new RealtimeSession({
+        id: "adaptive-session", connection: { provider: RtcProvider.agora, roomID: "room", appID: "app",
+          userID: "user", roomToken: "token", botID: "bot" },
+      }));
+    }
+    const localStream = makeLocalStream(s.camera);
+    localStream.videoTrack!.updateVideoFormat(new RealtimeVideoFormat({ ...testVideoFormat, width: 1920, height: 1024, fps }));
+    let now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const sample = async (uplinkQuality: 0 | 1 | 2 | 3 | 4 | 5 | 6, downlinkQuality: 0 | 1 | 2 | 3 | 4 | 5 | 6 = 1) => {
+      now += 2000;
+      s.stream.networkStatisticsListener?.({ uplinkQuality, downlinkQuality });
+      // 自动调档跨控制器/协调器多个 Promise 边界，等待本次事件的微任务结束。
+      await new Promise(resolve => setTimeout(resolve, 0));
+    };
+    const samples = async (quality: 1 | 4 | 5, count: number) => {
+      for (let i = 0; i < count; i++) await sample(quality);
+    };
+    const start = async () => {
+      const count = s.stream.beginCalls.length;
+      const starting = s.manager.startGeneration({ localStream, context: testContext });
+      await vi.waitFor(() => expect(s.stream.beginCalls).toHaveLength(count + 1));
+      s.stream.confirmationDeferreds[count]!.resolve();
+      return await starting;
+    };
+    return { ...s, localStream, sample, samples, start };
+  }
+
+  it("manually changes the current downlink tier, clamps boundaries and resumes automatic adjustment from it", async () => {
+    const s = setup(); await s.start();
+    const apply = vi.spyOn(s.stream, "setVideoEncoderConfig");
+    await s.manager.adjustDownlinkQuality("upgrade");
+    expect(s.stream.changeTargetSize).toHaveBeenLastCalledWith(s.manager.currentState.taskID, { width: 1920, height: 1024 }, expect.any(Function));
+    await s.manager.adjustDownlinkQuality("upgrade");
+    expect(s.stream.changeTargetSize).toHaveBeenCalledTimes(1);
+    for (let i = 0; i < 4; i++) await s.manager.adjustDownlinkQuality("downgrade");
+    expect(s.stream.changeTargetSize).toHaveBeenLastCalledWith(s.manager.currentState.taskID, { width: 720, height: 384 }, expect.any(Function));
+    await s.manager.adjustDownlinkQuality("downgrade");
+    expect(s.stream.changeTargetSize).toHaveBeenCalledTimes(5);
+    await s.manager.adjustDownlinkQuality("upgrade");
+    expect(s.stream.changeTargetSize).toHaveBeenLastCalledWith(s.manager.currentState.taskID, { width: 900, height: 480 }, expect.any(Function));
+    for (let i = 0; i < 3; i++) await s.sample(3, 5);
+    expect(s.stream.changeTargetSize).toHaveBeenLastCalledWith(s.manager.currentState.taskID, { width: 720, height: 384 }, expect.any(Function));
+    expect(s.stream.changeTargetSize).toHaveBeenCalledTimes(7);
+    expect(apply).not.toHaveBeenCalled();
+    expect(s.stream.beginCalls).toHaveLength(1);
+    expect(s.stream.updateCalls).toHaveLength(0);
+    await s.manager.close();
+  });
+
+  it("retains the target after a manual size send fails", async () => {
+    const s = setup(); await s.start();
+    s.stream.changeTargetSize.mockRejectedValueOnce(new Error("send failed"));
+    await expect(s.manager.adjustDownlinkQuality("downgrade")).rejects.toThrow("send failed");
+    await s.manager.adjustDownlinkQuality("upgrade");
+    expect(s.stream.changeTargetSize).toHaveBeenLastCalledWith(s.manager.currentState.taskID, { width: 1920, height: 1024 }, expect.any(Function));
+    expect(s.stream.disconnectCalls).toBe(0);
+    await s.manager.close();
+  });
+
+  it("rejects debug size changes without an active Agora generation", async () => {
+    const s = setup();
+    await expect(s.manager.adjustDownlinkQuality("downgrade")).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    await s.manager.connect(s.localStream);
+    await expect(s.manager.adjustDownlinkQuality("upgrade")).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    expect(s.stream.changeTargetSize).not.toHaveBeenCalled();
+    await s.manager.close();
+    const other = setup(30, RealtimeModel.x2_0_trtc); await other.start();
+    await expect(other.manager.adjustDownlinkQuality("downgrade")).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    expect(other.stream.changeTargetSize).not.toHaveBeenCalled();
+    await other.manager.close();
+  });
+
+  it("cancels a pending manual size change on close", async () => {
+    const s = setup(); await s.start();
+    const gate = makeDeferred<void>();
+    s.stream.changeTargetSize.mockReturnValueOnce(gate.promise);
+    const changing = s.manager.adjustDownlinkQuality("downgrade");
+    const rejected = expect(changing).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
+    const ensureActive = s.stream.changeTargetSize.mock.calls[0]![2] as () => void;
+    const closing = s.manager.close();
+    expect(ensureActive).toThrow();
+    gate.resolve(); await rejected; await closing;
+    expect(s.stream.changeTargetSize).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([false, true])("starts both directions at L2 before publishing/generating and recovers L1; portrait=%s", async portrait => {
+    const s = setup();
+    const baseline = new RealtimeVideoFormat({ width: portrait ? 1024 : 1920, height: portrait ? 1920 : 1024, fps: 30 });
+    s.localStream.videoTrack!.updateVideoFormat(baseline);
+    const size = { width: portrait ? 768 : 1440, height: portrait ? 1440 : 768 };
+    const connect = s.stream.connect.bind(s.stream);
+    vi.spyOn(s.stream, "connect").mockImplementation((...args) => {
+      expect(s.stream.encoderConfigFormats).toHaveLength(1);
+      expect(s.stream.encoderConfigFormats[0]).toMatchObject({ ...size, fps: 24 });
+      expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ ...size, fps: 24 });
+      return connect(...args);
+    });
+    await s.start();
+    expect(s.stream.beginCalls[0]!.videoFormat).toBe(baseline);
+    expect(s.stream.beginCalls[0]!.targetSize).toEqual(size);
+    expect(s.stream.changeTargetSize).not.toHaveBeenCalled();
+    await s.samples(1, 4);
+    expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ ...size, fps: 24 });
+    expect(s.stream.changeTargetSize).not.toHaveBeenCalled();
+    await s.sample(1);
+    expect(s.localStream.videoTrack!.videoFormat).toMatchObject(baseline);
+    expect(s.stream.changeTargetSize).toHaveBeenLastCalledWith(s.manager.currentState.taskID,
+      { width: baseline.width, height: baseline.height }, expect.any(Function));
+    await s.manager.close();
+  });
+
+  it("does not replace the original baseline when the initial encoder configuration fails", async () => {
+    const s = setup();
+    const baseline = s.localStream.videoTrack!.videoFormat;
+    s.stream.failEncoderConfig = new XmaxError(XmaxErrorCode.rtcError, "initial config failed");
+    await expect(s.manager.connect(s.localStream)).rejects.toThrow("initial config failed");
+    expect(s.localStream.videoTrack!.videoFormat).toBe(baseline);
+    expect(s.stream.beginCalls).toHaveLength(0);
+    s.stream.failEncoderConfig = undefined;
+    await s.start();
+    expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 1440, height: 768, fps: 24 });
+    expect(s.stream.beginCalls[0]!.videoFormat).toBe(baseline);
+    expect(s.stream.beginCalls[0]!.targetSize).toEqual({ width: 1440, height: 768 });
+    await s.samples(1, 5);
+    expect(s.localStream.videoTrack!.videoFormat).toMatchObject(baseline!);
+    await s.manager.close();
+  });
+
+  it("does not commit a cancelled initial encoder configuration", async () => {
+    const s = setup();
+    const baseline = s.localStream.videoTrack!.videoFormat;
+    const gate = makeDeferred<void>();
+    const configure = vi.spyOn(s.stream, "setVideoEncoderConfig").mockReturnValueOnce(gate.promise);
+    const connecting = s.manager.connect(s.localStream);
+    const rejected = expect(connecting).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
+    await vi.waitFor(() => expect(configure).toHaveBeenCalledOnce());
+    const closing = s.manager.close();
+    gate.resolve();
+    await rejected; await closing;
+    expect(s.localStream.videoTrack!.videoFormat).toBe(baseline);
+    expect(s.stream.connectCalls).toHaveLength(0);
+  });
+
+  it("automatically enables Agora adaptation after generation confirmation without a configuration flag", async () => {
+    const s = setup();
+    await s.manager.connect(s.localStream);
+    const apply = vi.spyOn(s.stream, "setVideoEncoderConfig");
+    await s.samples(5, 5);
+    expect(apply).not.toHaveBeenCalled();
+    await s.start();
+    for (let i = 0; i < 4; i++) await s.sample(1, 5);
+    expect(apply).not.toHaveBeenCalled();
+    await s.samples(4, 2);
+    expect(apply).not.toHaveBeenCalled();
+    await s.sample(5);
+    expect(apply).toHaveBeenLastCalledWith(expect.objectContaining({ width: 1200, height: 640, fps: 24 }));
+    expect(s.localStream.videoTrack!.videoFormat!.fps).toBe(24);
+    expect(s.stream.beginCalls).toHaveLength(1);
+    expect(s.stream.connectCalls).toHaveLength(1);
+    expect(s.stream.changeTargetSize).toHaveBeenCalledTimes(1);
+    expect(s.stream.updateCalls).toHaveLength(0);
+    await s.sample(1); // 稳定期
+    await s.samples(1, 5);
+    expect(apply).toHaveBeenLastCalledWith(expect.objectContaining({ width: 1440, height: 768, fps: 24 }));
+    await s.samples(1, 6);
+    expect(apply).toHaveBeenLastCalledWith(expect.objectContaining({ width: 1920, height: 1024, fps: 30 }));
+    await s.manager.close();
+  });
+
+  it("does not apply the Agora policy to TRTC", async () => {
+    const s = setup(30, RealtimeModel.x2_0_trtc);
+    await s.start();
+    const apply = vi.spyOn(s.stream, "setVideoEncoderConfig");
+    for (let i = 0; i < 5; i++) await s.sample(5, 5);
+    expect(apply).not.toHaveBeenCalled();
+    expect(s.stream.changeTargetSize).not.toHaveBeenCalled();
+    await s.manager.close();
+  });
+
+  it("walks all five resolution/FPS tiers and recovers the original size without changing generation", async () => {
+    const s = setup(); const remote = await s.start();
+    const originalRemoteFormat = remote.videoTrack!.videoFormat;
+    const tiers = [
+      { width: 1920, height: 1024, fps: 30 },
+      { width: 1440, height: 768, fps: 24 },
+      { width: 1200, height: 640, fps: 24 },
+      { width: 900, height: 480, fps: 20 },
+      { width: 720, height: 384, fps: 16 },
+    ];
+    expect(s.localStream.videoTrack!.videoFormat).toMatchObject(tiers[1]!);
+    for (let index = 2; index < tiers.length; index++) {
+      await s.samples(5, index === 2 ? 3 : 4);
+      expect(s.localStream.videoTrack!.videoFormat).toMatchObject(tiers[index]!);
+    }
+    await s.samples(5, 10);
+    expect(s.localStream.videoTrack!.videoFormat).toMatchObject(tiers[4]!);
+    for (let index = 3; index >= 0; index--) {
+      await s.samples(1, 6);
+      expect(s.localStream.videoTrack!.videoFormat).toMatchObject(tiers[index]!);
+    }
+    expect(remote.videoTrack!.videoFormat).toBe(originalRemoteFormat);
+    expect(s.stream.beginCalls).toHaveLength(1);
+    // 下行一直为好，从初始 L2 恢复到 L1，仅发送一次。
+    expect(s.stream.changeTargetSize).toHaveBeenCalledTimes(1);
+    await s.manager.close();
+  });
+
+  it("retains L3 and its original baseline across reconnect despite sharing L2's FPS", async () => {
+    const s = setup(); await s.start();
+    await s.samples(5, 3);
+    expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 1200, height: 640, fps: 24 });
+    await s.manager.disconnect(); await s.start();
+    await s.samples(5, 3);
+    expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 900, height: 480, fps: 20 });
+    for (let index = 0; index < 3; index++) await s.samples(1, 6);
+    expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 1920, height: 1024, fps: 30 });
+    await s.manager.close();
+  });
+
+  it("ignores replayed statistics and resets samples on disconnect or transient reconnect", async () => {
+    const s = setup(); await s.start();
+    const apply = vi.spyOn(s.stream, "setVideoEncoderConfig");
+    await s.samples(5, 2);
+    for (let i = 0; i < 5; i++) await s.manager.setNetworkStatisticsListener(() => {});
+    expect(apply).not.toHaveBeenCalled();
+    s.stream.networkStatisticsListener?.(undefined);
+    await s.samples(5, 2);
+    expect(apply).not.toHaveBeenCalled();
+    await s.sample(6);
+    await s.samples(5, 2);
+    expect(apply).not.toHaveBeenCalled();
+    await s.manager.disconnect();
+    await s.samples(5, 5);
+    await s.start();
+    apply.mockClear(); // 重连本身会恢复已应用的编码格式。
+    await s.samples(5, 2);
+    expect(apply).not.toHaveBeenCalled();
+    await s.sample(5);
+    expect(apply).toHaveBeenCalledTimes(1);
+    expect(apply).toHaveBeenLastCalledWith(expect.objectContaining({ width: 1200, height: 640, fps: 24 }));
+    await s.manager.close();
+  });
+
+  it("skips samples during foreground configuration and starts counting fresh afterwards", async () => {
+    const s = setup(); await s.start();
+    const apply = vi.spyOn(s.stream, "setVideoEncoderConfig");
+    await s.samples(5, 2);
+    const gate = makeDeferred<void>();
+    vi.spyOn(s.stream, "updateGeneration").mockReturnValueOnce(gate.promise);
+    const foreground = s.manager.startGeneration({ localStream: s.localStream, context: testContext });
+    await s.samples(5, 4);
+    expect(apply).not.toHaveBeenCalled();
+    gate.resolve(); await foreground;
+    await s.samples(5, 2);
+    expect(apply).not.toHaveBeenCalled();
+    await s.sample(5);
+    expect(apply).toHaveBeenCalledTimes(1);
+    expect(apply).toHaveBeenLastCalledWith(expect.objectContaining({ width: 1200, height: 640, fps: 24 }));
+    await s.manager.close();
+  });
+
+  it("retains the last applied tier after an encoder failure and retries without disconnecting", async () => {
+    const s = setup(); await s.start();
+    s.stream.failEncoderConfig = new XmaxError(XmaxErrorCode.rtcError, "weak-network update failed");
+    await s.samples(5, 3);
+    expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 1440, height: 768, fps: 24 });
+    expect(s.stream.disconnectCalls).toBe(0);
+    s.stream.failEncoderConfig = undefined;
+    await s.samples(5, 4);
+    expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 1200, height: 640, fps: 24 });
+    await s.manager.close();
+  });
+
+  it("does not commit a pending auto update after closing", async () => {
+    const s = setup(); await s.start();
+    const gate = makeDeferred<void>();
+    vi.spyOn(s.stream, "setVideoEncoderConfig").mockReturnValueOnce(gate.promise);
+    await s.samples(5, 3);
+    const closing = s.manager.close();
+    gate.resolve();
+    await closing;
+    expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 1440, height: 768, fps: 24 });
+    await s.samples(5, 5);
+    expect(s.stream.setVideoEncoderConfig).toHaveBeenCalledTimes(1);
+  });
+
+  it("honors the baseline FPS ceiling and rebases after manual format updates", async () => {
+    const s = setup(24); await s.start();
+    await s.samples(1, 12);
+    expect(s.localStream.videoTrack!.videoFormat!.fps).toBe(24);
+    await s.samples(5, 3);
+    expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 1440, height: 768, fps: 24 });
+    await s.samples(1, 12);
+    expect(s.localStream.videoTrack!.videoFormat!.fps).toBe(24);
+    await s.manager.updateVideoFrameRate(16);
+    await s.samples(1, 12);
+    expect(s.localStream.videoTrack!.videoFormat!.fps).toBe(16);
+    await s.manager.updateVideoFormat(new RealtimeVideoFormat({ ...testVideoFormat, fps: 25 }));
+    await s.samples(5, 5);
+    expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 960, height: 540, fps: 24 });
+    await s.manager.close();
+  });
+
+  it("adapts downlink size only through all five tiers and recovers without changing generation or uplink", async () => {
+    const s = setup();
+    await s.manager.connect(s.localStream);
+    for (let i = 0; i < 5; i++) await s.sample(1, 5);
+    expect(s.stream.changeTargetSize).not.toHaveBeenCalled();
+    await s.start();
+    const apply = vi.spyOn(s.stream, "setVideoEncoderConfig");
+    const sizes = [
+      { width: 1920, height: 1024 }, { width: 1440, height: 768 },
+      { width: 1200, height: 640 }, { width: 900, height: 480 }, { width: 720, height: 384 },
+    ];
+    const downSamples = async (quality: 1 | 5, count: number) => {
+      for (let i = 0; i < count; i++) await s.sample(3, quality);
+    };
+    expect(s.stream.beginCalls[0]!.targetSize).toEqual(sizes[1]);
+    for (let level = 2; level < sizes.length; level++) {
+      await downSamples(5, level === 2 ? 3 : 4);
+      expect(s.stream.changeTargetSize).toHaveBeenLastCalledWith(s.manager.currentState.taskID, sizes[level], expect.any(Function));
+    }
+    await downSamples(5, 10);
+    expect(s.stream.changeTargetSize).toHaveBeenCalledTimes(3);
+    for (let level = 3; level >= 0; level--) {
+      await downSamples(1, 6);
+      expect(s.stream.changeTargetSize).toHaveBeenLastCalledWith(s.manager.currentState.taskID, sizes[level], expect.any(Function));
+    }
+    await downSamples(1, 12);
+    expect(s.stream.changeTargetSize).toHaveBeenCalledTimes(7);
+    expect(apply).not.toHaveBeenCalled();
+    expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 1440, height: 768, fps: 24 });
+    expect(s.stream.beginCalls).toHaveLength(1);
+    expect(s.stream.updateCalls).toHaveLength(0);
+    await s.manager.close();
+  });
+
+  it("allows both directions to degrade on the same sample without operation conflicts", async () => {
+    const s = setup(); await s.start();
+    const apply = vi.spyOn(s.stream, "setVideoEncoderConfig");
+    for (let i = 0; i < 3; i++) await s.sample(5, 5);
+    expect(apply).toHaveBeenCalledTimes(1);
+    expect(s.stream.changeTargetSize).toHaveBeenCalledTimes(1);
+    expect(s.stream.changeTargetSize).toHaveBeenLastCalledWith(s.manager.currentState.taskID, { width: 1200, height: 640 }, expect.any(Function));
+    for (let i = 0; i < 4; i++) await s.sample(6, 5);
+    expect(apply).toHaveBeenCalledTimes(1);
+    expect(s.stream.changeTargetSize).toHaveBeenLastCalledWith(s.manager.currentState.taskID, { width: 900, height: 480 }, expect.any(Function));
+    await s.manager.close();
+  });
+
+  it("retains the generation baseline after uplink reduction and prompt changes", async () => {
+    const s = setup(); await s.start();
+    // 下行维持一般，避免先升到 L1；这里只验证上行降档不会改写下行基准。
+    for (let i = 0; i < 7; i++) await s.sample(5, 3);
+    for (let i = 0; i < 3; i++) await s.sample(3, 5);
+    expect(s.stream.changeTargetSize).toHaveBeenLastCalledWith(s.manager.currentState.taskID, { width: 1200, height: 640 }, expect.any(Function));
+    await s.manager.startGeneration({ localStream: s.localStream, context: new RealtimeContext({ prompt: "updated" }) });
+    expect(s.stream.updateCalls[0]!.videoFormat).toMatchObject({ width: 1920, height: 1024, fps: 30 });
+    expect(s.stream.updateCalls[0]!.targetSize).toEqual({ width: 1200, height: 640 });
+    for (let i = 0; i < 4; i++) await s.sample(3, 5);
+    expect(s.stream.changeTargetSize).toHaveBeenLastCalledWith(s.manager.currentState.taskID, { width: 900, height: 480 }, expect.any(Function));
+    await s.manager.close();
+  });
+
+  it("preserves the requested downlink tier through missing statistics but resets it for a new task", async () => {
+    const s = setup(); await s.start();
+    for (let i = 0; i < 3; i++) await s.sample(1, 5);
+    await s.sample(1, 5); await s.sample(1, 5);
+    s.stream.networkStatisticsListener?.(undefined);
+    for (let i = 0; i < 8; i++) await s.manager.setNetworkStatisticsListener(() => {});
+    await s.sample(1, 5); await s.sample(1, 5);
+    expect(s.stream.changeTargetSize).toHaveBeenCalledTimes(1);
+    await s.sample(1, 5);
+    expect(s.stream.changeTargetSize).toHaveBeenLastCalledWith(s.manager.currentState.taskID, { width: 900, height: 480 }, expect.any(Function));
+    await s.manager.disconnect();
+    for (let i = 0; i < 5; i++) await s.sample(1, 5);
+    expect(s.stream.changeTargetSize).toHaveBeenCalledTimes(2);
+    await s.start();
+    for (let i = 0; i < 3; i++) await s.sample(1, 5);
+    expect(s.stream.beginCalls[1]!.targetSize).toEqual({ width: 1440, height: 768 });
+    expect(s.stream.changeTargetSize).toHaveBeenLastCalledWith(s.manager.currentState.taskID, { width: 1200, height: 640 }, expect.any(Function));
+    await s.manager.close();
+  });
+
+  it("retries the same downlink target after send failure and does not block it on uplink failure", async () => {
+    const s = setup(); await s.start();
+    s.stream.failEncoderConfig = new XmaxError(XmaxErrorCode.rtcError, "encoder failed");
+    s.stream.changeTargetSize.mockRejectedValueOnce(new XmaxError(XmaxErrorCode.rtcError, "send failed"));
+    for (let i = 0; i < 3; i++) await s.sample(5, 5);
+    expect(s.stream.changeTargetSize).toHaveBeenCalledTimes(1);
+    for (let i = 0; i < 4; i++) await s.sample(5, 5);
+    expect(s.stream.changeTargetSize).toHaveBeenCalledTimes(2);
+    expect(s.stream.changeTargetSize).toHaveBeenLastCalledWith(s.manager.currentState.taskID, { width: 1200, height: 640 }, expect.any(Function));
+    expect(s.stream.disconnectCalls).toBe(0);
+    await s.manager.close();
+  });
+
+  it("updates interpolation dimensions and retains the target when toggled, without treating it as observed statistics", async () => {
+    const s = setup(30, RealtimeModel.x2_0_agora, true); const remote = await s.start();
+    let rendering: RemoteFrameInterpolationOptions | undefined;
+    const view = { isMirrored: false, setMediaStream: vi.fn(),
+      setFrameInterpolation: (options?: RemoteFrameInterpolationOptions) => { rendering = options; } };
+    VideoRenderRegistry.binding(remote.videoTrack!)!.attachHandler(view, VideoContentMode.fill);
+    expect(rendering!.size).toEqual({ width: 1440, height: 768 });
+    for (let i = 0; i < 3; i++) await s.sample(1, 5);
+    expect(rendering!.size).toEqual({ width: 1200, height: 640 });
+    await s.manager.setFrameInterpolationEnabled(false);
+    expect(rendering).toBeUndefined();
+    await s.manager.setFrameInterpolationEnabled(true);
+    expect(rendering!.size).toEqual({ width: 1200, height: 640 });
+    expect(s.stream.changeTargetSize).toHaveBeenCalledTimes(1);
+    const gate = makeDeferred<void>();
+    s.stream.changeTargetSize.mockReturnValueOnce(gate.promise);
+    for (let i = 0; i < 4; i++) await s.sample(1, 5);
+    expect(rendering!.size).toEqual({ width: 1200, height: 640 });
+    const ensureActive = s.stream.changeTargetSize.mock.calls.at(-1)![2] as () => void;
+    const closing = s.manager.close();
+    expect(ensureActive).toThrow();
+    gate.resolve(); await closing;
+    expect(rendering).toBeUndefined();
+    for (let i = 0; i < 5; i++) await s.sample(1, 5);
+    expect(s.stream.changeTargetSize).toHaveBeenCalledTimes(2);
+  });
+
+  it("adapts receive-only network video even without an uplink track", async () => {
+    const s = setup();
+    s.camera.currentTrack = undefined;
+    const localStream = await s.manager.createNetworkVideoStream({ url: "https://example.com/video.mp4",
+      videoFormat: new RealtimeVideoFormat({ width: 1024, height: 1920, fps: 30 }) });
+    const starting = s.manager.startGeneration({ localStream, context: testContext });
+    await vi.waitFor(() => expect(s.stream.beginCalls).toHaveLength(1));
+    s.stream.confirmationDeferreds[0]!.resolve(); await starting;
+    for (let i = 0; i < 3; i++) await s.sample(0, 5);
+    expect(s.stream.beginCalls[0]!.targetSize).toEqual({ width: 768, height: 1440 });
+    expect(s.stream.changeTargetSize).toHaveBeenLastCalledWith(s.manager.currentState.taskID, { width: 640, height: 1200 }, expect.any(Function));
+    expect(s.stream.encoderConfigFormats).toHaveLength(0);
+    await s.manager.close();
+  });
+
+  it("does not count downlink samples while generation is awaiting confirmation", async () => {
+    const s = setup();
+    const starting = s.manager.startGeneration({ localStream: s.localStream, context: testContext });
+    await vi.waitFor(() => expect(s.stream.beginCalls).toHaveLength(1));
+    for (let i = 0; i < 5; i++) await s.sample(1, 5);
+    expect(s.stream.changeTargetSize).not.toHaveBeenCalled();
+    s.stream.confirmationDeferreds[0]!.resolve(); await starting;
+    for (let i = 0; i < 2; i++) await s.sample(1, 5);
+    expect(s.stream.changeTargetSize).not.toHaveBeenCalled();
+    await s.sample(1, 5);
+    expect(s.stream.changeTargetSize).toHaveBeenCalledTimes(1);
+    await s.manager.close();
+  });
+
+  it("discards queued downlink samples after newer statistics arrive during a slow uplink update", async () => {
+    const s = setup(); await s.start();
+    const gate = makeDeferred<void>();
+    vi.spyOn(s.stream, "setVideoEncoderConfig").mockReturnValueOnce(gate.promise);
+    for (let i = 0; i < 3; i++) await s.sample(5, 5);
+    await s.sample(3, 3);
+    gate.resolve();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await s.sample(3, 5); await s.sample(3, 5);
+    expect(s.stream.changeTargetSize).not.toHaveBeenCalled();
+    await s.sample(3, 5);
+    expect(s.stream.changeTargetSize).toHaveBeenCalledTimes(1);
+    await s.manager.close();
+  });
+
+  it("holds neutral/unknown downlink quality and cools down after a failed upgrade probe", async () => {
+    const s = setup(); await s.start();
+    for (let i = 0; i < 3; i++) await s.sample(1, 5);
+    for (let i = 0; i < 6; i++) await s.sample(1, 1);
+    expect(s.stream.changeTargetSize).toHaveBeenLastCalledWith(s.manager.currentState.taskID, { width: 1440, height: 768 }, expect.any(Function));
+    for (let i = 0; i < 4; i++) await s.sample(1, 5);
+    expect(s.stream.changeTargetSize).toHaveBeenCalledTimes(3);
+    for (let i = 0; i < 29; i++) await s.sample(1, 1);
+    expect(s.stream.changeTargetSize).toHaveBeenCalledTimes(3);
+    for (let i = 0; i < 4; i++) await s.sample(1, 1);
+    for (const quality of [0, 3, 6] as const) {
+      await s.sample(1, quality);
+      for (let i = 0; i < 4; i++) await s.sample(1, 1);
+      expect(s.stream.changeTargetSize).toHaveBeenCalledTimes(3);
+    }
+    await s.sample(1, 1);
+    expect(s.stream.changeTargetSize).toHaveBeenCalledTimes(4);
+    await s.manager.close();
+  });
+});
+
 describe("XmaxRealtimeManager local video", () => {
   afterEach(() => vi.restoreAllMocks());
   const options = {
@@ -353,12 +856,14 @@ describe("XmaxRealtimeManager local video", () => {
     expect(s.start).not.toHaveBeenCalled();
     await s.manager.connect(local);
     expect(s.stream.connectCalls[0]).toMatchObject({ includeLocalAudio: includeAudio, publishLocalMedia: true });
-    expect(s.stream.encoderConfigFormats).toEqual([options.videoFormat]);
+    expect(s.stream.encoderConfigFormats).toEqual([provider === RtcProvider.agora
+      ? new RealtimeVideoFormat({ ...options.videoFormat, width: 1440, height: 768, fps: 24 }) : options.videoFormat]);
     expect(s.camera.waitForValidCameraFrame).not.toHaveBeenCalled();
     expect(s.start).not.toHaveBeenCalled();
 
     const generating = s.manager.startGeneration({ localStream: local, context: testContext });
     await vi.waitFor(() => expect(s.stream.beginCalls).toHaveLength(1));
+    expect(s.stream.beginCalls[0]!.mirror).toBe(false);
     expect(s.start).not.toHaveBeenCalled();
     await s.stream.beginCalls[0]!.onStartSent!();
     expect(s.start).toHaveBeenCalledOnce();
@@ -425,6 +930,7 @@ describe("XmaxRealtimeManager network video", () => {
     expect(stream.encoderConfigFormats).toEqual([]);
     expect(camera.waitForValidCameraFrame).not.toHaveBeenCalled();
     expect(stream.beginCalls[0]!.context.referenceVideo).toEqual({ path: options.url, sampleMethod: RealtimeVideoSampleMethod.time });
+    expect(stream.beginCalls[0]!.mirror).toBe(false);
     stream.confirmationDeferreds[0]!.resolve();
     await starting;
     expect(stream.activateAudioCalls).toBe(1);
@@ -633,6 +1139,87 @@ describe("XmaxRealtimeManager video format updates", () => {
     next.videoTrack!.updateVideoFormat(updatedFormat);
     const remote = await manager.connect(next);
     expect(remote.videoTrack!.videoFormat).toBe(updatedFormat);
+    await manager.close();
+  });
+});
+
+describe("XmaxRealtimeManager frame rate updates", () => {
+  it("changes FPS during generation without restarting the task or resizing its result", async () => {
+    const { manager, camera, stream } = makeManager();
+    const localStream = makeLocalStream(camera);
+    const starting = manager.startGeneration({ localStream, context: testContext });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+    stream.confirmationDeferreds[0]!.resolve();
+    const remote = await starting;
+    const state = manager.currentState;
+    await manager.updateVideoFrameRate(24);
+    expect(manager.currentState).toBe(state);
+    expect(stream.connectCalls).toHaveLength(1);
+    expect(stream.beginCalls).toHaveLength(1);
+    expect(stream.stopGenerationCalls).toHaveLength(0);
+    expect(stream.updateCalls).toHaveLength(0);
+    expect(stream.changeTargetSize).not.toHaveBeenCalled();
+    expect(remote.videoTrack!.videoFormat).toBe(testVideoFormat);
+    expect(localStream.videoTrack!.videoFormat!.fps).toBe(24);
+    await manager.close();
+  });
+  it("requires a connected local stream and validates FPS", async () => {
+    const { manager, camera, stream } = makeManager();
+    await expect(manager.updateVideoFrameRate(24)).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    const local = makeLocalStream(camera);
+    await expect(manager.updateVideoFrameRate(24)).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    await manager.connect(local);
+    const apply = vi.spyOn(stream, "updateVideoFrameRate");
+    for (const fps of [0, -1, NaN, Infinity]) {
+      await expect(manager.updateVideoFrameRate(fps)).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    }
+    expect(apply).not.toHaveBeenCalled();
+    await manager.close();
+  });
+
+  it("retains resolved bitrate constraints on reconnect without changing generation format", async () => {
+    const { manager, camera, stream } = makeManager();
+    const local = makeLocalStream(camera);
+    const remote = await manager.connect(local);
+    const state = manager.currentState;
+    await manager.updateVideoFrameRate(24);
+    expect(local.videoTrack!.videoFormat).toMatchObject({ ...testVideoFormat, fps: 24, minimumBitrate: 1000, maximumBitrate: 4000 });
+    expect(remote.videoTrack!.videoFormat).toBe(testVideoFormat);
+    expect(manager.currentState).toBe(state);
+    expect(stream.changeTargetSize).not.toHaveBeenCalled();
+    expect(stream.beginCalls).toHaveLength(0);
+    await manager.disconnect();
+    await manager.connect(local);
+    expect(stream.encoderConfigFormats.at(-1)).toMatchObject({ fps: 24, minimumBitrate: 1000, maximumBitrate: 4000 });
+    await manager.close();
+  });
+
+  it("keeps metadata on failure and allows a retry", async () => {
+    const { manager, camera, stream } = makeManager();
+    await manager.connect(makeLocalStream(camera));
+    stream.failEncoderConfig = new XmaxError(XmaxErrorCode.rtcError, "failed");
+    await expect(manager.updateVideoFrameRate(24)).rejects.toBe(stream.failEncoderConfig);
+    expect(camera.currentTrack!.videoFormat).toBe(testVideoFormat);
+    expect(stream.disconnectCalls).toBe(0);
+    stream.failEncoderConfig = undefined;
+    await manager.updateVideoFrameRate(24);
+    expect(camera.currentTrack!.videoFormat!.fps).toBe(24);
+    await manager.close();
+  });
+
+  it.each(["disconnect", "close"] as const)("ignores late updates after %s and blocks concurrent updates", async method => {
+    const { manager, camera, stream } = makeManager();
+    const local = makeLocalStream(camera);
+    await manager.connect(local);
+    const pending = makeDeferred<RealtimeVideoFormat>();
+    vi.spyOn(stream, "updateVideoFrameRate").mockReturnValueOnce(pending.promise);
+    const updating = manager.updateVideoFrameRate(24);
+    const rejected = expect(updating).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
+    await expect(manager.updateVideoFrameRate(20)).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    const stopping = manager[method]();
+    pending.resolve(new RealtimeVideoFormat({ ...testVideoFormat, fps: 24 }));
+    await Promise.all([rejected, stopping]);
+    expect(local.videoTrack!.videoFormat).toBe(testVideoFormat);
     await manager.close();
   });
 });
@@ -1368,6 +1955,21 @@ describe("XmaxRealtimeManager connect", () => {
 });
 
 describe("XmaxRealtimeManager startGeneration", () => {
+  it.each([CameraPosition.front, CameraPosition.back])("sends backend mirror according to camera position %s without mirroring the result", async (position) => {
+    const { manager, camera, stream } = makeManager();
+    const localStream = makeLocalStream(camera);
+    localStream.videoTrack!.updatePosition(position);
+    const pending = manager.startGeneration({ localStream, context: testContext });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+    expect(stream.beginCalls[0]!.mirror).toBe(position === CameraPosition.front);
+    stream.confirmationDeferreds[0]!.resolve();
+    const remote = await pending;
+    const view = { isMirrored: true, setMediaStream: vi.fn() };
+    VideoRenderRegistry.binding(remote.videoTrack!)!.attachHandler(view, VideoContentMode.fit);
+    expect(view.isMirrored).toBe(false);
+    await manager.close();
+  });
+
   it("按需连接并开始生成：确认后激活远端音频并进入 generating", async () => {
     const { manager, camera, stream } = makeManager();
     const localStream = makeLocalStream(camera);

@@ -52,11 +52,12 @@ export class RoomEvent {
   /**
    * 生成开始信令。
    */
-  static start(options: RoomEventGenerationOptions): string {
+  static start(options: RoomEventGenerationOptions & { mirror?: boolean }): string {
     return RoomEvent.encode({
       event: "start",
       params: {
         ...RoomEvent.generationParameters(options),
+        mirror: options.mirror ?? false,
         ...(options.context.referenceVideo && {
           ref_video_path: options.context.referenceVideo.path,
           sample_method: options.context.referenceVideo.sampleMethod,

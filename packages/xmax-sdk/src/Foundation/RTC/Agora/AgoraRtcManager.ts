@@ -51,6 +51,7 @@ export class AgoraRtcManager implements RtcManaging {
   private microphone?: IMicrophoneAudioTrack;
   private externalVideo?: ILocalVideoTrack;
   private externalAudio?: ILocalAudioTrack;
+  private readonly appliedOptimizationModes = new WeakMap<ILocalVideoTrack, RtcVideoEncoderPreference>();
   private connection?: AgoraRoomJoinConfiguration;
   private roomVersion = 0;
 
@@ -69,6 +70,7 @@ export class AgoraRtcManager implements RtcManaging {
    */
   private listener?: RtcEventListener;
   private statisticsTimer?: ReturnType<typeof setInterval>;
+  private networkQualitySuspended = false;
   private readonly audioVolumes = new Map<string, number>();
   private readonly requestedAudio = new Set<string>();
 
@@ -260,7 +262,10 @@ export class AgoraRtcManager implements RtcManaging {
         bitrateMin: config.minimumBitrate,
         bitrateMax: config.maximumBitrate,
       });
-      await camera.setOptimizationMode(config.encoderPreference === RtcVideoEncoderPreference.maintainFramerate ? "motion" : "detail");
+      if (this.appliedOptimizationModes.get(camera) !== config.encoderPreference) {
+        await camera.setOptimizationMode(config.encoderPreference === RtcVideoEncoderPreference.maintainFramerate ? "motion" : "detail");
+        this.appliedOptimizationModes.set(camera, config.encoderPreference);
+      }
     });
   }
 
@@ -626,6 +631,7 @@ export class AgoraRtcManager implements RtcManaging {
     const handleExpired = () => {
       if (!active() || this.tokenExpired) return;
       this.tokenExpired = true;
+      this.listener?.onNetworkStatistics?.(undefined);
       this.listener?.onTokenExpired?.();
     };
     client.on("user-published", (user, kind) => {
@@ -649,13 +655,15 @@ export class AgoraRtcManager implements RtcManaging {
       if (mediaActive()) this.listener?.onCustomMessageReceived(String(uid), typeof data === "string" ? data : new TextDecoder().decode(data));
     });
     client.on("network-quality", quality => {
-      if (mediaActive()) AgoraRtcStatistics.network(quality, this.listener);
+      if (mediaActive() && !this.networkQualitySuspended) AgoraRtcStatistics.network(quality, this.listener);
     });
     client.on("token-privilege-will-expire", () => {
       if (active() && !this.tokenExpired) this.listener?.onTokenWillExpire?.();
     });
     client.on("token-privilege-did-expire", handleExpired);
     client.on("connection-state-change", (state, previous, reason) => {
+      if (this.client === client) this.networkQualitySuspended = state !== "CONNECTED";
+      if (active() && state !== "CONNECTED") this.listener?.onNetworkStatistics?.(undefined);
       // SDK 可能先报告因 Token 过期断开，再发 did-expire；合并成同一次恢复请求。
       if (state === "DISCONNECTED" && reason === "TOKEN_EXPIRE") {
         handleExpired();
@@ -675,6 +683,7 @@ export class AgoraRtcManager implements RtcManaging {
     this.cancelRejoin?.();
     this.connection = undefined;
     this.tokenExpired = false;
+    this.networkQualitySuspended = false;
     this.videoPublishRequested = false;
     this.audioPublishRequested = false;
     clearInterval(this.statisticsTimer);

@@ -5,6 +5,7 @@ import { watchMediaPermissionPrompt } from "../../Foundation/Permissions/MediaPe
 import { createRtcManager } from "../../Foundation/RTC/RtcFactory";
 import { XmaxEnvironment } from "../../Foundation/Runtime/XmaxEnvironment";
 import type { RtcManaging } from "../../Foundation/RTC/RtcManaging";
+import { RtcProvider } from "../../Foundation/RTC/RtcProvider";
 import type { NetworkStatistics, NetworkStatisticsListener } from "../../Foundation/RTC/NetworkStatistics";
 import type { RemoteVideoStatistics, RemoteVideoStatisticsListener, VideoStatistics, VideoStatisticsListener } from "../../Foundation/RTC/VideoStatistics";
 import { CameraController } from "../../Media/Camera/CameraController";
@@ -27,6 +28,9 @@ import {
 import { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import { StreamController } from "../../Stream/StreamController";
+import { QualityController } from "../../Stream/Quality/QualityController";
+import { qualityVideoFormat, qualityVideoSize } from "../../Stream/Quality/QualityVideoFormat";
+import { INITIAL_QUALITY_LEVEL, QUALITY_TIERS } from "../../Stream/Quality/QualityTiers";
 import type { StreamControlling } from "../../Stream/StreamControlling";
 import type { RealtimeConfiguration } from "./RealtimeConfiguration";
 import {
@@ -115,6 +119,13 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   private readonly connectionManager: XmaxRealtimeConnectionManager;
   private readonly generationManager: XmaxRealtimeGenerationManager;
   private readonly streamController: StreamControlling;
+  private readonly qualityController?: QualityController;
+  private readonly qualityStates = new WeakMap<RealtimeVideoTrack, { baseline: RealtimeVideoFormat; level: number }>();
+  private readonly downlinkQualityController?: QualityController;
+  /** 无服务端生效 ACK；level/size 表示最后成功发送的目标，而非实际接收规格。 */
+  private downlinkQualityState?: { taskID: string; baseline: RealtimeVideoFormat; level: number; size: ModelSize };
+  private adaptiveQualityPending = false;
+  private adaptiveQualityRevision = 0;
 
   /**
    * 音量配置
@@ -179,7 +190,6 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       sessionService,
       streamController: this.streamController,
       timing: this.launchTimer,
-      isMirrored: () => this.cameraController.currentTrack?.position === CameraPosition.front,
       remoteAudioVolume: () => this.storedRemoteAudioVolume,
       onHeartbeatFailure: (sessionID, error) => { void this.handleHeartbeatFailure(sessionID, error); },
       onFrameDisplayed: () => this.remoteFrameDisplayHandler?.(),
@@ -195,6 +205,31 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       cleanup: (scope, taskID) => this.performCleanup(scope, taskID),
     });
 
+    if (options.provider === RtcProvider.agora) {
+      this.qualityController = new QualityController(async (change, signal) => {
+        if (signal.aborted || this.currentState.connectionState !== RealtimeConnectionState.generating) {
+          throw new XmaxError(XmaxErrorCode.cancelled, "Adaptive video format update was cancelled");
+        }
+        await this.coordinator.run(RealtimeOperationKind.configuration, undefined, async token => {
+          const track = this.localVideoController.currentTrack ?? this.cameraController.currentTrack;
+          const state = track && this.qualityStates.get(track);
+          if (!track || !state) throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Adaptive video baseline is unavailable");
+          const format = qualityVideoFormat(state.baseline, change.to);
+          await this.streamController.setVideoEncoderConfig(format);
+          token.ensureCurrent();
+          // 生成和插帧使用原始格式；这里只提交上行编码规格和已应用档位。
+          this.generationVideoFormat ??= state.baseline;
+          track.updateVideoFormat(format);
+          state.level = change.to;
+        });
+      });
+      this.downlinkQualityController = new QualityController(async (change, signal) => {
+        await this.coordinator.run(RealtimeOperationKind.configuration, undefined, async token => {
+          await this.applyDownlinkQuality(change.to, token, signal);
+        });
+      });
+    }
+
     this.streamController.setLocalVideoStatisticsListener((statistics) => {
       if (this.acceptsVideoStatistics) {
         this.localVideoStatistics = statistics ? Object.freeze({ ...statistics }) : undefined;
@@ -205,6 +240,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     this.streamController.setNetworkStatisticsListener((statistics) => {
       if (this.acceptsVideoStatistics) {
         this.networkStatistics = statistics ? Object.freeze({ ...statistics }) : undefined;
+        this.handleAdaptiveQuality(statistics);
         this.notifyNetworkStatistics();
       }
     });
@@ -236,7 +272,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    */
   async setFrameInterpolationEnabled(enabled: boolean): Promise<void> {
     await this.coordinator.run(RealtimeOperationKind.configuration, undefined, async (token) => {
-      const format = this.generationVideoFormat ?? this.currentLocalTrack?.videoFormat;
+      const format = this.downlinkQualityState?.size ?? this.generationVideoFormat ?? this.currentLocalTrack?.videoFormat;
       const size = format && enabled ? this.mediaService.resolveFrameInterpolationSize(format) : undefined;
       if (enabled && !await this.checkInterpolationSupport(size, token)) {
         token.ensureCurrent();
@@ -249,6 +285,48 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       this.interpolationSize = size;
       this.applyRemoteInterpolation();
     });
+  }
+
+  /** 手动调试与自动调档使用同一尺寸信令路径，不修改生成或上行配置。 */
+  async adjustDownlinkQuality(direction: "upgrade" | "downgrade"): Promise<void> {
+    await this.coordinator.run(RealtimeOperationKind.configuration, undefined, async token => {
+      const controller = this.downlinkQualityController;
+      const state = this.downlinkQualityState;
+      if (!controller || !state || this.currentState.connectionState !== RealtimeConnectionState.generating ||
+        (direction !== "upgrade" && direction !== "downgrade")) {
+        throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Downlink quality adjustment requires an active Agora generation and a valid direction");
+      }
+      const level = Math.max(1, Math.min(Object.keys(QUALITY_TIERS).length, state.level + (direction === "upgrade" ? -1 : 1)));
+      if (level === state.level) return;
+      this.adaptiveQualityRevision++;
+      controller.resetSamples();
+      await this.applyDownlinkQuality(level, token);
+      // 手动选择作为新的目标档位，后续自动判断从这里重新累计样本。
+      controller.start(level);
+    });
+  }
+
+  private async applyDownlinkQuality(level: number, token: RealtimeOperationToken, signal?: AbortSignal): Promise<void> {
+    const state = this.downlinkQualityState;
+    const ensureActive = () => {
+      token.ensureCurrent();
+      if (signal?.aborted || !state || state !== this.downlinkQualityState ||
+        this.currentState.connectionState !== RealtimeConnectionState.generating || this.currentState.taskID !== state.taskID) {
+        throw new XmaxError(XmaxErrorCode.cancelled, "Target size update was cancelled");
+      }
+    };
+    ensureActive();
+    if (!state) return;
+    const size = qualityVideoSize(state.baseline, level);
+    await this.streamController.changeTargetSize(state.taskID, size, ensureActive);
+    ensureActive();
+    state.level = level;
+    state.size = size;
+    // 新尺寸尚未到达时展示原视频，不能跨尺寸插帧。
+    if (this.interpolationRequested) {
+      this.interpolationSize = size;
+      this.applyRemoteInterpolation();
+    }
   }
 
   /**
@@ -428,6 +506,10 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    * 停止接收媒体统计并清空各类快照，仅对曾有数据的统计发出清空通知。
    */
   private clearVideoStatistics(): void {
+    this.qualityController?.stop();
+    this.downlinkQualityController?.stop();
+    this.downlinkQualityState = undefined;
+    this.adaptiveQualityRevision++;
     this.acceptsVideoStatistics = false;
 
     const hadNetworkStatistics = this.networkStatistics !== undefined;
@@ -621,6 +703,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Local camera or file video stream is not started");
       }
       videoFormat.validate();
+      this.qualityController?.stop();
 
       // 上行尺寸不按模型分辨率桶吸附，也不发送生成条件或回传尺寸信令。
       await this.streamController.setVideoEncoderConfig(videoFormat);
@@ -628,7 +711,80 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
 
       this.generationVideoFormat ??= previousFormat;
       track.updateVideoFormat(videoFormat);
+      this.qualityStates.set(track, { baseline: videoFormat, level: 1 });
     });
+  }
+
+  /** 已连接时仅替换帧率；与其他配置及生命周期操作共享同一操作租约。 */
+  async updateVideoFrameRate(fps: number): Promise<void> {
+    await this.coordinator.run(RealtimeOperationKind.configuration, undefined, async (token) => {
+      this.qualityController?.stop();
+      await this.applyVideoFrameRate(fps, token);
+      const track = this.currentLocalTrack;
+      if (track?.videoFormat) this.qualityStates.set(track, { baseline: track.videoFormat, level: 1 });
+    });
+  }
+
+  /** 手动仅调帧接口，成功后的当前格式将成为新的自适应 L1 基准。 */
+  private async applyVideoFrameRate(fps: number, token: RealtimeOperationToken): Promise<void> {
+    const track = this.localVideoController.currentTrack ?? this.cameraController.currentTrack;
+    const previous = track?.videoFormat;
+    const state = this.currentState.connectionState;
+    if (!track || !previous ||
+      (state !== RealtimeConnectionState.connected && state !== RealtimeConnectionState.generating)) {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Frame rate updates require a connected local camera or file stream");
+    }
+    if (!Number.isFinite(fps) || fps <= 0) {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Video frame rate must be greater than zero");
+    }
+    const format = await this.streamController.updateVideoFrameRate(fps);
+    token.ensureCurrent();
+    this.generationVideoFormat ??= previous;
+    track.updateVideoFormat(format);
+  }
+
+  /** 上下行独立判断；串行应用同一原始事件，避免同时降档争抢配置租约。 */
+  private handleAdaptiveQuality(statistics?: NetworkStatistics): void {
+    const revision = ++this.adaptiveQualityRevision;
+    const controller = this.qualityController;
+    const downlink = this.downlinkQualityController;
+    if (!controller || !downlink) return;
+    const taskID = this.currentState.taskID;
+    if (this.currentState.connectionState !== RealtimeConnectionState.generating || !taskID) {
+      controller.stop();
+      downlink.stop();
+      return;
+    }
+    if (!statistics || this.coordinator.isBusy || this.adaptiveQualityPending) {
+      controller.resetSamples();
+      downlink.resetSamples();
+      return;
+    }
+    const track = this.localVideoController.currentTrack ?? this.cameraController.currentTrack;
+    if (!track) {
+      controller.stop();
+    } else if (!controller.snapshot.active) {
+      const format = track.videoFormat;
+      if (format) {
+        const state = this.qualityStates.get(track) ?? { baseline: format, level: 1 };
+        this.qualityStates.set(track, state);
+        controller.start(state.level);
+      }
+    }
+    const state = this.downlinkQualityState;
+    if (state && !downlink.snapshot.active) downlink.start(state.level);
+    const sampleAt = performance.now();
+    this.adaptiveQualityPending = true;
+    void (async () => {
+      // 失败已由协调器上报；一个方向失败不阻断另一个方向的判断。
+      await controller.observe(statistics.uplinkQuality, sampleAt).catch(() => {});
+      if (revision !== this.adaptiveQualityRevision || this.currentState.taskID !== taskID || state !== this.downlinkQualityState ||
+        this.currentState.connectionState !== RealtimeConnectionState.generating || this.coordinator.isBusy) {
+        downlink.resetSamples();
+        return;
+      }
+      await downlink.observe(statistics.downlinkQuality, sampleAt).catch(() => {});
+    })().finally(() => { this.adaptiveQualityPending = false; });
   }
 
   /**
@@ -669,9 +825,9 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       RealtimeOperationKind.cameraSwitch,
       undefined,
       async (token) => {
+        this.qualityController?.stop();
         const stream = await this.cameraController.switchCamera();
         token.ensureCurrent();
-        this.connectionManager.updateRemoteMirror();
         return stream;
       },
     );
@@ -749,6 +905,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         if (currentState.connectionState === RealtimeConnectionState.generating) {
           await this.generationManager.update(currentState.taskID, {
             videoFormat,
+            targetSize: this.downlinkQualityController ? this.downlinkQualityState?.size : undefined,
             context: options.context,
           });
           token.ensureCurrent();
@@ -837,9 +994,21 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         beforePublish = () => cameraReady;
       }
 
+      // 新的 Agora 本地轨道从 L2 发布；保留 L1 基准，重连沿用已保存的档位。
+      const baseline = localTrack.videoFormat;
+      const initialQuality = this.qualityController && !this.networkVideoController.currentTrack &&
+        !this.qualityStates.has(localTrack) && baseline ? { baseline, level: INITIAL_QUALITY_LEVEL } : undefined;
+      const initialFormat = initialQuality && qualityVideoFormat(initialQuality.baseline, initialQuality.level);
       const remote = await this.connectionManager.connect({
         localTrack,
-        remoteVideoFormat: this.generationVideoFormat,
+        remoteVideoFormat: this.generationVideoFormat ?? baseline,
+        localVideoFormat: initialFormat,
+        onVideoEncoderConfigured: () => {
+          if (!initialQuality || !initialFormat) return;
+          this.generationVideoFormat ??= initialQuality.baseline;
+          localTrack.updateVideoFormat(initialFormat);
+          this.qualityStates.set(localTrack, initialQuality);
+        },
         model: this.options.model,
         includeLocalAudio: this.localVideoController.isActive
           ? this.localVideoController.audioTrack !== undefined
@@ -876,7 +1045,8 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     context: RealtimeContext,
   ): Promise<RealtimeMediaStream> {
     token.setFailureScope(RealtimeTerminationScope.connection);
-    await this.prepareFrameInterpolation(videoFormat, token);
+    const targetSize = this.downlinkQualityController ? qualityVideoSize(videoFormat, INITIAL_QUALITY_LEVEL) : undefined;
+    await this.prepareFrameInterpolation(targetSize ?? videoFormat, token);
 
     const completeFirstFrame = this.launchTimer.startFirstFrame();
     this.remoteFrameDisplayHandler = () => {
@@ -885,7 +1055,10 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
 
     const taskID = await this.generationManager.start({
       videoFormat,
+      targetSize,
       context,
+      mirror: this.currentLocalTrack === this.cameraController.currentTrack &&
+        this.cameraController.currentTrack?.position === CameraPosition.front,
       signal: token.signal,
       ensureCurrent: () => token.ensureCurrent(),
       onStartSent: this.localVideoController.isActive ? async () => {
@@ -903,6 +1076,11 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       throw new XmaxError(XmaxErrorCode.sessionError, "Realtime session is unavailable");
     }
 
+    this.downlinkQualityController?.stop();
+    this.downlinkQualityState = {
+      taskID, baseline: videoFormat, level: targetSize ? INITIAL_QUALITY_LEVEL : 1,
+      size: targetSize ?? { width: videoFormat.width, height: videoFormat.height },
+    };
     await this.coordinator.commit(
       new RealtimeState({ connectionState: RealtimeConnectionState.generating, sessionID, taskID }),
       token,
