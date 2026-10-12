@@ -283,94 +283,23 @@ await realtime.updateUplinkVideoFormat(new RealtimeVideoFormat({
 }));
 ```
 
-Pass a complete format; omitted bitrate and preference fields use SDK defaults.
-The local track's `videoFormat` is updated on success and reused on reconnect.
-Generation and remote frame interpolation retain the original format. Actual sent
-resolution, frame rate, and bitrate depend on the device, browser, and network;
-use the statistics callbacks to observe them. Await each operation before starting
-another configuration or lifecycle operation.
+Pass a complete format; omitted fields use SDK defaults. This changes uplink encoding,
+not the server's generation resolution. Actual video quality depends on the device
+and network. Agora camera streams currently apply only the maximum bitrate limit.
 
-For a frame-rate-only experiment after connecting a local camera or file stream:
+To change only the uplink frame rate after connecting:
 
 ```javascript
 await realtime.updateUplinkFrameRate(24);
 ```
 
-This preserves the last successfully applied width, height, resolved bitrate limits,
-and encoding preference. It does not recalculate default bitrates for the new frame
-rate or copy measured send statistics into the configuration. The complete encoder
-configuration is still resubmitted, so preservation of RTC's internal adaptation
-state is not guaranteed. Validate actual send statistics under weak networks.
+This preserves the current dimensions and bitrate configuration.
 
-**Agora camera sender-only experiment:** camera capture stays at its initial settings.
-Camera updates use `RTCRtpSender.setParameters()` (`scaleResolutionDownBy`,
-`maxFramerate`, `maxBitrate` in bps), not Agora's `setEncoderConfiguration()`.
-Only the maximum bitrate is applied; the standard sender API cannot enforce the
-configured minimum bitrate. Pre-publish updates are queued and applied immediately
-after publication, so the very first transmitted frames may use the initial profile.
-Scaling uses the actual captured dimensions, preserves aspect ratio, and does not upscale.
-Sender replacement/rejoin reapplies the latest target. Unsupported or silently ignored
-parameters are reported as errors, without falling back to camera constraints.
-Read-back confirms accepted parameters, not actual frame dimensions or persistent
-ownership against Agora's later adjustments; validate Chrome/Safari using RTC statistics.
-Search `Agora Sender Parameters` for accepted limits and `Agora RTC Statistics` for
-capture/send dimensions. File-video encoding and other RTC providers are unchanged.
+Agora sessions automatically adapt uplink resolution/frame rate and downlink resolution
+to network conditions. No additional setup is required.
 
-Agora uplink and downlink adaptation are always enabled; no configuration flag or manual
-selector is needed. Other RTC providers are not yet integrated. After generation
-starts, three consecutive poor uplink quality samples lower one tier, and five good
-samples probe an upgrade. Five tiers jointly change resolution and frame rate:
-1024×1920/30, 768×1440/24, 640×1200/24, 512×960/20, and 384×720/16.
-Landscape dimensions are swapped; custom sources scale proportionally from their
-initial or most recently manually applied format, with even dimensions and FPS
-capped by that baseline. Automatic updates preserve this baseline across reconnects.
-Default bitrate limits are recalculated for each tier; explicit limits and encoding
-preference are preserved. Uplink changes do not alter generation or result-stream sizes.
-Downlink independently uses the same quality thresholds and five resolution tiers,
-relative to the generation's original dimensions. It sends only `change_target_size`
-with `[width, height]`, without changing FPS, bitrate limits, or model inference.
-The protocol has no application ACK: a successful send records a requested tier,
-not a confirmed output size; use remote RTC statistics to verify actual dimensions.
-New Agora local tracks read the last applied uplink tier before publishing
-(the camera sender-only experiment applies it immediately after publication);
-new generation tasks restore the last requested downlink tier via `start.params.target_size`.
-Each direction falls back to L2 when no valid history is available. History is stored
-in `localStorage`, separately by model and direction, with no expiry or stability window
-in this first version. Storage failures never block generation. The original L1 baseline
-is retained for recovery; reconnecting the same local track keeps its in-memory uplink tier.
-Downlink changes only resolution, not FPS. Interpolation follows the requested dimensions,
-showing raw video while frame sizes do not match. See
-[the strategy and weak-network test steps](docs/realtime-adaptive-quality.md).
-
-Each model declares its supported RTC providers. The SDK selects the model's
-default provider when `provider` is omitted. To use Agora, replace the manager
-configuration above; camera capture, generation, rendering, and cleanup use the same APIs:
-
-```javascript
-const realtime = client.createRealtimeManager(
-  new RealtimeConfiguration({
-    model: RealtimeModel.x2_1_preview,
-  })
-);
-```
-
-To use VeRTC, select `x2.0`:
-
-```javascript
-const realtime = client.createRealtimeManager(
-  new RealtimeConfiguration({
-    model: RealtimeModel.x2_0,
-  })
-);
-```
-
-The provider is fixed for each manager: `x2.0-trtc` uses `RtcProvider.trtc`,
-`x2.1-preview` uses `RtcProvider.agora`, and `x2.0` uses `RtcProvider.vertc`.
-Import `RtcProvider` to specify it explicitly; unsupported known-model/provider
-combinations are rejected during configuration. Use the exported
-`supportedRtcProviders(model)` to inspect model capabilities. The SDK does not read
-`modelExtra.provider` from the backend; the resolved configuration determines how
-RTC credentials are parsed.
+The SDK automatically selects the RTC provider for your model. Camera capture,
+generation, rendering, and cleanup use the same APIs across models.
 
 The `x2.1-preview` model uses `https://cloud.xmax.22duck.cn/open/api/v1` in both environments.
 The other built-in models and file uploads use the configured
@@ -386,37 +315,7 @@ const realtime = client.createRealtimeManager(
 ```
 
 The model name is sent unchanged; the server determines whether it is available.
-Unknown models inherit the `x2.1-preview` defaults: Agora, the production session API above
-(in both client environments), a 1024 × 1920 camera at 30 fps, and the same
-1024 × 1920 / 1920 × 1024 input resolution buckets and media rules.
-You may explicitly choose another supported `RtcProvider` for a custom model;
-`supportedRtcProviders` lists all SDK adapters for custom models, with Agora first,
-but this does not guarantee server-side support. `modelDisplayName` returns the
-custom name unchanged. Empty/blank or non-string model names, invalid RTC providers,
-and invalid video parameters are still rejected locally.
-
-VeRTC uses `@volcengine/rtc` 4.69.3 and the fixed AppID
-`69a177e226e9b90176a86b96`. Session credentials must contain this `rtc_app_id`,
-`room_id`, and `room_token`; the RTC user is `user_id` (falling back to `userUid`),
-and `bot_name` identifies the bot. Camera and microphone capture use VeRTC's SDK.
-The preview model uses the same media rules as `x2.0-trtc`: 1024 × 1920 or
-1920 × 1024 input, with 30 fps by default.
-
-VeRTC sends the existing room-event JSON as a single room text message, without
-chunk envelopes. The adapter rejects messages above 64 KiB of UTF-8 data; vendor
-send failures are returned to the caller. TRTC and Agora retain their chunking.
-HTTP session heartbeats start after joining and publishing the local stream, with
-the first request after 10 seconds. Changed tokens returned by heartbeat are
-applied to Agora and VeRTC; expiry callbacks also request fresh credentials.
-VeRTC restores media after token expiry without creating another business session
-or restarting the generation task. HTTP heartbeats maintain the session and are
-not treated as a client-side billing trigger.
-
-`XmaxConfiguration.environment` selects the Agora region (`china` or `global`);
-concurrent Agora managers must use the same environment. RTC modules load on demand.
-Statistics not supplied by a provider are `undefined`, including Agora playback
-buffer delay and separate uplink/downlink RTT. RTC end-to-end estimates do not
-include AI generation time and use each provider's own measurement definition.
+Custom models use the `x2.1-preview` defaults unless an RTC provider is explicitly configured.
 
 <br>
 
@@ -516,7 +415,7 @@ position to the backend.
 
 ### Generate from a local video
 
-Use a manager configured for TRTC, Agora or VeRTC. The SDK decodes a local `File` or `Blob`, sends its video through Canvas and its audio through Web Audio, and receives the generated result over RTC. It does not upload the file to storage or request camera/microphone access.
+Use a local `File` or `Blob` as the video source. This does not upload the file to storage or request camera/microphone access.
 
 ```ts
 // Call directly from a file-selection or click handler to unlock browser playback.
@@ -676,7 +575,7 @@ It demonstrates real-time generation using live camera feeds and reference image
 
 - <ins><strong>Tencent Cloud TRTC SDK for Web</strong></ins> enables low-latency, real-time audio and video communication.
 - <ins><strong>Agora RTC SDK for Web</strong></ins> provides an alternative RTC transport for the Agora model.
-- <ins><strong>Volcengine VeRTC SDK for Web</strong></ins> provides RTC transport and device capture for the X2.1 preview model.
+- <ins><strong>Volcengine VeRTC SDK for Web</strong></ins> enables real-time audio and video communication.
 - <ins><strong>Tencent Cloud COS SDK</strong></ins> handles media upload and download via object storage.
 
 <br>
