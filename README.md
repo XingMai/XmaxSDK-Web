@@ -214,9 +214,6 @@ The following JavaScript snippet creates a camera stream, starts real-time gener
 and binds the output to a video view. Run this within an async function in the browser,
 after a user action such as clicking a Start button.
 
-For Agora, use `RealtimeModel.x2_1_preview` (`x2.1-preview`). For TRTC, use
-`RealtimeModel.x2_0_trtc` (`x2.0-trtc`). `RealtimeModel.x2_0` (`x2.0`) uses VeRTC.
-
 ```javascript
 import {
   CameraPosition,
@@ -235,7 +232,7 @@ const client = new XmaxClient(
 );
 
 const realtime = client.createRealtimeManager(
-  new RealtimeConfiguration({ model: RealtimeModel.x2_0_trtc })
+  new RealtimeConfiguration({ model: RealtimeModel.x2_1_preview })
 );
 
 const localStream = await realtime.createLocalCameraStream({
@@ -282,40 +279,6 @@ await realtime.updateUplinkVideoFormat(new RealtimeVideoFormat({
   maximumBitrate: 2000,
 }));
 ```
-
-Pass a complete format; omitted fields use SDK defaults. This changes uplink encoding,
-not the server's generation resolution. Actual video quality depends on the device
-and network. Agora camera streams currently apply only the maximum bitrate limit.
-
-To change only the uplink frame rate after connecting:
-
-```javascript
-await realtime.updateUplinkFrameRate(24);
-```
-
-This preserves the current dimensions and bitrate configuration.
-
-Agora sessions automatically adapt uplink resolution/frame rate and downlink resolution
-to network conditions. No additional setup is required.
-
-The SDK automatically selects the RTC provider for your model. Camera capture,
-generation, rendering, and cleanup use the same APIs across models.
-
-The `x2.1-preview` model uses `https://cloud.xmax.22duck.cn/open/api/v1` in both environments.
-The other built-in models and file uploads use the configured
-environment's production API endpoint: `https://cloud.xmax.22duck.cn/open/api/v1`
-for China and `https://api.xmax.cloud/open/api/v1` for Global.
-
-Custom realtime model names are also accepted without an SDK update:
-
-```javascript
-const realtime = client.createRealtimeManager(
-  new RealtimeConfiguration({ model: "your-new-model" })
-);
-```
-
-The model name is sent unchanged; the server determines whether it is available.
-Custom models use the `x2.1-preview` defaults unless an RTC provider is explicitly configured.
 
 <br>
 
