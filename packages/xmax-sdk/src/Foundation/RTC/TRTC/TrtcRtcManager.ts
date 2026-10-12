@@ -258,6 +258,9 @@ export class TrtcRtcManager implements RtcManaging {
   async startCameraCapture(
     options: RtcCameraCaptureOptions,
   ): Promise<MediaStreamTrack> {
+    if (options.rotation !== undefined && options.rotation !== 0) {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Camera rotation currently requires Agora");
+    }
     const engine = this.requireEngine();
     if (this.isCapturing || this.externalVideo) {
       throw new XmaxError(

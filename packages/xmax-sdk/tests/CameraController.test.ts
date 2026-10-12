@@ -197,6 +197,25 @@ const defaultFormat = new RealtimeVideoFormat({
 });
 
 describe("CameraController", () => {
+  it("forwards rotation without swapping the public format or changing preview mirroring", async () => {
+    const { controller, rtc } = makeController();
+    const stream = await controller.createLocalCameraStream({
+      videoFormat: defaultFormat, position: CameraPosition.front, useMicrophone: false, rotation: 90,
+    });
+    expect(rtc.startCalls[0]).toMatchObject({ width: 1024, height: 1920, rotation: 90 });
+    expect(stream.videoTrack?.videoFormat).toMatchObject({ width: 1024, height: 1920 });
+    expect(attachPreview(stream.videoTrack!).isMirrored).toBe(true);
+    await controller.stopLocalCameraStream();
+  });
+
+  it("rejects invalid rotation before capture starts", async () => {
+    const { controller, rtc } = makeController();
+    await expect(controller.createLocalCameraStream({
+      videoFormat: defaultFormat, position: CameraPosition.front, useMicrophone: false, rotation: 45 as any,
+    })).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    expect(rtc.initializeCalls).toBe(0);
+    expect(rtc.startCalls).toHaveLength(0);
+  });
   it.each([undefined, true, false])("uses per-stream frame validation option %s", async (enableFrameValidation) => {
     const { controller } = makeController();
     await controller.createLocalCameraStream({

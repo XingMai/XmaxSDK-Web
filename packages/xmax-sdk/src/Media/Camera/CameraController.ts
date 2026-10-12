@@ -1,4 +1,5 @@
 import { CameraPosition } from "../../Foundation/Media/Camera/CameraPosition";
+import { validateCameraRotation, type CameraRotation } from "../../Foundation/Media/Camera/CameraRotation";
 import { waitForValidCameraFrame } from "../../Foundation/Media/Camera/CameraFrameValidator";
 import { XmaxError, XmaxErrorCode, type XmaxErrorListener } from "../../Foundation/Errors/XmaxError";
 import type { PermissionManaging } from "../../Foundation/Permissions/PermissionManaging";
@@ -138,6 +139,7 @@ export class CameraController implements CameraControlling {
    *
    * @param options.videoFormat 期望的输出尺寸、帧率和编码配置；尺寸按模型规则调整。
    * @param options.position 首次启动时使用的摄像头位置。
+   * @param options.rotation 输入帧顺时针旋转角度，默认 0；videoFormat 为旋转后的规格，目前仅 Agora 支持非零角度。
    * @param options.useMicrophone 是否申请麦克风权限并允许实时连接时启动音频采集。
    * @param options.enableFrameValidation 是否在发布前等待相机预热（固定 200ms），默认 true；false 跳过等待。
    * @returns 包含本地相机视频轨道的媒体流。
@@ -147,6 +149,7 @@ export class CameraController implements CameraControlling {
     videoFormat: RealtimeVideoFormat;
     position: CameraPosition;
     useMicrophone: boolean;
+    rotation?: CameraRotation;
     enableFrameValidation?: boolean;
   }): Promise<RealtimeMediaStream> {
     if (this.activeTrack) {
@@ -156,6 +159,7 @@ export class CameraController implements CameraControlling {
       );
     }
 
+    validateCameraRotation(options.rotation ?? 0);
     const resolvedFormat = this.resolveVideoFormat(options.videoFormat);
     const track = new RealtimeVideoTrack({
       id: CameraController.localVideoTrackID,
@@ -183,6 +187,7 @@ export class CameraController implements CameraControlling {
         height: resolvedFormat.height,
         frameRate: resolvedFormat.fps,
         position: options.position,
+        ...(options.rotation !== undefined ? { rotation: options.rotation } : {}),
       });
       track.mediaStreamTrack = mediaTrack;
       this.previewStream = new MediaStream([mediaTrack]);

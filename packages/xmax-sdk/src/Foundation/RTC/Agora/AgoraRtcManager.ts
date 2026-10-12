@@ -11,6 +11,8 @@ import { RtcVideoEncoderPreference, type VideoEncodingConfiguration } from "../V
 import { AgoraRtcStatistics } from "./AgoraRtcStatistics";
 import { rtcOrientedVideoSize } from "../RtcVideoOrientation";
 import { AgoraVideoSender } from "./AgoraVideoSender";
+import { validateCameraRotation } from "../../Media/Camera/CameraRotation";
+import { CameraRotationProcessor } from "../../Media/Camera/CameraRotationProcessor";
 
 /**
  * 固定版本 SDK 的 DataStream 扩展；官方公共类型未暴露发送方法。
@@ -48,7 +50,10 @@ export class AgoraRtcManager implements RtcManaging {
   private client?: AgoraDataStreamClient;
   private initialization?: Promise<void>;
   private lifecycle = 0;
-  private camera?: ICameraVideoTrack;
+  private camera?: ILocalVideoTrack;
+  private cameraSource?: ICameraVideoTrack;
+  private cameraRotation?: CameraRotationProcessor;
+  private captureVersion = 0;
   private microphone?: IMicrophoneAudioTrack;
   private externalVideo?: ILocalVideoTrack;
   private externalAudio?: ILocalAudioTrack;
@@ -155,8 +160,7 @@ export class AgoraRtcManager implements RtcManaging {
     this.clearRoom();
     this.client = undefined;
     client?.removeAllListeners();
-    this.releaseCameraSender();
-    this.camera?.close();
+    this.releaseCameraCapture();
     this.microphone?.close();
     this.externalVideo?.close();
     this.externalAudio?.close();
@@ -182,17 +186,35 @@ export class AgoraRtcManager implements RtcManaging {
    */
   async startCameraCapture(options: RtcCameraCaptureOptions): Promise<MediaStreamTrack> {
     const client = this.requireClient();
-    if (this.camera || this.externalVideo) {
+    if (this.camera || this.cameraSource || this.externalVideo) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "A local video source is already active");
     }
 
+    const rotation = options.rotation ?? 0;
+    validateCameraRotation(rotation);
+    const version = ++this.captureVersion;
+    let source: ICameraVideoTrack | undefined;
     try {
-      const captureSize = rtcOrientedVideoSize(options);
-      const camera = await this.sdk!.createCameraVideoTrack({
+      const captureSize = rtcOrientedVideoSize(rotation === 90 || rotation === 270
+        ? { width: options.height, height: options.width } : options);
+      source = await this.sdk!.createCameraVideoTrack({
         facingMode: options.position === CameraPosition.front ? "user" : "environment",
         encoderConfig: { width: captureSize.width, height: captureSize.height, frameRate: options.frameRate },
       });
-      if (this.client !== client) { camera.close(); throw this.cancelled(); }
+      if (this.client !== client || version !== this.captureVersion) { source.close(); throw this.cancelled(); }
+      this.cameraSource = source;
+      let camera: ILocalVideoTrack = source;
+      if (rotation !== 0) {
+        const processor = new CameraRotationProcessor({ ...options, rotation,
+          onError: error => this.listener?.onError?.(error),
+        });
+        this.cameraRotation = processor;
+        const output = await processor.setSource(source.getMediaStreamTrack());
+        if (this.client !== client || version !== this.captureVersion) throw this.cancelled();
+        camera = this.sdk!.createCustomVideoTrack({ mediaStreamTrack: output,
+          width: options.width, height: options.height, frameRate: options.frameRate,
+        });
+      }
       this.camera = camera;
       this.cameraTransceiverListener = () => {
         // 初次发布和显式重进房由发布流程负责；这里只处理 SDK 自动重建 sender。
@@ -207,6 +229,7 @@ export class AgoraRtcManager implements RtcManaging {
       camera.on("transceiver-updated", this.cameraTransceiverListener);
       return camera.getMediaStreamTrack();
     } catch (error) {
+      if (version === this.captureVersion) this.releaseCameraCapture();
       throw this.mapError(error, XmaxErrorCode.cameraPermissionDenied);
     }
   }
@@ -215,9 +238,25 @@ export class AgoraRtcManager implements RtcManaging {
    * 切换声网相机设备并返回切换后的原生轨道。
    */
   async switchCameraCapture(to: CameraPosition): Promise<MediaStreamTrack> {
-    const camera = this.requireCamera();
-    await this.run(() => camera.setDevice({ facingMode: to === CameraPosition.front ? "user" : "environment" }));
-    if (this.camera !== camera) throw this.cancelled();
+    const source = this.requireCamera();
+    const camera = this.camera!;
+    // setDevice 可能结束旧原始轨；切换期间保留最后一帧和同一输出轨。
+    this.cameraRotation?.pauseSource();
+    try {
+      await this.run(() => source.setDevice({ facingMode: to === CameraPosition.front ? "user" : "environment" }));
+    } catch (error) {
+      if (this.camera === camera && this.cameraRotation) {
+        await this.cameraRotation.setSource(source.getMediaStreamTrack()).catch(restoreError => {
+          this.listener?.onError?.(XmaxError.from(restoreError));
+        });
+      }
+      throw error;
+    }
+    if (this.camera !== camera || this.cameraSource !== source) throw this.cancelled();
+    if (this.cameraRotation) {
+      await this.cameraRotation.setSource(source.getMediaStreamTrack());
+      if (this.camera !== camera) throw this.cancelled();
+    }
     if (this.videoPublishRequested) await this.restoreCameraSender(camera);
     return camera.getMediaStreamTrack();
   }
@@ -226,10 +265,19 @@ export class AgoraRtcManager implements RtcManaging {
    * 停止采集并释放摄像头。
    */
   async stopCameraCapture(): Promise<void> {
+    this.releaseCameraCapture();
+  }
+
+  private releaseCameraCapture(): void {
+    ++this.captureVersion;
     const camera = this.camera;
     this.releaseCameraSender();
     this.camera = undefined;
     camera?.close();
+    this.cameraRotation?.stop();
+    this.cameraRotation = undefined;
+    if (this.cameraSource !== camera) this.cameraSource?.close();
+    this.cameraSource = undefined;
   }
 
   /**
@@ -237,7 +285,7 @@ export class AgoraRtcManager implements RtcManaging {
    */
   async setExternalMediaTracks(tracks: { videoTrack: MediaStreamTrack; audioTrack?: MediaStreamTrack }): Promise<void> {
     this.requireClient();
-    if (this.camera || this.microphone || this.externalVideo) {
+    if (this.camera || this.cameraSource || this.microphone || this.externalVideo) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Release the current local media before attaching external tracks");
     }
     if (tracks.videoTrack.kind !== "video" || tracks.videoTrack.readyState !== "live" ||
@@ -281,7 +329,7 @@ export class AgoraRtcManager implements RtcManaging {
         };
         ensureActive();
         if (this.videoPublishRequested) {
-          await AgoraVideoSender.apply(camera, { ...config, ...rtcOrientedVideoSize(config) }, ensureActive);
+          await AgoraVideoSender.apply(camera, this.cameraEncodingConfiguration(config), ensureActive);
         }
         // 发布前只有目标配置，sender 在 publish 返回后才可使用。
         this.cameraSenderConfiguration = { ...config };
@@ -311,7 +359,7 @@ export class AgoraRtcManager implements RtcManaging {
   }
 
   /** 发布/重建 sender 后恢复最近成功的目标配置；排队时不捕获过期的参数对象。 */
-  private restoreCameraSender(camera: ICameraVideoTrack): Promise<void> {
+  private restoreCameraSender(camera: ILocalVideoTrack): Promise<void> {
     const client = this.client, version = this.roomVersion;
     return this.queueSenderUpdate(async () => {
       const ensureActive = () => {
@@ -321,8 +369,13 @@ export class AgoraRtcManager implements RtcManaging {
       };
       ensureActive();
       const config = this.cameraSenderConfiguration;
-      if (config) await AgoraVideoSender.apply(camera, { ...config, ...rtcOrientedVideoSize(config) }, ensureActive);
+      if (config) await AgoraVideoSender.apply(camera, this.cameraEncodingConfiguration(config), ensureActive);
     });
+  }
+
+  private cameraEncodingConfiguration(config: VideoEncodingConfiguration): VideoEncodingConfiguration {
+    // Canvas 已经输出目标方向，不能再套用移动端原生采集的宽高转置。
+    return this.cameraRotation ? config : { ...config, ...rtcOrientedVideoSize(config) };
   }
 
   private releaseCameraSender(): void {
@@ -787,8 +840,8 @@ export class AgoraRtcManager implements RtcManaging {
    * 获取已启动的相机采集。
    */
   private requireCamera(): ICameraVideoTrack {
-    if (!this.camera) throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Camera capture is not running");
-    return this.camera;
+    if (!this.cameraSource || !this.camera) throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Camera capture is not running");
+    return this.cameraSource;
   }
 
   /**

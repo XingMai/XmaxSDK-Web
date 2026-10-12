@@ -34,6 +34,7 @@ export { XmaxError, XmaxErrorCode } from "./Foundation/Errors/XmaxError";
 export type { XmaxErrorListener } from "./Foundation/Errors/XmaxError";
 export { XmaxLogger, XmaxLoggerOption } from "./Foundation/Logging/XmaxLogger";
 export { CameraPosition } from "./Foundation/Media/Camera/CameraPosition";
+export type { CameraRotation } from "./Foundation/Media/Camera/CameraRotation";
 export { RtcProvider } from "./Foundation/RTC/RtcProvider";
 export { VideoContentMode } from "./Foundation/Media/Video/VideoContentMode";
 export type {

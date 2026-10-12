@@ -1,4 +1,5 @@
 import type { CameraPosition } from "../Media/Camera/CameraPosition";
+import type { CameraRotation } from "../Media/Camera/CameraRotation";
 import type { RtcEventListener } from "./RtcEventListener";
 import type { RtcRoomJoinConfiguration } from "./RoomJoinConfiguration";
 import type { VideoEncodingConfiguration } from "./VideoEncodingConfiguration";
@@ -26,6 +27,8 @@ export interface RtcCameraCaptureOptions {
    * 首次启动时使用的摄像头位置。
    */
   position: CameraPosition;
+  /** 顺时针校正输入帧；宽高为旋转后的目标尺寸，默认 0。 */
+  rotation?: CameraRotation;
 }
 
 /**

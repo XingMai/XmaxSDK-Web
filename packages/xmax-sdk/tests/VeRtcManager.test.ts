@@ -173,6 +173,12 @@ describe("VeRTC file media", () => {
 });
 
 describe("VeRTC media and protocol", () => {
+  it("rejects nonzero camera rotation instead of silently ignoring it", async () => {
+    const s = setup();
+    await expect(s.manager.startCameraCapture({ width: 1024, height: 1920, frameRate: 30,
+      position: CameraPosition.front, rotation: 90 })).rejects.toThrow("Camera rotation currently requires Agora");
+    expect(s.engine.startVideoCapture).not.toHaveBeenCalled();
+  });
   it("loads once, creates the fixed AppID engine and disables automatic playback", async () => {
     const s = setup(); expect(s.loadSDK).not.toHaveBeenCalled();
     await Promise.all([s.manager.initialize(), s.manager.initialize()]);
