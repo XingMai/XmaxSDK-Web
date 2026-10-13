@@ -331,8 +331,6 @@ export function App() {
         videoFormat: cameraVideoFormat(),
         position: CameraPosition.front,
         useMicrophone,
-        // 临时验证本地旋转；其他 RTC 尚未接入，保持原采集链路。
-        rotation: supportedRtcProviders(model)[0] === RtcProvider.agora ? 90 : 0,
         enableFrameValidation: true
       });
       await attachStateListener(realtime, () => {
