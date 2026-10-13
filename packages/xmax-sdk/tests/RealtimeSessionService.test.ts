@@ -156,11 +156,14 @@ describe("RealtimeSessionService", () => {
     });
   });
 
-  it.each([false, true])("parses Agora credentials with JSON encoding %s and sends the chosen model", async (encoded) => {
+  it.each([
+    [RealtimeModel.x2_0_agora, false], [RealtimeModel.x2_0_agora, true],
+    [RealtimeModel.x2_1_preview_1013, false], [RealtimeModel.x2_1_preview_1013, true],
+  ] as const)("parses Agora credentials for %s with JSON encoding %s and sends the chosen model", async (model, encoded) => {
     const api = new ApiServicingStub();
     api.postResponses = [sessionPayload({ modelExtra: encoded ? JSON.stringify(agoraModelExtra) : agoraModelExtra })];
-    const session = await makeService(api).createSession(RealtimeModel.x2_0_agora);
-    expect(api.requests[0]?.body).toEqual({ model: "x2.0-agora" });
+    const session = await makeService(api).createSession(model);
+    expect(api.requests[0]?.body).toEqual({ model });
     expect(session.userID).toBe("user-001");
     expect(session.connection).toEqual({ provider: "agora", roomID: "000123", appID: "agora-app",
       userID: "rtc-user", botID: "bot-agora", roomToken: "token-v1" });

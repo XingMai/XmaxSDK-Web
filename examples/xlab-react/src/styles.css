@@ -35,8 +35,7 @@ button {
   cursor: pointer;
 }
 
-button:disabled,
-.rtcModelSelect:disabled {
+button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
 }
@@ -113,7 +112,7 @@ button:disabled,
 }
 
 .keyButton,
-.rtcModelSelect {
+.rtcModelLabel {
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -136,36 +135,18 @@ button:disabled,
     box-shadow 0.15s ease;
 }
 
-.rtcModelPicker {
-  position: relative;
-  display: inline-flex;
+.rtcModelLabel {
   flex-shrink: 0;
-}
-
-.rtcModelSelect {
-  appearance: none;
-  field-sizing: content;
   width: auto;
-  padding: 0 30px 0 18px;
+  padding: 0 18px;
   font: inherit;
   font-size: 12px;
   color: var(--text);
-  cursor: pointer;
-  outline: none;
+  white-space: nowrap;
 }
 
-.rtcModelSelect:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
-}
-
-.rtcModelPicker > svg {
-  position: absolute;
-  right: 14px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--text-secondary);
-  pointer-events: none;
+.rtcModelLabelText {
+  transform: translateX(-1px);
 }
 
 .keyButton.filled {
@@ -189,8 +170,7 @@ button:disabled,
   border: 1.5px solid #fff;
 }
 
-.keyButton:not(:disabled):hover,
-.rtcModelSelect:not(:disabled):hover {
+.keyButton:not(:disabled):hover {
   border-color: #c9ced6;
   box-shadow:
     0 2px 4px rgba(16, 24, 40, 0.1),

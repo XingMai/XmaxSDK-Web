@@ -1,4 +1,4 @@
-import type { RealtimeModel } from "../../Service/Realtime/RealtimeModel";
+import { RealtimeModel } from "../../Service/Realtime/RealtimeModel";
 import { RtcProvider } from "../../Foundation/RTC/RtcProvider";
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 
@@ -18,7 +18,7 @@ export interface FrameInterpolationConfiguration {
 
 export interface RealtimeConfigurationInit {
   /**
-   * RTC 提供方，默认 TRTC；不根据模型名称自动推断。
+   * RTC 提供方；x2.1-preview-1013 固定使用 Agora，旧模型保留默认 TRTC。
    */
   provider?: RtcProvider;
   /**
@@ -69,14 +69,17 @@ export class RealtimeConfiguration {
    * 创建实时业务配置。
    *
    * @param init.model 实时生成业务使用的模型。
-   * @param init.provider RTC 提供方，默认 TRTC；创建后不可切换。
+   * @param init.provider RTC 提供方；x2.1-preview-1013 固定 Agora，旧模型默认 TRTC，创建后不可切换。
    * @param init.isFrameInterpolationEnabled 是否默认开启远端生成画面的插帧。
    * @param init.frameInterpolation 插帧开关和显示帧率上限的详细配置。
    */
   constructor(init: RealtimeConfigurationInit) {
-    this.provider = init.provider ?? RtcProvider.trtc;
+    this.provider = init.provider ?? (init.model === RealtimeModel.x2_1_preview_1013 ? RtcProvider.agora : RtcProvider.trtc);
     if (!Object.values(RtcProvider).includes(this.provider)) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Unsupported RTC provider");
+    }
+    if (init.model === RealtimeModel.x2_1_preview_1013 && this.provider !== RtcProvider.agora) {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "x2.1-preview-1013 requires Agora");
     }
     this.model = init.model;
 

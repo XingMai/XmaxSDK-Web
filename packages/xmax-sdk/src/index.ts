@@ -43,6 +43,7 @@ export type { RealtimeContextInit } from "./Service/Realtime/RealtimeContext";
 export { RealtimeMediaStream } from "./Service/Realtime/RealtimeMediaStream";
 export {
   RealtimeModel,
+  modelDisplayName,
   defaultCameraVideoFormat,
   defaultFrameRate,
 } from "./Service/Realtime/RealtimeModel";

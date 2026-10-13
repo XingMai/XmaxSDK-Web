@@ -4,6 +4,7 @@ import {
   RealtimeConnectionState,
   RealtimeContext,
   RealtimeModel,
+  modelDisplayName,
   RtcProvider,
   RealtimeVideoFormat,
   XmaxClient,
@@ -66,7 +67,7 @@ export function App() {
   const [apiKey, setApiKey] = useState(
     () => localStorage.getItem(API_KEY_STORAGE) ?? "",
   );
-  const [model, setModel] = useState<RealtimeModel>(RealtimeModel.x2_0_agora);
+  const model = RealtimeModel.x2_1_preview_1013;
   const [wechatOpen, setWechatOpen] = useState(false);
   const [keyEditorOpen, setKeyEditorOpen] = useState(false);
   const [useMicrophone, setUseMicrophone] = useState(true);
@@ -342,7 +343,7 @@ export function App() {
     setBusy(true);
     setErrorText("");
     const realtime = client.createRealtimeManager(
-      new RealtimeConfiguration({ model, provider: model === RealtimeModel.x2_0_agora ? RtcProvider.agora : RtcProvider.trtc }),
+      new RealtimeConfiguration({ model, provider: RtcProvider.agora }),
     );
     realtimeRef.current = realtime;
     // 会话建立成功后是否已切换到生成页面。
@@ -626,17 +627,9 @@ export function App() {
             <img className="brandLogo" src="/xmax-wordmark.png" alt="Xmax" />
           </div>
           <div className="topbarRight">
-            <div className="rtcModelPicker">
-              <select className="rtcModelSelect" aria-label="Model" value={model} disabled={busy}
-                onChange={(event) => setModel(event.target.value as RealtimeModel)}>
-                <option value={RealtimeModel.x2_0_trtc}>X2.0 · TRTC</option>
-                <option value={RealtimeModel.x2_0_agora}>X2.0 · Agora</option>
-              </select>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="m6 9 6 6 6-6" />
-              </svg>
-            </div>
+            <span className="rtcModelLabel" aria-label="当前模型">
+              <span className="rtcModelLabelText">{modelDisplayName(model)}</span>
+            </span>
             <div className="keyEntry" ref={keyFieldRef}>
               <button
                 type="button"
@@ -831,9 +824,7 @@ export function App() {
               { label: "播放缓冲延迟", value: formatVideoMetric(remoteVideoStatistics?.jitterBufferDelayMs, "ms") },
               { label: "下行丢包率", value: formatVideoMetric(remoteVideoStatistics?.downlinkLossPercent, "%") },
               { label: "下行网络质量", value: formatNetworkQuality(networkStatistics?.downlinkQuality), title: "本端所有下行连接的平均网络质量" },
-              model === RealtimeModel.x2_0_agora
-                ? { label: "RTT（云端）", value: formatVideoMetric(remoteVideoStatistics?.rttMs, "ms"), title: "本端 SDK 到 RTC 云端的往返延迟" }
-                : { label: "下行 RTT", value: formatVideoMetric(networkStatistics?.downlinkRttMs, "ms"), title: "本端所有下行连接到 RTC 云端的平均往返延迟，不是单程耗时" },
+              { label: "RTT（云端）", value: formatVideoMetric(remoteVideoStatistics?.rttMs, "ms"), title: "本端 SDK 到 RTC 云端的往返延迟" },
               { label: "E2E（RTC 估算）", value: formatVideoMetric(remoteVideoStatistics?.endToEndDelayMs, "ms") },
             ]} />
           </div>
