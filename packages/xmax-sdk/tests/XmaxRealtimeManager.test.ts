@@ -9,7 +9,7 @@ import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import { CameraPosition } from "../src/Foundation/Media/Camera/CameraPosition";
 import type { CameraControlling, CameraPreviewReadyHandler } from "../src/Media/Camera/CameraControlling";
 import { RealtimeConfiguration } from "../src/Core/Realtime/RealtimeConfiguration";
-import { RealtimeModel } from "../src/Service/Realtime/RealtimeModel";
+import { RealtimeModel, type RealtimeModelName } from "../src/Service/Realtime/RealtimeModel";
 import { XmaxRealtimeManager } from "../src/Core/Realtime/XmaxRealtimeManager";
 import { RealtimeContext } from "../src/Service/Realtime/RealtimeContext";
 import { RealtimeMediaStream } from "../src/Service/Realtime/RealtimeMediaStream";
@@ -287,7 +287,7 @@ class RealtimeSessionServicingStub implements RealtimeSessionServicing {
 }
 
 /** 组装 Manager 与各层桩。 */
-function makeManager(supportsFrameInterpolation?: () => Promise<boolean>, interpolationEnabled = false, model = RealtimeModel.x2_0_trtc) {
+function makeManager(supportsFrameInterpolation?: () => Promise<boolean>, interpolationEnabled = false, model: RealtimeModelName = RealtimeModel.x2_0_trtc) {
   const camera = new CameraControllingStub();
   const stream = new StreamControllingStub();
   const session = new RealtimeSessionServicingStub();
@@ -329,11 +329,11 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     return storage;
   }
 
-  function setup(fps = 30, model = RealtimeModel.x2_1_preview, interpolation = false) {
+  function setup(fps = 30, model: RealtimeModelName = "x2.0-pro", interpolation = false) {
     const s = makeManager(async () => true, interpolation, model);
-    if (model === RealtimeModel.x2_1_preview) {
+    if (model === "x2.0-pro" || model === RealtimeModel.x2_1_preview) {
       vi.spyOn(s.session, "createSession").mockResolvedValue(new RealtimeSession({
-        id: "adaptive-session", connection: { provider: RtcProvider.agora, roomID: "room", appID: "app",
+        id: "adaptive-session", connection: { provider: model === RealtimeModel.x2_1_preview ? RtcProvider.vertc : RtcProvider.agora, roomID: "room", appID: "app",
           userID: "user", roomToken: "token", botID: "bot" },
       }));
     }
@@ -367,7 +367,7 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     await first.samples(5, 3);
     await first.manager.adjustDownlinkQuality("downgrade");
     await first.manager.adjustDownlinkQuality("downgrade");
-    const history = new QualityHistory(RealtimeModel.x2_1_preview);
+    const history = new QualityHistory("x2.0-pro");
     expect(history.read("uplink")).toBe(3);
     expect(history.read("downlink")).toBe(4);
     await first.manager.close();
@@ -387,7 +387,7 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     await s.samples(5, 3);
     s.stream.updateDownlinkVideoResolution.mockRejectedValueOnce(new Error("failed"));
     await expect(s.manager.adjustDownlinkQuality("downgrade")).rejects.toThrow("failed");
-    const history = new QualityHistory(RealtimeModel.x2_1_preview);
+    const history = new QualityHistory("x2.0-pro");
     expect(history.read("uplink")).toBe(2);
     expect(history.read("downlink")).toBe(2);
     await s.manager.close();
@@ -544,8 +544,8 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     await s.manager.close();
   });
 
-  it("does not apply the Agora policy to TRTC", async () => {
-    const s = setup(30, RealtimeModel.x2_0_trtc);
+  it.each([RealtimeModel.x2_0_trtc, RealtimeModel.x2_1_preview])("does not apply the Agora policy to %s", async (model) => {
+    const s = setup(30, model);
     await s.start();
     const apply = vi.spyOn(s.stream, "updateUplinkVideoFormat");
     for (let i = 0; i < 5; i++) await s.sample(5, 5);
@@ -773,7 +773,7 @@ describe("XmaxRealtimeManager adaptive quality", () => {
   });
 
   it("updates interpolation dimensions and retains the target when toggled, without treating it as observed statistics", async () => {
-    const s = setup(30, RealtimeModel.x2_1_preview, true); const remote = await s.start();
+    const s = setup(30, "x2.0-pro", true); const remote = await s.start();
     let rendering: RemoteFrameInterpolationOptions | undefined;
     const view = { isMirrored: false, setMediaStream: vi.fn(),
       setFrameInterpolation: (options?: RemoteFrameInterpolationOptions) => { rendering = options; } };
@@ -887,7 +887,7 @@ describe("XmaxRealtimeManager local video", () => {
     const start = vi.spyOn(LocalVideoController.prototype, "start").mockResolvedValue();
     const pause = vi.spyOn(LocalVideoController.prototype, "pause").mockImplementation(() => {});
     const stop = vi.spyOn(LocalVideoController.prototype, "stop").mockImplementation(async () => { active = false; });
-    const model = { [RtcProvider.trtc]: RealtimeModel.x2_0_trtc, [RtcProvider.agora]: RealtimeModel.x2_1_preview, [RtcProvider.vertc]: RealtimeModel.x2_0 }[provider];
+    const model = { [RtcProvider.trtc]: RealtimeModel.x2_0_trtc, [RtcProvider.agora]: "x2.0-pro", [RtcProvider.vertc]: RealtimeModel.x2_0 }[provider];
     const s = makeManager(undefined, false, model);
     if (provider !== RtcProvider.trtc) {
       vi.spyOn(s.session, "createSession").mockResolvedValue(new RealtimeSession({

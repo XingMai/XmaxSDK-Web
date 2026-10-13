@@ -34,7 +34,7 @@ afterEach(() => {
 
 describe("NonRealtime task API", () => {
   it.each([
-    [XmaxEnvironment.china, "https://api.xmaxai.com"],
+    [XmaxEnvironment.china, "https://dev.xmaxai.com"],
     [XmaxEnvironment.global, "https://api.xmax.ai"],
   ])("creates a manager without requests and uses the %s endpoint and client key", async (environment, origin) => {
     const fetch = vi.fn().mockResolvedValue(response(submitted));

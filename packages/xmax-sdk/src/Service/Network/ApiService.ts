@@ -138,6 +138,11 @@ export class ApiService implements ApiServicing {
       options?.signal?.removeEventListener("abort", abortCaller);
     }
 
+    // 临时排查 session：按需打印完整原始响应（含 modelExtra），在解包和校验前保留所有字段。
+    if (method === ApiMethod.post && path === "/session") {
+      console.info("[Xmax][Session] POST /session response · HTTP %s\n%s", status, text);
+    }
+
     try {
       const value = ApiService.parseResponse<T>(text, status);
       XmaxLogger.api.debug(

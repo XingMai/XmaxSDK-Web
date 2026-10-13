@@ -13,7 +13,7 @@ describe("RTC provider selection", () => {
   const supported = [
     [RealtimeModel.x2_0, RtcProvider.vertc],
     [RealtimeModel.x2_0_trtc, RtcProvider.trtc],
-    [RealtimeModel.x2_1_preview, RtcProvider.agora],
+    [RealtimeModel.x2_1_preview, RtcProvider.vertc],
   ] as const;
 
   it.each(supported)("defines %s support and default as %s", (model, provider) => {
@@ -31,7 +31,7 @@ describe("RTC provider selection", () => {
     }
   });
 
-  it.each(["future-model", "toString", "__proto__", "constructor"])("accepts custom model %s with preview defaults and explicit provider overrides", (model) => {
+  it.each(["x2.0-pro", "future-model", "toString", "__proto__", "constructor"])("accepts custom model %s with Agora defaults and explicit provider overrides", (model) => {
     const configuration = new RealtimeConfiguration({ model });
     expect(configuration.model).toBe(model);
     expect(configuration.provider).toBe(RtcProvider.agora);

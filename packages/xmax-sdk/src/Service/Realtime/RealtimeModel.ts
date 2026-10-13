@@ -32,14 +32,14 @@ function modelDefaults(model: RealtimeModelName): RealtimeModel {
 const MODEL_DISPLAY_NAMES: Readonly<Record<RealtimeModel, string>> = {
   [RealtimeModel.x2_0]: "X2.0",
   [RealtimeModel.x2_0_trtc]: "X2.1-preview-trtc",
-  [RealtimeModel.x2_1_preview]: "X2.1-preview-agora",
+  [RealtimeModel.x2_1_preview]: "X2.1-preview-vertc",
 };
 
 /**
  * 模型专用的会话 API 地址；未配置的模型沿用客户端环境地址。
  */
 const MODEL_BASE_URLS: Readonly<Partial<Record<RealtimeModel, string>>> = {
-  [RealtimeModel.x2_1_preview]: "https://cloud.xmax.22duck.cn/open/api/v1",
+  [RealtimeModel.x2_1_preview]: "https://dev.xmaxai.com/open/api/v1",
 };
 
 /**
@@ -141,12 +141,12 @@ export function defaultCameraVideoFormat(model: RealtimeModelName): RealtimeVide
 const MODEL_RTC_PROVIDERS: Readonly<Record<RealtimeModel, readonly RtcProvider[]>> = {
   [RealtimeModel.x2_0]: Object.freeze([RtcProvider.vertc]),
   [RealtimeModel.x2_0_trtc]: Object.freeze([RtcProvider.trtc]),
-  [RealtimeModel.x2_1_preview]: Object.freeze([RtcProvider.agora]),
+  [RealtimeModel.x2_1_preview]: Object.freeze([RtcProvider.vertc]),
 };
 
 /**
  * 查询 SDK 允许配置的 RTC 提供方，第一项为默认值。
- * 未知模型默认沿用 x2.1-preview 的 Agora，也允许显式选择其他已接入的 RTC；
+ * 未知模型默认使用 Agora，也允许显式选择其他已接入的 RTC；
  * 是否被该模型的服务端支持，由服务端决定。
  */
 export function supportedRtcProviders(model: RealtimeModelName): readonly RtcProvider[] {
@@ -154,7 +154,6 @@ export function supportedRtcProviders(model: RealtimeModelName): readonly RtcPro
 }
 
 const CUSTOM_MODEL_RTC_PROVIDERS: readonly RtcProvider[] = Object.freeze([
-  ...MODEL_RTC_PROVIDERS[RealtimeModel.x2_1_preview],
-  ...Object.values(RtcProvider).filter((provider) =>
-    !MODEL_RTC_PROVIDERS[RealtimeModel.x2_1_preview].includes(provider)),
+  RtcProvider.agora,
+  ...Object.values(RtcProvider).filter((provider) => provider !== RtcProvider.agora),
 ]);
