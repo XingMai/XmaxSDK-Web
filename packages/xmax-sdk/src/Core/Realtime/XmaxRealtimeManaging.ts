@@ -157,6 +157,19 @@ export interface XmaxRealtimeManaging {
   }): Promise<RealtimeMediaStream>;
 
   /**
+   * 接收用户自行采集或处理的实时视频轨，仅视频，不采集或发送音频。
+   * 不要求绑定 SDK 预览；旋转、裁剪及本地预览由调用方负责，后端 mirror 固定 false。
+   * videoFormat 指期望的上传及生成规格，须符合模型规则；不代表修改输入像素。
+   * SDK 持有轨道副本：disconnect 保留输入，close 释放副本，不停止调用方原始轨道。
+   * 副本共享底层媒体源；调用方仍负责停止原始采集。设备源结束时 SDK 上报错误并关闭。
+   * @throws 非 live 视频轨、不支持的格式、已有活动媒体源或 RTC 初始化失败时抛错。
+   */
+  createExternalVideoStream(options: {
+    videoTrack: MediaStreamTrack;
+    videoFormat: RealtimeVideoFormat;
+  }): Promise<RealtimeMediaStream>;
+
+  /**
    * 更新当前本地流的上行视频格式，立即应用于 RTC 编码器，不重连或重启生成。
    * 传入完整格式；未指定的码率和编码偏好按 RealtimeVideoFormat 默认规则解析。
    * 成功后更新本地轨道的 videoFormat，后续重连继续使用该格式。
@@ -165,7 +178,7 @@ export interface XmaxRealtimeManaging {
    * Agora 上行自适应以本次成功应用的完整格式作为新的 L1 基准，后续五档按比例调整尺寸和帧率。
    *
    * @param videoFormat 本次完整的上行尺寸、帧率和编码配置。
-   * @throws 无本地相机或文件视频流、其他操作进行中、参数无效或 RTC 更新失败时抛错。
+   * @throws 无本地相机、外部或文件视频流、其他操作进行中、参数无效或 RTC 更新失败时抛错。
    */
   updateUplinkVideoFormat(videoFormat: RealtimeVideoFormat): Promise<void>;
 
@@ -199,7 +212,7 @@ export interface XmaxRealtimeManaging {
    * 启用帧检测时，发布前并行等待相机预热（固定 200ms），避免把黑帧推给 RTC。
    * 返回的远端媒体流在生成开始后承载远端生成画面。
    *
-   * @param localStream 由当前 Manager 创建的摄像头、本地文件或网络视频源。
+   * @param localStream 由当前 Manager 创建的摄像头、外部视频轨、本地文件或网络视频源。
    * @returns 远端生成结果占位的媒体流。
    * @throws 本地流不属于当前 Manager、已有活动连接、会话创建或进房
    * 发布失败时抛出错误；失败时自动释放连接资源并恢复本地预览。

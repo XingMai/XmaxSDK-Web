@@ -864,6 +864,119 @@ describe("XmaxRealtimeManager adaptive quality", () => {
   });
 });
 
+describe("XmaxRealtimeManager external video", () => {
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+  const videoFormat = new RealtimeVideoFormat({ width: 1024, height: 1920, fps: 30 });
+
+  function setup(model = RealtimeModel.x2_0_trtc) {
+    const s = makeManager(undefined, false, model);
+    const clone = Object.assign(new EventTarget(), { kind: "video", readyState: "live", stop: vi.fn() });
+    const source = { kind: "video", readyState: "live", clone: vi.fn(() => clone), stop: vi.fn() };
+    const options = { videoTrack: source as unknown as MediaStreamTrack, videoFormat };
+    return { ...s, source, clone, options };
+  }
+
+  it.each([RealtimeModel.x2_0_trtc, RealtimeModel.x2_1_preview, RealtimeModel.x2_0])("publishes video only without preview and preserves caller ownership for %s", async model => {
+    const s = setup(model);
+    vi.stubGlobal("localStorage", { getItem: () => null, setItem: vi.fn() });
+    const provider = s.manager.options.provider;
+    if (provider !== RtcProvider.trtc) {
+      vi.spyOn(s.session, "createSession").mockResolvedValue(new RealtimeSession({
+        id: "external-session", connection: { provider, roomID: "room", appID: "app", userID: "user", roomToken: "token", botID: "bot" },
+      }));
+    }
+    const local = await s.manager.createExternalVideoStream(s.options);
+    expect(s.rtc.setExternalMediaTracks).toHaveBeenCalledWith({ videoTrack: s.clone });
+    expect(s.manager.currentState.connectionState).toBe(RealtimeConnectionState.ready);
+    expect(s.camera.currentTrack).toBeUndefined();
+    await s.manager.connect(local);
+    expect(s.stream.connectCalls[0]).toMatchObject({ includeLocalAudio: false, publishLocalMedia: true });
+    expect(s.camera.waitForValidCameraFrame).not.toHaveBeenCalled();
+    expect(s.stream.encoderConfigFormats[0]).toEqual(provider === RtcProvider.agora
+      ? new RealtimeVideoFormat({ ...videoFormat, width: 768, height: 1440, fps: 24 })
+      : model === RealtimeModel.x2_0 ? videoFormat.resized(800, 1536) : videoFormat);
+    const generating = s.manager.startGeneration({ localStream: local, context: testContext });
+    await vi.waitFor(() => expect(s.stream.beginCalls).toHaveLength(1));
+    expect(s.stream.beginCalls[0]!.mirror).toBe(false);
+    s.stream.confirmationDeferreds[0]!.resolve();
+    await generating;
+    await expect(s.manager.switchCamera()).rejects.toThrow("managed by the caller");
+    await s.manager.stopLocalCameraStream();
+    expect(s.camera.stopCalls).toBe(0);
+    const format = new RealtimeVideoFormat({ width: 512, height: 960, fps: 20 });
+    await s.manager.updateUplinkVideoFormat(format);
+    expect(local.videoTrack?.videoFormat).toEqual(format);
+    await s.manager.updateUplinkFrameRate(16);
+    expect(local.videoTrack?.videoFormat?.fps).toBe(16);
+    await s.manager.disconnect();
+    expect(s.clone.stop).not.toHaveBeenCalled();
+    expect(s.manager.currentState.connectionState).toBe(RealtimeConnectionState.ready);
+    await s.manager.connect(local);
+    expect(s.stream.connectCalls[1]).toMatchObject({ includeLocalAudio: false, publishLocalMedia: true });
+    await s.manager.close();
+    expect(s.clone.stop).toHaveBeenCalledOnce();
+    expect(s.source.stop).not.toHaveBeenCalled();
+    expect(s.rtc.destroy).toHaveBeenCalledOnce();
+    expect(s.manager.currentState.connectionState).toBe(RealtimeConnectionState.idle);
+    await expect(s.manager.connect(local)).rejects.toThrow("must be created and started");
+  });
+
+  it("rejects conflicting sources without touching the current input", async () => {
+    const s = setup();
+    await s.manager.createExternalVideoStream(s.options);
+    await expect(s.manager.createExternalVideoStream(s.options)).rejects.toThrow("Close the current local stream");
+    await expect(s.manager.createLocalCameraStream({ videoFormat, position: CameraPosition.front, useMicrophone: false })).rejects.toThrow("Close the current local stream");
+    expect(s.clone.stop).not.toHaveBeenCalled();
+    await s.manager.close();
+  });
+
+  it("rejects unsupported adapters before cloning", async () => {
+    const s = setup();
+    Object.assign(s.rtc, { setExternalMediaTracks: undefined });
+    await expect(s.manager.createExternalVideoStream(s.options)).rejects.toThrow("does not support external video");
+    expect(s.source.clone).not.toHaveBeenCalled();
+    expect(s.rtc.initialize).not.toHaveBeenCalled();
+  });
+
+  it.each(["initialize", "setExternalMediaTracks"] as const)("cleans up only owned resources when %s fails and allows retry", async method => {
+    const s = setup();
+    s.rtc[method].mockRejectedValueOnce(new Error("external setup failed"));
+    await expect(s.manager.createExternalVideoStream(s.options)).rejects.toThrow("external setup failed");
+    expect(s.clone.stop).toHaveBeenCalledOnce();
+    expect(s.source.stop).not.toHaveBeenCalled();
+    expect(s.rtc.destroy).toHaveBeenCalledOnce();
+    await s.manager.createExternalVideoStream(s.options);
+    await s.manager.close();
+  });
+
+  it("cancels in-flight initialization without publishing or stopping the caller's track", async () => {
+    const s = setup();
+    const deferred = makeDeferred<void>();
+    s.rtc.initialize.mockReturnValueOnce(deferred.promise);
+    const creating = s.manager.createExternalVideoStream(s.options);
+    const rejected = expect(creating).rejects.toThrow();
+    await vi.waitFor(() => expect(s.rtc.initialize).toHaveBeenCalledOnce());
+    const closing = s.manager.close();
+    deferred.resolve();
+    await Promise.all([rejected, closing]);
+    expect(s.rtc.setExternalMediaTracks).not.toHaveBeenCalled();
+    expect(s.clone.stop).toHaveBeenCalledOnce();
+    expect(s.source.stop).not.toHaveBeenCalled();
+  });
+
+  it("closes the session and releases owned tracks when the source ends", async () => {
+    const s = setup();
+    const local = await s.manager.createExternalVideoStream(s.options);
+    await s.manager.connect(local);
+    s.clone.dispatchEvent(new Event("ended"));
+    await vi.waitFor(() => expect(s.rtc.destroy).toHaveBeenCalledOnce());
+    expect(s.clone.stop).toHaveBeenCalledOnce();
+    expect(s.source.stop).not.toHaveBeenCalled();
+    expect(s.session.closedSessionIDs).toHaveLength(1);
+    await s.manager.close();
+  });
+});
+
 describe("XmaxRealtimeManager local video", () => {
   afterEach(() => vi.restoreAllMocks());
   const options = {
