@@ -611,6 +611,7 @@ export function App() {
               <select className="rtcModelSelect" aria-label="Model" value={model} disabled={busy}
                 onChange={(event) => setModel(event.target.value as RealtimeModel)}>
                 {[
+                  RealtimeModel.x2_0,
                   RealtimeModel.x2_0_trtc,
                   RealtimeModel.x2_1_preview,
                   RealtimeModel.x2_1_preview_1014,
