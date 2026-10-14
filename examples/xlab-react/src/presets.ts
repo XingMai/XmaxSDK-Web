@@ -15,6 +15,14 @@ export interface StylePreset {
 
 export type ExampleModeKey = "charx" | "clothx" | "vibex" | "free";
 
+/**
+ * 换装保留原始人脸，其余模式关闭回贴。
+ * @param mode 当前提交生成的模式，不依赖异步上传完成时的页面页签。
+ */
+export function faceRestorationForMode(mode: ExampleModeKey): boolean {
+  return mode === "clothx";
+}
+
 export interface ExampleMode {
   /** 模式标识。 */
   key: ExampleModeKey;

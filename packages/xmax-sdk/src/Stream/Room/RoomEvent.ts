@@ -16,6 +16,9 @@ export interface RoomEventTargetSize {
  * 生成条件类信令的公共参数。
  */
 export interface RoomEventGenerationOptions {
+  /** 是否回贴原始人脸，默认 false。 */
+  faceRestoration?: boolean;
+
   /**
    * 业务用户标识。
    */
@@ -52,13 +55,12 @@ export class RoomEvent {
   /**
    * 生成开始信令。
    */
-  static start(options: RoomEventGenerationOptions & { mirror?: boolean; faceRestoration?: boolean }): string {
+  static start(options: RoomEventGenerationOptions & { mirror?: boolean }): string {
     return RoomEvent.encode({
       event: "start",
       params: {
         ...RoomEvent.generationParameters(options),
         mirror: options.mirror ?? false,
-        face_replace: options.faceRestoration ?? false,
         ...(options.context.referenceVideo && {
           ref_video_path: options.context.referenceVideo.path,
           sample_method: options.context.referenceVideo.sampleMethod,
@@ -152,6 +154,7 @@ export class RoomEvent {
   ): Record<string, unknown> {
     return {
       model: "default",
+      face_replace: options.faceRestoration ?? false,
       size: [options.videoFormat.width, options.videoFormat.height],
       target_size: options.targetSize
         ? [

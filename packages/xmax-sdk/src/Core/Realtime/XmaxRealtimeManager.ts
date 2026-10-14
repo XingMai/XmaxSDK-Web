@@ -948,7 +948,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    *
    * @param options.localStream 由当前 Manager 创建的摄像头、外部视频轨、本地文件或网络视频源。
    * @param options.context 本次生成使用的条件上下文；缺省时复用缓存。
-   * @param options.faceRestoration 是否启用原始人脸回贴，默认 false；仅作用于新任务的 start 信令。
+   * @param options.faceRestoration 是否启用原始人脸回贴，默认 false；正在生成时通过 change_condition 更新。
    * @returns 承载远端生成画面的媒体流。
    * @throws 本地流不属于当前 Manager、缺少可用的条件上下文、信令发送
    * 或生成确认失败时抛出错误；失败时自动停止生成任务并释放连接资源。
@@ -981,6 +981,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         if (currentState.connectionState === RealtimeConnectionState.generating) {
           await this.generationManager.update(currentState.taskID, {
             videoFormat,
+            faceRestoration: options.faceRestoration ?? false,
             targetSize: this.downlinkQualityController ? this.downlinkQualityState?.size : undefined,
             context: options.context,
           });

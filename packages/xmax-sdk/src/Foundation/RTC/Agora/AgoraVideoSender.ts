@@ -1,6 +1,5 @@
 import type { ILocalVideoTrack } from "agora-rtc-sdk-ng";
 import { XmaxError, XmaxErrorCode } from "../../Errors/XmaxError";
-import { XmaxLogger, XmaxLoggerOption } from "../../Logging/XmaxLogger";
 import { RtcVideoEncoderPreference, type VideoEncodingConfiguration } from "../VideoEncodingConfiguration";
 
 /** 实验性摄像头发送配置：不修改采集约束，不调用 Agora 的编码配置接口。 */
@@ -48,13 +47,5 @@ export class AgoraVideoSender {
       }
       throw new XmaxError(XmaxErrorCode.rtcError, "Browser did not retain WebRTC video sender parameters");
     }
-    XmaxLogger.rtc.info(() => `Agora 发送参数实验 (Agora Sender Parameters)\n${JSON.stringify({
-      capture: { width: capture.width, height: capture.height, frameRate: capture.frameRate },
-      target: { width: config.width, height: config.height, frameRate: config.frameRate },
-      scaleResolutionDownBy: actual.scaleResolutionDownBy,
-      maxFramerate: actual.maxFramerate,
-      maxBitrateKbps: actual.maxBitrate! / 1000,
-      minimumBitrateApplied: false,
-    }, null, 2)}`, XmaxLoggerOption.performance);
   }
 }

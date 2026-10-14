@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   RealtimeModel, defaultCameraVideoFormat, defaultFrameRate, inputSizeAlignment,
   maximumInputPixels, minimumInputPixels, modelBaseURL, modelDisplayName, resolutionBuckets,
+  supportedRtcProviders,
 } from "../src/Service/Realtime/RealtimeModel";
 import { MediaService } from "../src/Service/Media/MediaService";
 import { XmaxClient } from "../src/Core/XmaxClient";
 import { XmaxConfiguration } from "../src/Core/XmaxConfiguration";
 import { RealtimeConfiguration } from "../src/Core/Realtime/RealtimeConfiguration";
+import { RtcProvider } from "../src/Foundation/RTC/RtcProvider";
 
 describe("custom realtime models", () => {
   it.each(["future-model", "toString", "__proto__", "constructor"])("uses preview defaults without replacing the identifier %s", (model) => {
@@ -37,9 +39,27 @@ describe("custom realtime models", () => {
     expect(modelDisplayName(RealtimeModel.x2_0_trtc)).toBe("X2.1-preview-trtc");
     expect(modelBaseURL(RealtimeModel.x2_0_trtc)).toBeUndefined();
     expect(modelDisplayName(RealtimeModel.x2_1_preview)).toBe("X2.1-preview-agora");
-    expect(Object.values(RealtimeModel)).toEqual(["x2.0", "x2.0-trtc", "x2.1-preview"]);
+    expect(Object.values(RealtimeModel)).toEqual(["x2.0", "x2.0-trtc", "x2.1-preview", "x2.1-preview-1014"]);
     expect(modelBaseURL(RealtimeModel.x2_0)).toBeUndefined();
     expect(resolutionBuckets(RealtimeModel.x2_0)).toEqual([]);
     expect(maximumInputPixels(RealtimeModel.x2_0)).toBe(1280000);
+  });
+});
+
+describe("x2.1-preview-1014", () => {
+  it("uses preview media defaults and Agora on dev without changing the model identifier", () => {
+    const model = RealtimeModel.x2_1_preview_1014;
+    const preview = RealtimeModel.x2_1_preview;
+    expect(model).toBe("x2.1-preview-1014");
+    expect(modelDisplayName(model)).toBe("X2.1-preview-1014");
+    expect(modelBaseURL(model)).toBe("https://dev.xmaxai.com/open/api/v1");
+    expect(supportedRtcProviders(model)).toEqual([RtcProvider.agora]);
+    expect(new RealtimeConfiguration({ model })).toMatchObject({ model, provider: RtcProvider.agora });
+    expect(resolutionBuckets(model)).toEqual(resolutionBuckets(preview));
+    expect(defaultCameraVideoFormat(model)).toEqual(defaultCameraVideoFormat(preview));
+    expect(defaultFrameRate(model)).toBe(defaultFrameRate(preview));
+    expect(maximumInputPixels(model)).toBe(maximumInputPixels(preview));
+    expect(minimumInputPixels(model)).toBe(minimumInputPixels(preview));
+    expect(inputSizeAlignment(model)).toBe(inputSizeAlignment(preview));
   });
 });

@@ -193,9 +193,15 @@ export class RoomController implements RoomControlling {
   /**
    * 发送生成条件变更信令。
    *
+   * @param options.faceRestoration 是否回贴原始人脸，默认 false。
+   * @param options.taskID 当前生成任务标识。
+   * @param options.videoFormat 模型生成使用的视频规格。
+   * @param options.targetSize 服务端生成后的回传尺寸。
+   * @param options.context 本次生成条件。
    * @throws 房间未就绪或信令发送失败时抛出错误。
    */
   changeGenerationCondition(options: {
+    faceRestoration?: boolean;
     taskID: string;
     videoFormat: RealtimeVideoFormat;
     targetSize?: RoomEventTargetSize;
@@ -203,6 +209,7 @@ export class RoomController implements RoomControlling {
   }): Promise<void> {
     return this.send(
       RoomEvent.changeCondition({
+        faceRestoration: options.faceRestoration ?? false,
         userID: this.requireUserID(),
         taskID: options.taskID,
         videoFormat: options.videoFormat,

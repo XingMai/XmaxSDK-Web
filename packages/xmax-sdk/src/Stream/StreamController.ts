@@ -439,6 +439,7 @@ export class StreamController implements StreamControlling {
     try {
       await this.roomController.changeGenerationCondition({
         taskID: options.taskID,
+        faceRestoration: options.faceRestoration ?? false,
         videoFormat: options.videoFormat,
         targetSize: options.targetSize,
         context: options.context,

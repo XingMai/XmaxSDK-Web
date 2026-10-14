@@ -72,7 +72,7 @@ describe("XmaxRealtimeGenerationManager", () => {
     await manager.update(taskID, { videoFormat, context: updated });
     expect(manager.validateContext()).toBe(updated);
     expect(stream.beginGeneration).toHaveBeenCalledOnce();
-    expect(stream.updateGeneration).toHaveBeenCalledWith({ taskID, videoFormat, context: updated });
+    expect(stream.updateGeneration).toHaveBeenCalledWith({ taskID, videoFormat, context: updated, faceRestoration: false });
     await manager.reset();
     await manager.reset();
     expect(stream.stopGeneration).toHaveBeenCalledOnce();

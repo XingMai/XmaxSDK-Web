@@ -2121,7 +2121,7 @@ describe("XmaxRealtimeManager connect", () => {
 });
 
 describe("XmaxRealtimeManager startGeneration", () => {
-  it.each([true, false, undefined])("forwards faceRestoration=%s only when starting a task", async faceRestoration => {
+  it.each([true, false, undefined])("forwards faceRestoration=%s on start and supports changing it without restarting", async faceRestoration => {
     const { manager, camera, stream } = makeManager();
     const localStream = makeLocalStream(camera);
 
@@ -2131,9 +2131,16 @@ describe("XmaxRealtimeManager startGeneration", () => {
     stream.confirmationDeferreds[0]!.resolve();
     await pending;
 
-    await manager.startGeneration({ localStream, context: new RealtimeContext({ prompt: "updated" }) });
+    await manager.startGeneration({ localStream, context: new RealtimeContext({ prompt: "updated" }), faceRestoration: true });
     expect(stream.beginCalls).toHaveLength(1);
-    expect(stream.updateCalls[0]).not.toHaveProperty("faceRestoration");
+    expect(stream.updateCalls[0]!.faceRestoration).toBe(true);
+
+    await manager.startGeneration({ localStream, faceRestoration: false });
+    expect(stream.updateCalls[1]!.faceRestoration).toBe(false);
+
+    await manager.startGeneration({ localStream });
+    expect(stream.updateCalls[2]!.faceRestoration).toBe(false);
+    expect(stream.beginCalls).toHaveLength(1);
 
     await manager.disconnect();
     const restarted = manager.startGeneration({ localStream, context: testContext });

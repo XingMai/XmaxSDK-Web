@@ -7,6 +7,7 @@ import type { RoomEventTargetSize } from "../../Stream/Room/RoomEvent";
 import { RealtimeCoordinator } from "./RealtimeCoordinator";
 
 interface GenerationOptions {
+  faceRestoration?: boolean;
   videoFormat: RealtimeVideoFormat;
   targetSize?: RoomEventTargetSize;
   context?: RealtimeContext;
@@ -55,7 +56,7 @@ export class XmaxRealtimeGenerationManager {
    * @param options.videoFormat 模型生成使用的视频规格。
    * @param options.targetSize 服务端生成后的回传尺寸，缺省使用生成尺寸。
    * @param options.context 生成条件，缺省复用最近缓存的上下文。
-   * @param options.faceRestoration 是否回贴原始人脸，默认 false；仅用于 start 信令。
+   * @param options.faceRestoration 是否回贴原始人脸，默认 false。
    * @param options.mirror 是否由后端水平翻转输入，默认 false；仅用于 start 信令。
    * @param options.signal 取消本次生成启动的信号。
    * @param options.ensureCurrent 校验当前操作仍有效。
@@ -63,7 +64,6 @@ export class XmaxRealtimeGenerationManager {
    * @param options.onStartSent start 信令发送成功后的可选异步回调。
    */
   async start(options: GenerationOptions & {
-    faceRestoration?: boolean;
     mirror?: boolean;
     signal: AbortSignal;
     ensureCurrent: () => void;
@@ -104,6 +104,11 @@ export class XmaxRealtimeGenerationManager {
 
   /**
    * 更新活动任务的生成条件；信令发送成功后才覆盖缓存，无任务或上下文时抛错。
+   * @param taskID 当前活动任务标识。
+   * @param options.videoFormat 模型生成使用的视频规格。
+   * @param options.targetSize 服务端生成后的回传尺寸。
+   * @param options.context 生成条件，缺省复用最近缓存的上下文。
+   * @param options.faceRestoration 是否回贴原始人脸，默认 false。
    */
   async update(taskID: string | undefined, options: GenerationOptions): Promise<void> {
     const context = options.context ?? this.currentContext;
@@ -113,6 +118,7 @@ export class XmaxRealtimeGenerationManager {
 
     await this.streamController.updateGeneration({
       taskID, videoFormat: options.videoFormat, context,
+      faceRestoration: options.faceRestoration ?? false,
       ...(options.targetSize && { targetSize: options.targetSize }),
     });
     if (this.activeTaskID !== taskID) throw RealtimeCoordinator.cancelledError();

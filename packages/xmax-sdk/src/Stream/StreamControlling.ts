@@ -33,7 +33,7 @@ export type RemoteStreamListener = (binding: RemoteStreamBinding | null) => void
  * 生成开始/变更信令的公共参数。
  */
 export interface StreamGenerationOptions {
-  /** 原始人脸回贴，仅用于 start，默认 false。 */
+  /** 原始人脸回贴，用于 start 和 change_condition，默认 false。 */
   faceRestoration?: boolean;
 
   /** 后端输入镜像，仅用于 start；非前置摄像头输入为 false。 */

@@ -23,7 +23,7 @@ import {
 import { XmaxVideo } from "@xmaxai/web-sdk/react";
 import { formatNetworkQuality } from "./formatNetworkQuality";
 import { createRef, useEffect, useMemo, useRef, useState } from "react";
-import { EXAMPLE_MODES, type ExampleModeKey } from "./presets";
+import { EXAMPLE_MODES, faceRestorationForMode, type ExampleModeKey } from "./presets";
 import { ReferenceLibrary, type ReferenceItem } from "./ReferenceLibrary";
 import { ReferenceList } from "./ReferenceList";
 import { RemoteVolumeControl } from "./RemoteVolumeControl";
@@ -341,6 +341,7 @@ export function App() {
       await references.selectInitialReference(async (reference) => {
         const remote = await realtime.startGeneration({
           localStream: stream,
+          faceRestoration: faceRestorationForMode(reference.mode),
           context: new RealtimeContext({
             prompt: reference.prompt,
             referencePath: reference.reference_path,
@@ -391,11 +392,11 @@ export function App() {
     if (referenceUploading) return;
     // 自由输入的生成条件与其他分类无关，清除原参考图的选中态。
     references.clearOtherModes("free");
-    await submitContext(new RealtimeContext({ prompt: submitPrompt, referencePath }));
+    await submitContext(new RealtimeContext({ prompt: submitPrompt, referencePath }), "free");
   }
 
   /** 所有选图和文本提交共用生成入口，条件显式传入，避免读取旧的 React state。 */
-  async function submitContext(context: RealtimeContext) {
+  async function submitContext(context: RealtimeContext, mode: ExampleModeKey) {
     const realtime = realtimeRef.current;
     if (!realtime || !localStream || !apiKey || generationBusyRef.current) {
       return;
@@ -406,6 +407,7 @@ export function App() {
       const remote = await realtime.startGeneration({
         localStream,
         context,
+        faceRestoration: faceRestorationForMode(mode),
       });
       if (realtimeRef.current === realtime) setRemoteStream(remote);
     } catch (error) {
@@ -418,7 +420,7 @@ export function App() {
   /** 上传完成和普通点击均走同一条选中、生成逻辑。 */
   async function applyReference(item: ReferenceItem) {
     if (item.mode === "free") setPrompt(item.prompt);
-    await submitContext(new RealtimeContext({ prompt: item.prompt, referencePath: item.reference_path }));
+    await submitContext(new RealtimeContext({ prompt: item.prompt, referencePath: item.reference_path }), item.mode);
   }
 
   async function handleSelectReference(item: ReferenceItem) {
@@ -611,6 +613,7 @@ export function App() {
                 {[
                   RealtimeModel.x2_0_trtc,
                   RealtimeModel.x2_1_preview,
+                  RealtimeModel.x2_1_preview_1014,
                 ].map((option) => (
                   <option key={option} value={option}>{modelDisplayName(option)}</option>
                 ))}

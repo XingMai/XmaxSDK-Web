@@ -531,9 +531,13 @@ describe("StreamController", () => {
 
     emitRemoteVideo(rtc, "bot001", true);
     await confirmation;
-    await controller.updateGeneration({ taskID: "face-task", videoFormat, context });
-    const update = rtc.sentMessages.map(raw => JSON.parse(raw)).find(event => event.event === "change_condition");
-    expect(update.params).not.toHaveProperty("face_replace");
+    for (const enabled of [true, false, undefined]) {
+      await controller.updateGeneration({ taskID: "face-task", videoFormat, context, faceRestoration: enabled });
+      const messages = rtc.sentMessages.map(raw => JSON.parse(raw)).filter(event => event.event === "change_condition");
+      const update = messages[messages.length - 1]!;
+      expect(update.params.face_replace).toBe(enabled ?? false);
+      expect(update.params).not.toHaveProperty("faceRestoration");
+    }
     await controller.disconnect();
   });
 
