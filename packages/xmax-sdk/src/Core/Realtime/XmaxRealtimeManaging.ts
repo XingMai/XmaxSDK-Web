@@ -1,4 +1,5 @@
 import type { CameraPosition } from "../../Foundation/Media/Camera/CameraPosition";
+import type { CameraRotation } from "../../Foundation/Media/Camera/CameraRotation";
 import type { NetworkStatisticsListener } from "../../Foundation/RTC/NetworkStatistics";
 import type { RealtimeContext } from "../../Service/Realtime/RealtimeContext";
 import type { RealtimeMediaStream } from "../../Service/Realtime/RealtimeMediaStream";
@@ -112,6 +113,11 @@ export interface XmaxRealtimeManaging {
     videoFormat: RealtimeVideoFormat;
     position: CameraPosition;
     useMicrophone: boolean;
+    /**
+     * 输入帧顺时针旋转角度，默认 0；videoFormat 指旋转后的目标规格。
+     * 非零角度目前仅支持 Agora，预览和上传均校正方向，镜像保持独立。
+     */
+    rotation?: CameraRotation;
     /**
      * 是否在发布前等待相机预热（固定 200ms），默认 true；false 跳过等待，不产生预热耗时。
      */

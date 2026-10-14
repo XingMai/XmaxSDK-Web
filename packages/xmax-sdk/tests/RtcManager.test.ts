@@ -311,6 +311,12 @@ describe("TrtcRtcManager performance logging", () => {
 });
 
 describe("TrtcRtcManager", () => {
+  it("rejects nonzero camera rotation instead of silently ignoring it", async () => {
+    const { manager, engine } = makeManager();
+    await expect(manager.startCameraCapture({ width: 1024, height: 1920, frameRate: 30,
+      position: CameraPosition.front, rotation: 90 })).rejects.toThrow("Camera rotation currently requires Agora");
+    expect(engine.startLocalVideoCalls).toHaveLength(0);
+  });
   it("maps directional network quality and RTT without requiring logs or remote video", async () => {
     const { manager, engine } = makeManager();
     const listener = vi.fn();

@@ -579,6 +579,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    * 将返回的轨道绑定到预览视图；收到有效帧且视图已绑定后进入 `ready`。
    *
    * @param options.enableFrameValidation 是否在发布前等待相机预热（固定 200ms），默认 true；false 跳过等待。
+   * @param options.rotation 输入帧顺时针旋转角度，默认 0；videoFormat 为旋转后的规格，目前仅 Agora 支持非零角度。
    * @returns 包含本地相机视频轨道的媒体流。
    * @throws 模型不支持相机输入、配置无效、权限或采集启动失败时抛出错误。
    */

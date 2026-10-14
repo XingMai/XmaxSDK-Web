@@ -160,6 +160,9 @@ export class VeRtcManager implements RtcManaging {
   }
 
   async startCameraCapture(options: RtcCameraCaptureOptions): Promise<MediaStreamTrack> {
+    if (options.rotation !== undefined && options.rotation !== 0) {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Camera rotation currently requires Agora");
+    }
     const engine = this.requireEngine();
     if (this.camera || this.externalVideo) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Local video is already prepared");

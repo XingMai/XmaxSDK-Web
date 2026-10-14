@@ -1,4 +1,5 @@
 import type { CameraPosition } from "../../Foundation/Media/Camera/CameraPosition";
+import type { CameraRotation } from "../../Foundation/Media/Camera/CameraRotation";
 import type { RealtimeMediaStream } from "../../Service/Realtime/RealtimeMediaStream";
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import type { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
@@ -45,6 +46,8 @@ export interface CameraControlling {
     videoFormat: RealtimeVideoFormat;
     position: CameraPosition;
     useMicrophone: boolean;
+    /** 顺时针旋转角度，默认 0；非零角度目前仅支持 Agora。 */
+    rotation?: CameraRotation;
     /**
      * 默认 true；跟随当前相机流，切换设备和重新连接时保留。
      */

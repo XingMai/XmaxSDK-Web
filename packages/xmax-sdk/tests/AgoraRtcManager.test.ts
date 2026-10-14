@@ -12,6 +12,7 @@ import { RoomController } from "../src/Stream/Room/RoomController";
 import { RoomHeartbeat } from "../src/Stream/Room/RoomHeartbeat";
 import { RealtimeContext } from "../src/Service/Realtime/RealtimeContext";
 import { RealtimeVideoFormat } from "../src/Service/Realtime/RealtimeVideoFormat";
+import { cameraRotationEnvironment } from "./helpers/CameraRotationEnvironment";
 
 const credentials: AgoraRoomJoinConfiguration = { provider: RtcProvider.agora, appID: "app", roomID: "000123", userID: "rtc-user", roomToken: "secret" };
 const managers: AgoraRtcManager[] = [];
@@ -80,6 +81,100 @@ afterEach(async () => {
 });
 
 describe("AgoraRtcManager", () => {
+
+  it("publishes and previews the rotated track, retaining sender-only adaptation and microphone capture", async () => {
+    const s = setup();
+    const env = cameraRotationEnvironment();
+    s.camera.getMediaStreamTrack.mockReturnValue(env.source);
+    const custom = { ...s.camera, close: vi.fn(), getMediaStreamTrack: vi.fn(() => env.output as MediaStreamTrack) };
+    s.sender.track = env.output;
+    s.sdk.createCustomVideoTrack.mockReturnValue(custom);
+    // Canvas output must NOT be transposed a second time on mobile portrait devices.
+    vi.stubGlobal("navigator", { userAgent: "iPhone", maxTouchPoints: 1 });
+    vi.stubGlobal("window", { screen: { orientation: { type: "portrait-primary" } } });
+    await s.manager.initialize();
+    const started = s.manager.startCameraCapture({ width: 1024, height: 1920, frameRate: 30, position: CameraPosition.front, rotation: 90 });
+    await vi.waitFor(() => expect(env.callbacks.size).toBe(1));
+    env.frame();
+    expect(await started).toBe(env.output);
+    expect(s.sdk.createCameraVideoTrack).toHaveBeenCalledWith({ facingMode: "user",
+      encoderConfig: { width: 1024, height: 1920, frameRate: 30 } });
+    expect(s.sdk.createCustomVideoTrack).toHaveBeenCalledWith({ mediaStreamTrack: env.output, width: 1024, height: 1920, frameRate: 30 });
+    await s.manager.configureVideoEncoding({ width: 512, height: 960, frameRate: 20,
+      minimumBitrate: 500, maximumBitrate: 2000, encoderPreference: RtcVideoEncoderPreference.maintainFramerate });
+    await s.manager.joinRoom(credentials);
+    await s.manager.publishLocalVideo();
+    await s.manager.publishLocalAudio();
+    expect(s.client.publish).toHaveBeenCalledWith(custom);
+    expect(s.client.publish).not.toHaveBeenCalledWith(s.camera);
+    expect(s.client.publish).toHaveBeenCalledWith(s.microphone);
+    expect(s.sender.getParameters().encodings[0]).toMatchObject({ scaleResolutionDownBy: 2, maxFramerate: 20, maxBitrate: 2000000 });
+    expect(s.camera.setEncoderConfiguration).not.toHaveBeenCalled();
+    // Token recovery must republish the transformed source, not the raw camera.
+    s.emit("token-privilege-did-expire");
+    await s.manager.updateCredentials({ ...credentials, roomToken: "replacement" });
+    expect(s.client.publish).not.toHaveBeenCalledWith(s.camera);
+    await s.manager.stopCameraCapture();
+    expect(custom.close).toHaveBeenCalledOnce();
+    expect(s.camera.close).toHaveBeenCalledOnce();
+    expect(env.output.stop).toHaveBeenCalledOnce();
+    expect(env.callbacks.size).toBe(0);
+  });
+
+  it("switches the raw camera but keeps the rotated preview/publication track", async () => {
+    const s = setup();
+    const env = cameraRotationEnvironment();
+    s.camera.getMediaStreamTrack.mockReturnValue(env.source);
+    const custom = { ...s.camera, close: vi.fn(), getMediaStreamTrack: vi.fn(() => env.output as MediaStreamTrack) };
+    s.sdk.createCustomVideoTrack.mockReturnValue(custom);
+    await s.manager.initialize();
+    const started = s.manager.startCameraCapture({ width: 1024, height: 1920, frameRate: 30, position: CameraPosition.front, rotation: 270 });
+    await vi.waitFor(() => expect(env.callbacks.size).toBe(1)); env.frame(); await started;
+    expect(s.sdk.createCameraVideoTrack).toHaveBeenCalledWith({ facingMode: "user",
+      encoderConfig: { width: 1920, height: 1024, frameRate: 30 } });
+    s.camera.setDevice.mockImplementation(async () => { env.source.dispatchEvent(new Event("ended")); });
+    const switched = s.manager.switchCameraCapture(CameraPosition.back);
+    await vi.waitFor(() => expect(env.callbacks.size).toBe(1)); env.frame();
+    expect(await switched).toBe(env.output);
+    expect(s.camera.setDevice).toHaveBeenCalledWith({ facingMode: "environment" });
+    expect(s.sdk.createCustomVideoTrack).toHaveBeenCalledOnce();
+    expect(env.output.stop).not.toHaveBeenCalled();
+    expect(s.listener.onError).not.toHaveBeenCalled();
+  });
+
+  it("cleans up cancelled rotation startup without publishing a raw camera", async () => {
+    const s = setup();
+    const env = cameraRotationEnvironment();
+    s.camera.getMediaStreamTrack.mockReturnValue(env.source);
+    await s.manager.initialize();
+    const started = s.manager.startCameraCapture({ width: 1024, height: 1920, frameRate: 30, position: CameraPosition.front, rotation: 90 });
+    const rejected = expect(started).rejects.toMatchObject({ code: "CANCELLED" });
+    await vi.waitFor(() => expect(env.callbacks.size).toBe(1));
+    await s.manager.stopCameraCapture(); await rejected;
+    expect(s.camera.close).toHaveBeenCalledOnce();
+    expect(s.sdk.createCustomVideoTrack).not.toHaveBeenCalled();
+    expect(env.callbacks.size).toBe(0);
+  });
+
+  it("releases the raw camera if Canvas initialization fails", async () => {
+    const s = setup();
+    const env = cameraRotationEnvironment();
+    env.canvas.captureStream.mockImplementation(() => { throw new Error("unsupported"); });
+    s.camera.getMediaStreamTrack.mockReturnValue(env.source);
+    await s.manager.initialize();
+    const started = s.manager.startCameraCapture({ width: 1024, height: 1920, frameRate: 30, position: CameraPosition.front, rotation: 90 });
+    const rejected = expect(started).rejects.toThrow();
+    await vi.waitFor(() => expect(env.callbacks.size).toBe(1)); env.frame(); await rejected;
+    expect(s.camera.close).toHaveBeenCalledOnce();
+    expect(s.sdk.createCustomVideoTrack).not.toHaveBeenCalled();
+  });
+
+  it("leaves the original zero-rotation path unchanged", async () => {
+    const s = setup();
+    await s.manager.initialize();
+    expect(await s.manager.startCameraCapture({ width: 1024, height: 1920, frameRate: 30, position: CameraPosition.front, rotation: 0 })).toBe(s.native);
+    expect(s.sdk.createCustomVideoTrack).not.toHaveBeenCalled();
+  });
 
   it.each([XmaxLoggerOption.none, XmaxLoggerOption.performance])("does not sample startup bandwidth or log bandwidth with options %s", async options => {
     vi.useFakeTimers();
