@@ -691,19 +691,25 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   async createExternalVideoStream(options: Parameters<XmaxRealtimeManaging["createExternalVideoStream"]>[0]): Promise<RealtimeMediaStream> {
     return this.coordinator.run(RealtimeOperationKind.media, undefined, async token => {
       this.ensureNoLocalSource();
+
       if (!this.rtcManager.setExternalMediaTracks) {
         throw new XmaxError(XmaxErrorCode.invalidConfiguration, "The RTC provider does not support external video streams");
       }
+
       const stream = this.externalVideoController.create(options, this.mediaService);
       token.setFailureScope(RealtimeTerminationScope.all);
       this.launchTimer.start();
       this.clearVideoStatistics();
+
       await this.rtcManager.initialize();
       token.ensureCurrent();
+
       await this.rtcManager.setExternalMediaTracks({ videoTrack: stream.videoTrack!.mediaStreamTrack! });
       token.ensureCurrent();
+
       this.generationVideoFormat = stream.videoTrack?.videoFormat;
       await this.coordinator.commit(new RealtimeState({ connectionState: RealtimeConnectionState.ready }), token);
+
       return stream;
     });
   }
