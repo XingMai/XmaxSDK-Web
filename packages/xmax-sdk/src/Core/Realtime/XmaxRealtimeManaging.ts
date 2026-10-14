@@ -106,6 +106,11 @@ export interface XmaxRealtimeManaging {
    *
    * 将返回的轨道绑定到预览视图；收到有效帧且视图已绑定后进入 `ready`。
    *
+   * @param options.videoFormat 旋转后的目标规格，尺寸按模型规则解析。
+   * @param options.position 前置或后置摄像头。
+   * @param options.useMicrophone 是否采集并发布麦克风音频。
+   * @param options.rotation 输入帧顺时针旋转角度，默认 0；非零角度目前仅支持 Agora，预览和上传均校正方向，镜像保持独立。
+   * @param options.enableFrameValidation 是否在发布前等待相机预热（固定 200ms），默认 true；false 跳过等待，不产生预热耗时。
    * @returns 包含本地相机视频轨道的媒体流。
    * @throws 模型不支持相机输入、配置无效、权限或采集启动失败时抛出错误。
    */
@@ -113,14 +118,7 @@ export interface XmaxRealtimeManaging {
     videoFormat: RealtimeVideoFormat;
     position: CameraPosition;
     useMicrophone: boolean;
-    /**
-     * 输入帧顺时针旋转角度，默认 0；videoFormat 指旋转后的目标规格。
-     * 非零角度目前仅支持 Agora，预览和上传均校正方向，镜像保持独立。
-     */
     rotation?: CameraRotation;
-    /**
-     * 是否在发布前等待相机预热（固定 200ms），默认 true；false 跳过等待，不产生预热耗时。
-     */
     enableFrameValidation?: boolean;
   }): Promise<RealtimeMediaStream>;
 
@@ -128,6 +126,7 @@ export interface XmaxRealtimeManaging {
    * 创建服务端直接读取的 HTTP/HTTPS 网络视频源，不采集或发布本地音视频。
    * 本地预览静音播放一次，独立于服务端进度；创建源不会开始生成。
    * 地址必须可由服务端直接访问，不转发浏览器 Cookie 或自定义鉴权头。
+   * @param options.url 服务端可直接访问的 HTTP/HTTPS 视频地址。
    * @param options.videoFormat 模型输入及生成画面规格，不是上行编码参数。
    * @param options.sampleMethod 服务端采样方式，默认 time。
    * @param options.onFinish 当前任务收到服务端完成消息且生成就绪后调用一次，不代表尾帧已播放完。
@@ -144,6 +143,7 @@ export interface XmaxRealtimeManaging {
    * 从本地 File/Blob 创建文件视频源，支持 TRTC、Agora 和 VeRTC，不访问摄像头或麦克风。
    * 通过 Canvas 等比缩放补黑边，文件音频独立上行，本地预览始终静音。
    * 应从用户点击事件直接调用以解锁播放；创建后停在首帧，startGeneration 时开始播放。
+   * @param options.file 包含可解码视频的本地 File 或 Blob。
    * @param options.videoFormat 期望的视频规格；尺寸自动匹配最接近宽高比的模型档位，等距时优先横屏。
    * @param options.loop 是否循环播放文件音视频，默认 true。
    * @param options.includeAudio 是否发送文件音频，默认 true；无音轨文件输出静音，false 不创建音频轨。
@@ -159,9 +159,10 @@ export interface XmaxRealtimeManaging {
   /**
    * 接收用户自行采集或处理的实时视频轨，仅视频，不采集或发送音频。
    * 不要求绑定 SDK 预览；旋转、裁剪及本地预览由调用方负责，后端 mirror 固定 false。
-   * videoFormat 指期望的上传及生成规格，须符合模型规则；不代表修改输入像素。
    * SDK 持有轨道副本：disconnect 保留输入，close 释放副本，不停止调用方原始轨道。
    * 副本共享底层媒体源；调用方仍负责停止原始采集。设备源结束时 SDK 上报错误并关闭。
+   * @param options.videoTrack 用户自行采集或处理的 live 视频轨，原始轨道归调用方所有。
+   * @param options.videoFormat 期望的上传及生成规格，须符合模型规则；不代表修改输入像素。
    * @throws 非 live 视频轨、不支持的格式、已有活动媒体源或 RTC 初始化失败时抛错。
    */
   createExternalVideoStream(options: {
@@ -236,8 +237,9 @@ export interface XmaxRealtimeManaging {
    * 尚未连接时先建立实时连接；已在生成时仅更新生成条件，不重启生成。
    * 首次生成必须提供条件上下文，之后缺省时复用最近一次缓存的上下文。
    *
-   * @param options.localStream 由当前 Manager 创建的摄像头、本地文件或网络视频源。
+   * @param options.localStream 由当前 Manager 创建的摄像头、外部视频轨、本地文件或网络视频源。
    * @param options.context 本次生成使用的条件上下文；缺省时复用缓存。
+   * @param options.faceRestoration 是否启用原始人脸回贴，默认 false；仅作用于新任务的 start 信令。
    * @returns 承载远端生成画面的媒体流。
    * @throws 本地流不属于当前 Manager、缺少可用的条件上下文、信令发送
    * 或生成确认失败时抛出错误；失败时自动停止生成任务并释放连接资源。
@@ -245,5 +247,6 @@ export interface XmaxRealtimeManaging {
   startGeneration(options: {
     localStream: RealtimeMediaStream;
     context?: RealtimeContext;
+    faceRestoration?: boolean;
   }): Promise<RealtimeMediaStream>;
 }

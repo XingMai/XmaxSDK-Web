@@ -67,12 +67,21 @@ export class XmaxRealtimeConnectionManager {
    * 创建会话、配置编码、进房并发布本地媒体，启动心跳后返回远端占位流。
    * 进房结束即记录连接耗时；可选 beforePublish 检查阻塞发布，计入连接耗时；
    * 发布本地流单独计时。
+   * @param options.localTrack 当前本地媒体轨道。
+   * @param options.remoteVideoFormat 原始生成及远端画面规格，缺省使用本地轨道规格。
+   * @param options.localVideoFormat 发布前实际应用的上行编码格式；与原始生成及远端格式分开。
+   * @param options.onVideoEncoderConfigured 上行编码配置成功后的回调。
+   * @param options.model 创建业务会话使用的模型名称。
+   * @param options.includeLocalAudio 是否发布本地音频。
+   * @param options.ensureCurrent 校验当前操作仍有效。
+   * @param options.onPublished 本地发布完成后的回调。
+   * @param options.beforePublish 发布前的可选异步检查。
+   * @param options.publishLocalMedia 是否发布本地媒体，默认 true；网络视频源传 false。
    * @throws 会话、进房、发布失败或操作租约已失效时抛出错误，由上层统一清理。
    */
   async connect(options: {
     localTrack: RealtimeVideoTrack;
     remoteVideoFormat?: RealtimeVideoTrack["videoFormat"];
-    /** 发布前实际应用的上行编码格式；与原始生成/远端格式分开。 */
     localVideoFormat?: RealtimeVideoTrack["videoFormat"];
     onVideoEncoderConfigured?: () => void;
     model: RealtimeModelName;

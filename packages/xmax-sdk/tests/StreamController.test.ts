@@ -518,6 +518,25 @@ describe("StreamController", () => {
     ).toThrowError(expect.objectContaining({ code: XmaxErrorCode.rtcError }));
   });
 
+  it.each([true, false, undefined])("maps faceRestoration=%s to start.params.face_replace", async faceRestoration => {
+    const { controller, rtc } = makeStream();
+    await controller.connect(connection, false, noopEnsureActive);
+
+    const confirmation = controller.beginGeneration({ taskID: "face-task", videoFormat, context, faceRestoration });
+    await vi.waitFor(() => expect(rtc.sentMessages.length).toBeGreaterThan(0));
+    const message = JSON.parse(rtc.sentMessages[0]!);
+    expect(message.event).toBe("start");
+    expect(message.params.face_replace).toBe(faceRestoration ?? false);
+    expect(message.params).not.toHaveProperty("faceRestoration");
+
+    emitRemoteVideo(rtc, "bot001", true);
+    await confirmation;
+    await controller.updateGeneration({ taskID: "face-task", videoFormat, context });
+    const update = rtc.sentMessages.map(raw => JSON.parse(raw)).find(event => event.event === "change_condition");
+    expect(update.params).not.toHaveProperty("face_replace");
+    await controller.disconnect();
+  });
+
   it.each([true, false])("forwards mirror=%s and confirms generation when the bot publishes", async (mirror) => {
     const { controller, rtc, bindings } = makeStream();
     await controller.connect(connection, false, noopEnsureActive);

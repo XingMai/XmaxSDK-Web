@@ -200,6 +200,7 @@ describe("RoomController", () => {
     expect(message.uid).toBe("task-001");
     expect(message.params).toMatchObject({
       mirror: mirror ?? false,
+      face_replace: false,
       model: "default",
       size: [832, 1472],
       target_size: [416, 736],

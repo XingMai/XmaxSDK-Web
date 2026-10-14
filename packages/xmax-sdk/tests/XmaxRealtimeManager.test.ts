@@ -2121,6 +2121,29 @@ describe("XmaxRealtimeManager connect", () => {
 });
 
 describe("XmaxRealtimeManager startGeneration", () => {
+  it.each([true, false, undefined])("forwards faceRestoration=%s only when starting a task", async faceRestoration => {
+    const { manager, camera, stream } = makeManager();
+    const localStream = makeLocalStream(camera);
+
+    const pending = manager.startGeneration({ localStream, context: testContext, faceRestoration });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+    expect(stream.beginCalls[0]!.faceRestoration).toBe(faceRestoration ?? false);
+    stream.confirmationDeferreds[0]!.resolve();
+    await pending;
+
+    await manager.startGeneration({ localStream, context: new RealtimeContext({ prompt: "updated" }) });
+    expect(stream.beginCalls).toHaveLength(1);
+    expect(stream.updateCalls[0]).not.toHaveProperty("faceRestoration");
+
+    await manager.disconnect();
+    const restarted = manager.startGeneration({ localStream, context: testContext });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(2));
+    expect(stream.beginCalls[1]!.faceRestoration).toBe(false);
+    stream.confirmationDeferreds[1]!.resolve();
+    await restarted;
+    await manager.close();
+  });
+
   it.each([CameraPosition.front, CameraPosition.back])("sends backend mirror according to camera position %s without mirroring the result", async (position) => {
     const { manager, camera, stream } = makeManager();
     const localStream = makeLocalStream(camera);

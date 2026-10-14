@@ -582,6 +582,9 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    *
    * 将返回的轨道绑定到预览视图；收到有效帧且视图已绑定后进入 `ready`。
    *
+   * @param options.videoFormat 旋转后的目标规格，尺寸按模型规则解析。
+   * @param options.position 前置或后置摄像头。
+   * @param options.useMicrophone 是否采集并发布麦克风音频。
    * @param options.enableFrameValidation 是否在发布前等待相机预热（固定 200ms），默认 true；false 跳过等待。
    * @param options.rotation 输入帧顺时针旋转角度，默认 0；videoFormat 为旋转后的规格，目前仅 Agora 支持非零角度。
    * @returns 包含本地相机视频轨道的媒体流。
@@ -640,6 +643,10 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
 
   /**
    * 创建网络视频源并初始化接收端 RTC；预览是否加载成功不影响服务端读取视频。
+   * @param options.url 服务端可直接访问的 HTTP/HTTPS 视频地址。
+   * @param options.videoFormat 模型输入及生成画面规格，不是上行编码参数。
+   * @param options.sampleMethod 服务端采样方式，默认 time。
+   * @param options.onFinish 服务端完成当前任务后的回调，不代表尾帧已播放完。
    */
   async createNetworkVideoStream(options: Parameters<XmaxRealtimeManaging["createNetworkVideoStream"]>[0]): Promise<RealtimeMediaStream> {
     return this.coordinator.run(RealtimeOperationKind.media, undefined, async (token) => {
@@ -659,6 +666,10 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
 
   /**
    * 创建文件音视频源并准备外部轨道；准备失败时统一释放本次媒体和 RTC 资源。
+   * @param options.file 包含可解码视频的本地 File 或 Blob。
+   * @param options.videoFormat 期望的视频规格；尺寸按宽高比匹配模型档位。
+   * @param options.loop 是否循环播放，默认 true。
+   * @param options.includeAudio 是否发送文件音频，默认 true。
    */
   async createLocalVideoStream(options: Parameters<XmaxRealtimeManaging["createLocalVideoStream"]>[0]): Promise<RealtimeMediaStream> {
     return this.coordinator.run(RealtimeOperationKind.media, undefined, async (token) => {
@@ -687,7 +698,11 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     });
   }
 
-  /** 接入外部视频轨；不创建采集设备或预览，所有异步失败统一释放 SDK 副本。 */
+  /**
+   * 接入外部视频轨；不创建采集设备或预览，所有异步失败统一释放 SDK 副本。
+   * @param options.videoTrack 用户自行采集或处理的 live 视频轨，原始轨道归调用方所有。
+   * @param options.videoFormat 期望的上传及生成规格，须符合模型规则；不代表修改输入像素。
+   */
   async createExternalVideoStream(options: Parameters<XmaxRealtimeManaging["createExternalVideoStream"]>[0]): Promise<RealtimeMediaStream> {
     return this.coordinator.run(RealtimeOperationKind.media, undefined, async token => {
       this.ensureNoLocalSource();
@@ -933,6 +948,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    *
    * @param options.localStream 由当前 Manager 创建的摄像头、外部视频轨、本地文件或网络视频源。
    * @param options.context 本次生成使用的条件上下文；缺省时复用缓存。
+   * @param options.faceRestoration 是否启用原始人脸回贴，默认 false；仅作用于新任务的 start 信令。
    * @returns 承载远端生成画面的媒体流。
    * @throws 本地流不属于当前 Manager、缺少可用的条件上下文、信令发送
    * 或生成确认失败时抛出错误；失败时自动停止生成任务并释放连接资源。
@@ -940,6 +956,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   async startGeneration(options: {
     localStream: RealtimeMediaStream;
     context?: RealtimeContext;
+    faceRestoration?: boolean;
   }): Promise<RealtimeMediaStream> {
     return this.coordinator.run(
       RealtimeOperationKind.generation,
@@ -982,7 +999,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
           await this.performConnect(options.localStream, token);
         }
 
-        return this.performStartGeneration(token, videoFormat, context);
+        return this.performStartGeneration(token, videoFormat, context, options.faceRestoration ?? false);
       },
     );
   }
@@ -1115,6 +1132,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     token: RealtimeOperationToken,
     videoFormat: NonNullable<RealtimeVideoTrack["videoFormat"]>,
     context: RealtimeContext,
+    faceRestoration: boolean,
   ): Promise<RealtimeMediaStream> {
     token.setFailureScope(RealtimeTerminationScope.connection);
     const initialLevel = this.qualityHistory?.read("downlink") ?? 1;
@@ -1130,6 +1148,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       videoFormat,
       targetSize,
       context,
+      faceRestoration,
       mirror: this.currentLocalTrack === this.cameraController.currentTrack &&
         this.cameraController.currentTrack?.position === CameraPosition.front,
       signal: token.signal,

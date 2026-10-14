@@ -40,17 +40,18 @@ export interface CameraControlling {
 
   /**
    * 创建并启动本地相机流。
+   * @param options.videoFormat 旋转后的目标规格，尺寸按模型规则解析。
+   * @param options.position 前置或后置摄像头。
+   * @param options.useMicrophone 是否采集并发布麦克风音频。
+   * @param options.rotation 顺时针旋转角度，默认 0；非零角度目前仅支持 Agora。
+   * @param options.enableFrameValidation 是否等待相机预热，默认 true；切换设备和重新连接时保留。
    * @throws 已有活动相机流、格式无效、权限不足或采集启动失败时抛出错误。
    */
   createLocalCameraStream(options: {
     videoFormat: RealtimeVideoFormat;
     position: CameraPosition;
     useMicrophone: boolean;
-    /** 顺时针旋转角度，默认 0；非零角度目前仅支持 Agora。 */
     rotation?: CameraRotation;
-    /**
-     * 默认 true；跟随当前相机流，切换设备和重新连接时保留。
-     */
     enableFrameValidation?: boolean;
   }): Promise<RealtimeMediaStream>;
 

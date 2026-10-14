@@ -52,9 +52,18 @@ export class XmaxRealtimeGenerationManager {
   /**
    * 发送生成指令并等待确认、远端就绪和音频激活，成功后返回任务标识。
    * 条件上下文在生成确认后缓存；启动失败时尽力停止本次任务并保留原始错误。
+   * @param options.videoFormat 模型生成使用的视频规格。
+   * @param options.targetSize 服务端生成后的回传尺寸，缺省使用生成尺寸。
+   * @param options.context 生成条件，缺省复用最近缓存的上下文。
+   * @param options.faceRestoration 是否回贴原始人脸，默认 false；仅用于 start 信令。
+   * @param options.mirror 是否由后端水平翻转输入，默认 false；仅用于 start 信令。
+   * @param options.signal 取消本次生成启动的信号。
+   * @param options.ensureCurrent 校验当前操作仍有效。
+   * @param options.waitUntilRemoteReady 等待远端生成流就绪。
+   * @param options.onStartSent start 信令发送成功后的可选异步回调。
    */
   async start(options: GenerationOptions & {
-    /** 是否由后端水平翻转输入；仅用于开始信令。 */
+    faceRestoration?: boolean;
     mirror?: boolean;
     signal: AbortSignal;
     ensureCurrent: () => void;
@@ -72,6 +81,7 @@ export class XmaxRealtimeGenerationManager {
         taskID, videoFormat: options.videoFormat, context,
         ...(options.targetSize && { targetSize: options.targetSize }),
         mirror: options.mirror ?? false,
+        faceRestoration: options.faceRestoration ?? false,
         ...(options.onStartSent && { onStartSent: options.onStartSent }),
       });
       await this.awaitConfirmation(confirmation, options.signal);

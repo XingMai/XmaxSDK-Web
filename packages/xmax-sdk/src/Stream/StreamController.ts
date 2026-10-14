@@ -374,6 +374,7 @@ export class StreamController implements StreamControlling {
       const sending = this.roomController.startGeneration({
         taskID,
         mirror: options.mirror ?? false,
+        faceRestoration: options.faceRestoration ?? false,
         videoFormat: options.videoFormat,
         targetSize: options.targetSize,
         context: options.context,
