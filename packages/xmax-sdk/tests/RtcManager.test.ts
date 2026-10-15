@@ -8,6 +8,7 @@ import type { RtcEventListener } from "../src/Foundation/RTC/RtcEventListener";
 import { RtcEngineManager, type RtcEngine } from "../src/Foundation/RTC/TRTC/RtcEngineManager";
 import { TrtcRtcManager } from "../src/Foundation/RTC/TRTC/TrtcRtcManager";
 import { RtcVideoEncoderPreference } from "../src/Foundation/RTC/VideoEncodingConfiguration";
+import { QUALITY_TIERS } from "../src/Stream/Quality/QualityTiers";
 
 class FakeRtcEngine {
   destroyed = false;
@@ -588,6 +589,38 @@ describe("TrtcRtcManager", () => {
     ]);
     // 取消发布不停止采集。
     expect(engine.stopLocalVideoCalls).toBe(0);
+  });
+
+  it("applies all adaptive tiers through profile updates without restarting capture or publication", async () => {
+    const { manager, engine } = makeManager();
+    await manager.initialize();
+    await manager.startCameraCapture({
+      ...QUALITY_TIERS.L1,
+      position: CameraPosition.front,
+    });
+    await manager.joinRoom(joinConfig);
+    await manager.publishLocalVideo();
+    engine.updateLocalVideoCalls.length = 0;
+
+    for (const tier of Object.values(QUALITY_TIERS)) {
+      await manager.configureVideoEncoding({
+        ...tier,
+        minimumBitrate: 1000,
+        maximumBitrate: 4000,
+        encoderPreference: RtcVideoEncoderPreference.maintainFramerate,
+      });
+      expect(engine.updateLocalVideoCalls.at(-1)).toEqual({ option: {
+        profile: { ...tier, bitrate: 1000 },
+        qosPreference: "smooth",
+      } });
+    }
+
+    expect(engine.updateLocalVideoCalls).toHaveLength(5);
+    expect(engine.startLocalVideoCalls).toHaveLength(1);
+    expect(engine.stopLocalVideoCalls).toBe(0);
+    expect(engine.enterRoomCalls).toHaveLength(1);
+    expect(engine.exitRoomCalls).toBe(0);
+    await manager.destroy();
   });
 
   it("never enables TRTC encode mirroring, which routes through its canvas pipeline", async () => {

@@ -317,6 +317,7 @@ function makeLocalStream(camera: CameraControllingStub): RealtimeMediaStream {
 const testContext = new RealtimeContext({ prompt: "a red cube" });
 
 describe("XmaxRealtimeManager adaptive quality", () => {
+  const adaptiveModel = RealtimeModel.x2_1_preview;
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
   function historyStorage() {
@@ -329,11 +330,11 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     return storage;
   }
 
-  function setup(fps = 30, model = RealtimeModel.x2_1_preview, interpolation = false) {
+  function setup(fps = 30, model = adaptiveModel, interpolation = false) {
     const s = makeManager(async () => true, interpolation, model);
-    if (model === RealtimeModel.x2_1_preview) {
+    if (s.manager.options.provider !== RtcProvider.trtc) {
       vi.spyOn(s.session, "createSession").mockResolvedValue(new RealtimeSession({
-        id: "adaptive-session", connection: { provider: RtcProvider.agora, roomID: "room", appID: "app",
+        id: "adaptive-session", connection: { provider: s.manager.options.provider, roomID: "room", appID: "app",
           userID: "user", roomToken: "token", botID: "bot" },
       }));
     }
@@ -360,6 +361,74 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     return { ...s, localStream, sample, samples, start };
   }
 
+  it("keeps TRTC uplink dimensions fixed through manual tiers while downlink still changes resolution", async () => {
+    historyStorage();
+    const s = setup(30, RealtimeModel.x2_0_trtc); await s.start();
+    expect(s.stream.encoderConfigFormats[0]).toMatchObject({ width: 1920, height: 1024, fps: 24 });
+    expect(s.stream.beginCalls[0]!.targetSize).toEqual({ width: 1440, height: 768 });
+    const rate = vi.spyOn(s.stream, "updateUplinkFrameRate");
+
+    for (const fps of [24, 20, 16]) {
+      await s.manager.adjustUplinkQuality("downgrade");
+      expect(rate).toHaveBeenLastCalledWith(fps);
+      expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 1920, height: 1024, fps,
+        minimumBitrate: 1000, maximumBitrate: 4000 });
+    }
+    await s.manager.adjustUplinkQuality("downgrade");
+    expect(rate).toHaveBeenCalledTimes(3);
+    for (const fps of [20, 24, 24, 30]) {
+      await s.manager.adjustUplinkQuality("upgrade");
+      expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 1920, height: 1024, fps });
+    }
+    expect(s.stream.updateDownlinkVideoResolution).not.toHaveBeenCalled();
+    await s.manager.adjustDownlinkQuality("downgrade");
+    expect(s.stream.updateDownlinkVideoResolution).toHaveBeenLastCalledWith(s.manager.currentState.taskID,
+      { width: 1200, height: 640 }, expect.any(Function));
+    expect(s.stream.beginCalls).toHaveLength(1);
+    await s.manager.close();
+  });
+
+  it("automatically adjusts TRTC FPS only and restores history with full resolution", async () => {
+    historyStorage();
+    const s = setup(30, RealtimeModel.x2_0_trtc); await s.start();
+    for (const [count, fps] of [[3, 24], [4, 20], [4, 16]] as const) {
+      for (let i = 0; i < count; i++) await s.sample(5, 3);
+      expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 1920, height: 1024, fps });
+    }
+    expect(new QualityHistory(RealtimeModel.x2_0_trtc, RtcProvider.trtc).read("uplink")).toBe(5);
+    await s.manager.close();
+
+    const next = setup(30, RealtimeModel.x2_0_trtc); await next.start();
+    expect(next.stream.encoderConfigFormats[0]).toMatchObject({ width: 1920, height: 1024, fps: 16 });
+    for (const count of [5, 6, 6, 6]) {
+      for (let i = 0; i < count; i++) await next.sample(1, 3);
+    }
+    expect(next.localStream.videoTrack!.videoFormat).toMatchObject({ width: 1920, height: 1024, fps: 30 });
+    expect(next.stream.updateDownlinkVideoResolution).not.toHaveBeenCalled();
+    await next.manager.close();
+  });
+
+  it("preserves TRTC state on FPS failures and cancellation", async () => {
+    historyStorage();
+    const s = setup(30, RealtimeModel.x2_0_trtc); await s.start();
+    const previous = s.localStream.videoTrack!.videoFormat;
+    const rate = vi.spyOn(s.stream, "updateUplinkFrameRate").mockRejectedValueOnce(new Error("fps failed"));
+    await expect(s.manager.adjustUplinkQuality("upgrade")).rejects.toThrow("fps failed");
+    expect(s.localStream.videoTrack!.videoFormat).toBe(previous);
+    const history = new QualityHistory(RealtimeModel.x2_0_trtc, RtcProvider.trtc);
+    expect(history.read("uplink")).toBe(2);
+
+    const gate = makeDeferred<RealtimeVideoFormat>();
+    rate.mockReturnValueOnce(gate.promise);
+    const changing = s.manager.adjustUplinkQuality("upgrade");
+    const rejected = expect(changing).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
+    const closing = s.manager.close();
+    gate.resolve(new RealtimeVideoFormat({ ...previous!, fps: 30 }));
+    await rejected; await closing;
+    expect(s.localStream.videoTrack!.videoFormat).toBe(previous);
+    expect(history.read("uplink")).toBe(2);
+  });
+
   it("restores the last successful tiers in a new manager without changing the original baseline", async () => {
     historyStorage();
     const first = setup();
@@ -367,7 +436,7 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     await first.samples(5, 3);
     await first.manager.adjustDownlinkQuality("downgrade");
     await first.manager.adjustDownlinkQuality("downgrade");
-    const history = new QualityHistory(RealtimeModel.x2_1_preview);
+    const history = new QualityHistory(adaptiveModel, first.manager.options.provider);
     expect(history.read("uplink")).toBe(3);
     expect(history.read("downlink")).toBe(4);
     await first.manager.close();
@@ -387,7 +456,7 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     await s.samples(5, 3);
     s.stream.updateDownlinkVideoResolution.mockRejectedValueOnce(new Error("failed"));
     await expect(s.manager.adjustDownlinkQuality("downgrade")).rejects.toThrow("failed");
-    const history = new QualityHistory(RealtimeModel.x2_1_preview);
+    const history = new QualityHistory(adaptiveModel, s.manager.options.provider);
     expect(history.read("uplink")).toBe(2);
     expect(history.read("downlink")).toBe(2);
     await s.manager.close();
@@ -395,7 +464,7 @@ describe("XmaxRealtimeManager adaptive quality", () => {
 
   it("does not access quality history for other RTC providers", async () => {
     const storage = historyStorage();
-    const s = setup(30, RealtimeModel.x2_0_trtc); await s.start();
+    const s = setup(30, RealtimeModel.x2_0); await s.start();
     expect(s.stream.beginCalls[0]!.targetSize).toBeUndefined();
     expect(storage.getItem).not.toHaveBeenCalled();
     expect(storage.setItem).not.toHaveBeenCalled();
@@ -424,6 +493,68 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     await s.manager.close();
   });
 
+  it("manually changes uplink tiers without replacing the baseline or touching downlink", async () => {
+    historyStorage();
+    const s = setup(); await s.start();
+    const apply = vi.spyOn(s.stream, "updateUplinkVideoFormat");
+    await s.manager.adjustUplinkQuality("upgrade");
+    expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 1920, height: 1024, fps: 30 });
+    await s.manager.adjustUplinkQuality("upgrade");
+    expect(apply).toHaveBeenCalledTimes(1);
+
+    for (let i = 0; i < 4; i++) await s.manager.adjustUplinkQuality("downgrade");
+    expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 720, height: 384, fps: 16 });
+    await s.manager.adjustUplinkQuality("downgrade");
+    expect(apply).toHaveBeenCalledTimes(5);
+    await s.manager.adjustUplinkQuality("upgrade");
+    expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 960, height: 512, fps: 20 });
+
+    for (let i = 0; i < 3; i++) await s.sample(5, 3);
+    expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 720, height: 384, fps: 16 });
+    for (let i = 0; i < 4; i++) await s.manager.adjustUplinkQuality("upgrade");
+    expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 1920, height: 1024, fps: 30 });
+    const history = new QualityHistory(adaptiveModel, s.manager.options.provider);
+    expect(history.read("uplink")).toBe(1);
+    expect(history.read("downlink")).toBe(2);
+    expect(s.stream.updateDownlinkVideoResolution).not.toHaveBeenCalled();
+    expect(s.stream.beginCalls).toHaveLength(1);
+    expect(s.stream.updateCalls).toHaveLength(0);
+    await s.manager.close();
+  });
+
+  it("does not commit failed manual uplink changes and allows retry from the previous tier", async () => {
+    historyStorage();
+    const s = setup(); await s.start();
+    const previous = s.localStream.videoTrack!.videoFormat;
+    s.stream.failEncoderConfig = new XmaxError(XmaxErrorCode.rtcError, "failed");
+    await expect(s.manager.adjustUplinkQuality("downgrade")).rejects.toThrow("failed");
+    expect(s.localStream.videoTrack!.videoFormat).toBe(previous);
+    expect(new QualityHistory(adaptiveModel, s.manager.options.provider).read("uplink")).toBe(2);
+    s.stream.failEncoderConfig = undefined;
+    await s.manager.adjustUplinkQuality("downgrade");
+    expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 1200, height: 640, fps: 24 });
+    await s.manager.close();
+  });
+
+  it("rejects unavailable uplink adjustments and cancels pending changes on close", async () => {
+    const s = setup();
+    await expect(s.manager.adjustUplinkQuality("upgrade")).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    await s.start();
+    const previous = s.localStream.videoTrack!.videoFormat;
+    const gate = makeDeferred<void>();
+    vi.spyOn(s.stream, "updateUplinkVideoFormat").mockReturnValueOnce(gate.promise);
+    const changing = s.manager.adjustUplinkQuality("downgrade");
+    const rejected = expect(changing).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
+    await expect(s.manager.adjustUplinkQuality("upgrade")).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    const closing = s.manager.close();
+    gate.resolve(); await rejected; await closing;
+    expect(s.localStream.videoTrack!.videoFormat).toBe(previous);
+
+    const other = setup(30, RealtimeModel.x2_0); await other.start();
+    await expect(other.manager.adjustUplinkQuality("upgrade")).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    await other.manager.close();
+  });
+
   it("retains the target after a manual size send fails", async () => {
     const s = setup(); await s.start();
     s.stream.updateDownlinkVideoResolution.mockRejectedValueOnce(new Error("send failed"));
@@ -434,14 +565,14 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     await s.manager.close();
   });
 
-  it("rejects debug size changes without an active Agora generation", async () => {
+  it("rejects debug size changes without an active supported generation", async () => {
     const s = setup();
     await expect(s.manager.adjustDownlinkQuality("downgrade")).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
     await s.manager.connect(s.localStream);
     await expect(s.manager.adjustDownlinkQuality("upgrade")).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
     expect(s.stream.updateDownlinkVideoResolution).not.toHaveBeenCalled();
     await s.manager.close();
-    const other = setup(30, RealtimeModel.x2_0_trtc); await other.start();
+    const other = setup(30, RealtimeModel.x2_0); await other.start();
     await expect(other.manager.adjustDownlinkQuality("downgrade")).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
     expect(other.stream.updateDownlinkVideoResolution).not.toHaveBeenCalled();
     await other.manager.close();
@@ -518,7 +649,7 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     expect(s.stream.connectCalls).toHaveLength(0);
   });
 
-  it("automatically enables Agora adaptation after generation confirmation without a configuration flag", async () => {
+  it("automatically enables adaptation after generation confirmation without a configuration flag", async () => {
     const s = setup();
     await s.manager.connect(s.localStream);
     const apply = vi.spyOn(s.stream, "updateUplinkVideoFormat");
@@ -544,8 +675,8 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     await s.manager.close();
   });
 
-  it("does not apply the Agora policy to TRTC", async () => {
-    const s = setup(30, RealtimeModel.x2_0_trtc);
+  it("does not apply the adaptive policy to VeRTC", async () => {
+    const s = setup(30, RealtimeModel.x2_0);
     await s.start();
     const apply = vi.spyOn(s.stream, "updateUplinkVideoFormat");
     for (let i = 0; i < 5; i++) await s.sample(5, 5);
@@ -894,7 +1025,7 @@ describe("XmaxRealtimeManager external video", () => {
     expect(s.camera.waitForValidCameraFrame).not.toHaveBeenCalled();
     expect(s.stream.encoderConfigFormats[0]).toEqual(provider === RtcProvider.agora
       ? new RealtimeVideoFormat({ ...videoFormat, width: 768, height: 1440, fps: 24 })
-      : model === RealtimeModel.x2_0 ? videoFormat.resized(800, 1536) : videoFormat);
+      : model === RealtimeModel.x2_0 ? videoFormat.resized(800, 1536) : new RealtimeVideoFormat({ ...videoFormat, fps: 24 }));
     const generating = s.manager.startGeneration({ localStream: local, context: testContext });
     await vi.waitFor(() => expect(s.stream.beginCalls).toHaveLength(1));
     expect(s.stream.beginCalls[0]!.mirror).toBe(false);
@@ -1023,7 +1154,8 @@ describe("XmaxRealtimeManager local video", () => {
     await s.manager.connect(local);
     expect(s.stream.connectCalls[0]).toMatchObject({ includeLocalAudio: includeAudio, publishLocalMedia: true });
     expect(s.stream.encoderConfigFormats).toEqual([provider === RtcProvider.agora
-      ? new RealtimeVideoFormat({ ...options.videoFormat, width: 1440, height: 768, fps: 24 }) : options.videoFormat]);
+      ? new RealtimeVideoFormat({ ...options.videoFormat, width: 1440, height: 768, fps: 24 })
+      : provider === RtcProvider.trtc ? new RealtimeVideoFormat({ ...options.videoFormat, fps: 24 }) : options.videoFormat]);
     expect(s.camera.waitForValidCameraFrame).not.toHaveBeenCalled();
     expect(s.start).not.toHaveBeenCalled();
 
@@ -1218,14 +1350,14 @@ describe("XmaxRealtimeManager video format updates", () => {
     expect(stream.stopGenerationCalls).toHaveLength(0);
     expect(stream.updateDownlinkVideoResolution).not.toHaveBeenCalled();
 
-    // 后续更新生成条件与切换插帧仍使用原始生成尺寸。
+    // 生成条件保留原始尺寸；插帧跟随下行 L2，与上行手动更新无关。
     await manager.startGeneration({ localStream, context: new RealtimeContext({ prompt: "new prompt" }) });
     expect(stream.updateCalls[0]!.videoFormat).toBe(testVideoFormat);
     await manager.setFrameInterpolationEnabled(false);
     await manager.setFrameInterpolationEnabled(true);
     const view = { isMirrored: false, setMediaStream: vi.fn(), setFrameInterpolation: vi.fn() };
     VideoRenderRegistry.binding(remote.videoTrack!)!.attachHandler(view, VideoContentMode.fill);
-    expect(view.setFrameInterpolation).toHaveBeenLastCalledWith(expect.objectContaining({ size: { width: 1280, height: 720 } }));
+    expect(view.setFrameInterpolation).toHaveBeenLastCalledWith(expect.objectContaining({ size: { width: 960, height: 540 } }));
     await manager.close();
   });
 
@@ -1242,9 +1374,10 @@ describe("XmaxRealtimeManager video format updates", () => {
     const { manager, camera, stream } = makeManager();
     await manager.connect(makeLocalStream(camera));
     const state = manager.currentState;
+    const previousFormat = camera.currentTrack!.videoFormat;
     stream.failEncoderConfig = new XmaxError(XmaxErrorCode.rtcError, "encoder failure");
     await expect(manager.updateUplinkVideoFormat(updatedFormat)).rejects.toBe(stream.failEncoderConfig);
-    expect(camera.currentTrack!.videoFormat).toBe(testVideoFormat);
+    expect(camera.currentTrack!.videoFormat).toBe(previousFormat);
     expect(manager.currentState).toBe(state);
     expect(stream.disconnectCalls).toBe(0);
 
@@ -1285,6 +1418,7 @@ describe("XmaxRealtimeManager video format updates", () => {
     const { manager, camera, stream } = makeManager();
     const localStream = makeLocalStream(camera);
     await manager.connect(localStream);
+    const previousFormat = localStream.videoTrack!.videoFormat;
     const deferred = makeDeferred<void>();
     vi.spyOn(stream, "updateUplinkVideoFormat").mockReturnValueOnce(deferred.promise);
     const updating = manager.updateUplinkVideoFormat(updatedFormat);
@@ -1292,7 +1426,7 @@ describe("XmaxRealtimeManager video format updates", () => {
     const stopping = manager[method]();
     deferred.resolve();
     await Promise.all([rejected, stopping]);
-    expect(localStream.videoTrack!.videoFormat).toBe(testVideoFormat);
+    expect(localStream.videoTrack!.videoFormat).toBe(previousFormat);
     await manager.close();
   });
 
@@ -1363,9 +1497,10 @@ describe("XmaxRealtimeManager frame rate updates", () => {
   it("keeps metadata on failure and allows a retry", async () => {
     const { manager, camera, stream } = makeManager();
     await manager.connect(makeLocalStream(camera));
+    const previousFormat = camera.currentTrack!.videoFormat;
     stream.failEncoderConfig = new XmaxError(XmaxErrorCode.rtcError, "failed");
     await expect(manager.updateUplinkFrameRate(24)).rejects.toBe(stream.failEncoderConfig);
-    expect(camera.currentTrack!.videoFormat).toBe(testVideoFormat);
+    expect(camera.currentTrack!.videoFormat).toBe(previousFormat);
     expect(stream.disconnectCalls).toBe(0);
     stream.failEncoderConfig = undefined;
     await manager.updateUplinkFrameRate(24);
@@ -1377,6 +1512,7 @@ describe("XmaxRealtimeManager frame rate updates", () => {
     const { manager, camera, stream } = makeManager();
     const local = makeLocalStream(camera);
     await manager.connect(local);
+    const previousFormat = local.videoTrack!.videoFormat;
     const pending = makeDeferred<RealtimeVideoFormat>();
     vi.spyOn(stream, "updateUplinkFrameRate").mockReturnValueOnce(pending.promise);
     const updating = manager.updateUplinkFrameRate(24);
@@ -1385,7 +1521,7 @@ describe("XmaxRealtimeManager frame rate updates", () => {
     const stopping = manager[method]();
     pending.resolve(new RealtimeVideoFormat({ ...testVideoFormat, fps: 24 }));
     await Promise.all([rejected, stopping]);
-    expect(local.videoTrack!.videoFormat).toBe(testVideoFormat);
+    expect(local.videoTrack!.videoFormat).toBe(previousFormat);
     await manager.close();
   });
 });
@@ -1409,11 +1545,11 @@ describe("XmaxRealtimeManager frame interpolation", () => {
     return { ...s, localStream, view, binding, rendering: () => rendering };
   }
 
-  it("preserves original resolution and toggles locally without sending size signals or restarting generation", async () => {
+  it("preserves the adaptive target size and toggles locally without sending size signals or restarting generation", async () => {
     const s = await generating();
     expect(s.stream.beginCalls[0]!.videoFormat).toBe(testVideoFormat);
-    expect(s.stream.beginCalls[0]!.targetSize).toBeUndefined();
-    expect(s.rendering()!.size).toEqual({ width: 1280, height: 720 });
+    expect(s.stream.beginCalls[0]!.targetSize).toEqual({ width: 960, height: 540 });
+    expect(s.rendering()!.size).toEqual({ width: 960, height: 540 });
     expect(s.manager.isFrameInterpolationEnabled).toBe(true);
     const taskID = s.manager.currentState.taskID;
     await s.manager.setFrameInterpolationEnabled(false);
@@ -1422,7 +1558,7 @@ describe("XmaxRealtimeManager frame interpolation", () => {
     expect(s.manager.isFrameInterpolationEnabled).toBe(false);
     await s.manager.setFrameInterpolationEnabled(true);
     expect(s.manager.isFrameInterpolationEnabled).toBe(true);
-    expect(s.rendering()!.size).toEqual({ width: 1280, height: 720 });
+    expect(s.rendering()!.size).toEqual({ width: 960, height: 540 });
     expect(s.stream.updateDownlinkVideoResolution).not.toHaveBeenCalled();
     expect(s.stream.beginCalls).toHaveLength(1);
     expect(s.manager.currentState.taskID).toBe(taskID);
@@ -1460,7 +1596,7 @@ describe("XmaxRealtimeManager frame interpolation", () => {
   it("defaults to raw video on unsupported devices; explicit enable fails without interrupting generation", async () => {
     const s = await generating(async () => false);
     expect(s.manager.isFrameInterpolationEnabled).toBe(false);
-    expect(s.stream.beginCalls[0]!.targetSize).toBeUndefined();
+    expect(s.stream.beginCalls[0]!.targetSize).toEqual({ width: 960, height: 540 });
     expect(s.rendering()).toBeUndefined();
     await expect(s.manager.setFrameInterpolationEnabled(true)).rejects.toMatchObject({ code: XmaxErrorCode.frameInterpolationUnsupported });
     expect(s.manager.isFrameInterpolationEnabled).toBe(false);
@@ -1479,7 +1615,7 @@ describe("XmaxRealtimeManager frame interpolation", () => {
     initial.onFailure(new Error("late"));
     expect(s.stream.updateDownlinkVideoResolution).not.toHaveBeenCalled();
     await s.manager.startGeneration({ localStream: s.localStream, context: testContext });
-    expect(s.stream.updateCalls[0]!.targetSize).toBeUndefined();
+    expect(s.stream.updateCalls[0]!.targetSize).toEqual({ width: 960, height: 540 });
     expect(s.stream.disconnectCalls).toBe(0);
     await s.manager.close();
   });

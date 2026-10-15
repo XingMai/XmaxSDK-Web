@@ -69,7 +69,7 @@ export function App() {
   const [apiKey, setApiKey] = useState(
     () => localStorage.getItem(API_KEY_STORAGE) ?? "",
   );
-  const [model, setModel] = useState<RealtimeModel>(RealtimeModel.x2_1_preview);
+  const [model, setModel] = useState<RealtimeModel>(RealtimeModel.x2_0_trtc);
   const [wechatOpen, setWechatOpen] = useState(false);
   const [keyEditorOpen, setKeyEditorOpen] = useState(false);
   const [useMicrophone, setUseMicrophone] = useState(false);
@@ -384,6 +384,31 @@ export function App() {
       generationBusyRef.current = false;
       setBusy(false);
       setInterpolationSwitching(false);
+    }
+  }
+
+  /** 临时上下行调档入口；与生成操作互斥，自动调档仍保持开启。 */
+  async function handleAdjustQuality(link: "uplink" | "downlink", direction: "upgrade" | "downgrade") {
+    const realtime = realtimeRef.current;
+    if (!realtime || generationBusyRef.current || stateText !== RealtimeConnectionState.generating) return;
+
+    generationBusyRef.current = true;
+    setBusy(true);
+    setErrorText("");
+
+    try {
+      if (link === "uplink") {
+        await realtime.adjustUplinkQuality(direction);
+      } else {
+        await realtime.adjustDownlinkQuality(direction);
+      }
+    } catch (error) {
+      if (realtimeRef.current === realtime) {
+        setErrorText(error instanceof Error ? error.message : String(error));
+      }
+    } finally {
+      generationBusyRef.current = false;
+      setBusy(false);
     }
   }
 
@@ -788,6 +813,24 @@ export function App() {
           </button>
         </div>
       </header>
+
+      {supportedRtcProviders(model)[0] !== RtcProvider.vertc && (
+        <>
+          {(["uplink", "downlink"] as const).map(link => (
+            <div key={link} className="qualityDebug" role="group" aria-label={`${link === "uplink" ? "上行" : "下行"}档位调试`}>
+              <span>{link === "uplink" ? `上行${supportedRtcProviders(model)[0] === RtcProvider.trtc ? "（仅帧率）" : ""}` : "下行"}调试 · 自动调档仍开启</span>
+              <button type="button" disabled={busy || stateText !== RealtimeConnectionState.generating}
+                onClick={() => handleAdjustQuality(link, "downgrade")}>
+                降一档
+              </button>
+              <button type="button" disabled={busy || stateText !== RealtimeConnectionState.generating}
+                onClick={() => handleAdjustQuality(link, "upgrade")}>
+                升一档
+              </button>
+            </div>
+          ))}
+        </>
+      )}
 
       <div className="stageRow">
         <div className="stage">

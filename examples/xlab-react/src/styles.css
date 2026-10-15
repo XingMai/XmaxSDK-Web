@@ -630,6 +630,26 @@ button:disabled,
   display: none;
 }
 
+.qualityDebug {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.qualityDebug button {
+  min-height: 36px;
+  padding: 0 16px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--text);
+  font-size: 13px;
+}
+
 .stageRow {
   display: grid;
   grid-template-columns: 1fr 1fr;

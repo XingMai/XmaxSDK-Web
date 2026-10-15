@@ -223,24 +223,11 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       cleanup: (scope, taskID) => this.performCleanup(scope, taskID),
     });
 
-    if (options.provider === RtcProvider.agora) {
-      this.qualityHistory = new QualityHistory(options.model);
+    if (options.provider === RtcProvider.agora || options.provider === RtcProvider.trtc) {
+      this.qualityHistory = new QualityHistory(options.model, options.provider);
       this.qualityController = new QualityController(async (change, signal) => {
-        if (signal.aborted || this.currentState.connectionState !== RealtimeConnectionState.generating) {
-          throw new XmaxError(XmaxErrorCode.cancelled, "Adaptive video format update was cancelled");
-        }
         await this.coordinator.run(RealtimeOperationKind.configuration, undefined, async token => {
-          const track = this.currentUplinkTrack;
-          const state = track && this.qualityStates.get(track);
-          if (!track || !state) throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Adaptive video baseline is unavailable");
-          const format = qualityVideoFormat(state.baseline, change.to);
-          await this.streamController.updateUplinkVideoFormat(format);
-          token.ensureCurrent();
-          // 生成和插帧使用原始格式；这里只提交上行编码规格和已应用档位。
-          this.generationVideoFormat ??= state.baseline;
-          track.updateVideoFormat(format);
-          state.level = change.to;
-          this.qualityHistory?.write("uplink", change.to);
+          await this.applyUplinkQuality(change.to, token, signal);
         });
       });
       this.downlinkQualityController = new QualityController(async (change, signal) => {
@@ -307,6 +294,62 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     });
   }
 
+  /**
+   * 手动调整上行档位，保留原始基准，自动调档从新档位继续。
+   * @param direction 升一档或降一档；到达 L1/L5 边界时不重复应用。
+   */
+  async adjustUplinkQuality(direction: "upgrade" | "downgrade"): Promise<void> {
+    await this.coordinator.run(RealtimeOperationKind.configuration, undefined, async token => {
+      const controller = this.qualityController;
+      const track = this.currentUplinkTrack;
+      const state = track && this.qualityStates.get(track);
+      if (!controller || !state || this.currentState.connectionState !== RealtimeConnectionState.generating ||
+        (direction !== "upgrade" && direction !== "downgrade")) {
+        throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Uplink quality adjustment requires an active adaptive-quality generation and a valid direction");
+      }
+
+      const level = Math.max(1, Math.min(Object.keys(QUALITY_TIERS).length, state.level + (direction === "upgrade" ? -1 : 1)));
+      if (level === state.level) return;
+
+      this.adaptiveQualityRevision++;
+      controller.resetSamples();
+      await this.applyUplinkQuality(level, token);
+      controller.start(level);
+    });
+  }
+
+  private async applyUplinkQuality(level: number, token: RealtimeOperationToken, signal?: AbortSignal): Promise<void> {
+    const track = this.currentUplinkTrack;
+    const state = track && this.qualityStates.get(track);
+    const ensureActive = () => {
+      token.ensureCurrent();
+      if (signal?.aborted || !track || !state || track !== this.currentUplinkTrack ||
+        state !== this.qualityStates.get(track) || this.currentState.connectionState !== RealtimeConnectionState.generating) {
+        throw new XmaxError(XmaxErrorCode.cancelled, "Adaptive video format update was cancelled");
+      }
+    };
+
+    ensureActive();
+    if (!track || !state) return;
+
+    const target = this.uplinkQualityFormat(state.baseline, level);
+    let format: RealtimeVideoFormat;
+    if (this.options.provider === RtcProvider.trtc) {
+      // 临时实验：只替换帧率，保留编码层最近应用的尺寸、码率和偏好。
+      format = await this.streamController.updateUplinkFrameRate(target.fps);
+    } else {
+      await this.streamController.updateUplinkVideoFormat(target);
+      format = target;
+    }
+    ensureActive();
+
+    // 上行调档不改变生成和下行尺寸，也不覆盖原始 L1 基准。
+    this.generationVideoFormat ??= state.baseline;
+    track.updateVideoFormat(format);
+    state.level = level;
+    this.qualityHistory?.write("uplink", level);
+  }
+
   /** 手动调试与自动调档使用同一尺寸信令路径，不修改生成或上行配置。 */
   async adjustDownlinkQuality(direction: "upgrade" | "downgrade"): Promise<void> {
     await this.coordinator.run(RealtimeOperationKind.configuration, undefined, async token => {
@@ -314,7 +357,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       const state = this.downlinkQualityState;
       if (!controller || !state || this.currentState.connectionState !== RealtimeConnectionState.generating ||
         (direction !== "upgrade" && direction !== "downgrade")) {
-        throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Downlink quality adjustment requires an active Agora generation and a valid direction");
+        throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Downlink quality adjustment requires an active adaptive-quality generation and a valid direction");
       }
       const level = Math.max(1, Math.min(Object.keys(QUALITY_TIERS).length, state.level + (direction === "upgrade" ? -1 : 1)));
       if (level === state.level) return;
@@ -1026,6 +1069,14 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     await this.coordinator.terminate(RealtimeTerminationScope.all);
   }
 
+  /** TRTC 临时只按档位调整帧率；启动时也保留原始分辨率。 */
+  private uplinkQualityFormat(baseline: RealtimeVideoFormat, level: number): RealtimeVideoFormat {
+    const format = qualityVideoFormat(baseline, level);
+    return this.options.provider === RtcProvider.trtc
+      ? format.resized(baseline.width, baseline.height)
+      : format;
+  }
+
   /** 仅为尚无档位记录的本地上行选择初始档位；不应用配置或覆盖重连状态。 */
   private resolveInitialUplinkQuality(track: RealtimeVideoTrack): QualityState | undefined {
     if (!this.qualityController) return undefined;
@@ -1083,10 +1134,10 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         beforePublish = () => cameraReady;
       }
 
-      // 新 Agora 轨道读取历史档位（缺省 L2）；保留 L1 基准，同一轨道重连优先沿用内存状态。
+      // 支持自动调档的新轨道读取历史档位（缺省 L2）；保留 L1 基准，重连优先沿用内存状态。
       const initialQuality = this.resolveInitialUplinkQuality(localTrack);
       const initialFormat = initialQuality
-        ? qualityVideoFormat(initialQuality.baseline, initialQuality.level)
+        ? this.uplinkQualityFormat(initialQuality.baseline, initialQuality.level)
         : undefined;
       const remote = await this.connectionManager.connect({
         localTrack,

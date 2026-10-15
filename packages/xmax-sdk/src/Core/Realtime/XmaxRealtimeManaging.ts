@@ -38,7 +38,15 @@ export interface XmaxRealtimeManaging {
   setFrameInterpolationEnabled(enabled: boolean): Promise<void>;
 
   /**
-   * 手动升/降一档下行输出尺寸，便于调试 change_target_size；仅支持正在生成的 Agora 会话。
+   * 手动升/降一档上行配置；仅支持正在生成的 Agora、TRTC 会话。
+   * Agora 调整分辨率、帧率和编码码率；TRTC 临时只调整帧率，保留尺寸和码率配置。
+   * 保留原始 L1 基准，不改变下行尺寸；自动调档仍保持开启。
+   * @param direction 升一档或降一档；到达 L1/L5 边界时不重复应用。
+   */
+  adjustUplinkQuality(direction: "upgrade" | "downgrade"): Promise<void>;
+
+  /**
+   * 手动升/降一档下行输出尺寸，便于调试 change_target_size；仅支持正在生成的 Agora、TRTC 会话。
    * 仅改变分辨率，成功发送后同步目标档位与插帧尺寸；自动调档仍保持开启。
    * 到达 L1/L5 边界时不重复发送；发送成功不代表服务端已生效。
    */
@@ -176,7 +184,7 @@ export interface XmaxRealtimeManaging {
    * 成功后更新本地轨道的 videoFormat，后续重连继续使用该格式。
    * 模型生成及远端插帧仍使用创建本地流时的格式；此接口不改变生成尺寸。
    * 实际发送规格受设备、浏览器和网络影响，应通过统计回调确认。
-   * Agora 上行自适应以本次成功应用的完整格式作为新的 L1 基准，后续五档按比例调整尺寸和帧率。
+   * 上行自适应以本次成功应用的完整格式作为新的 L1 基准；Agora 按档位缩放尺寸和帧率，TRTC 临时仅调帧率。
    *
    * @param videoFormat 本次完整的上行尺寸、帧率和编码配置。
    * @throws 无本地相机、外部或文件视频流、其他操作进行中、参数无效或 RTC 更新失败时抛错。
