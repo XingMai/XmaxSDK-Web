@@ -54,13 +54,13 @@ interface RecordingSession {
 
 /**
  * 独立录制远端原始音视频；仅显式启动时分配浏览器资源，不依赖渲染视图。
- * 单次约 15 秒，后台调度可能延迟停止；不做精确裁剪。
+ * 单次约 20 秒，后台调度可能延迟停止；不做精确时长裁剪。
  */
 export class RecordingController {
   /**
    * 录制资源上限
    */
-  private static readonly durationMs = 15_000;
+  private static readonly durationMs = 20_000;
   private static readonly maximumBytes = 64 * 1024 * 1024;
   private static readonly preparationTimeoutMs = 10_000;
   private static readonly finalizationTimeoutMs = 5_000;
@@ -348,14 +348,36 @@ export class RecordingController {
     if (session.error || !blob.size) {
       this.reportFailure(session.taskID, session.error ?? new XmaxError(XmaxErrorCode.mediaError, "Recording ended without usable media"));
     } else {
-      this.emit({
-        type: session.reason === RealtimeRecordingFinishReason.durationLimit
-          ? RealtimeRecordingEventType.completed : RealtimeRecordingEventType.interrupted,
-        taskID: session.taskID,
-        result: { blob, hasAudio: session.hasAudio, reason: session.reason },
-      });
+      void this.deliverResult(session.taskID, blob, session.hasAudio, session.reason);
     }
+
+    // RTC 清理只等待录制器封装；文件后处理不得拖住退房或下一次生成。
     session.resolve();
+  }
+
+  /**
+   * 按需加载后处理，成功后回调；处理失败仍交付原文件，不丢失已完成的录像。
+   */
+  private async deliverResult(
+    taskID: string,
+    original: Blob,
+    hasAudio: boolean,
+    reason: RealtimeRecordingFinishReason,
+  ): Promise<void> {
+    let blob = original;
+    try {
+      const { RecordingProcessor } = await import("./RecordingProcessor");
+      blob = await new RecordingProcessor().process(original);
+    } catch (error) {
+      XmaxLogger.realtime.warning(() => `Recording gap removal failed; keeping original clip: ${XmaxError.from(error).message}`);
+    }
+
+    this.emit({
+      type: reason === RealtimeRecordingFinishReason.durationLimit
+        ? RealtimeRecordingEventType.completed : RealtimeRecordingEventType.interrupted,
+      taskID,
+      result: { blob, hasAudio, reason },
+    });
   }
 
   /**

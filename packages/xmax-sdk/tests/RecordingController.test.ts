@@ -7,6 +7,11 @@ import {
 } from "../src/Service/Realtime/RealtimeRecordingEvent";
 import type { RecordingTracks } from "../src/Foundation/Media/Recording/RecordingTracks";
 
+const processRecording = vi.hoisted(() => vi.fn(async (blob: Blob) => blob));
+vi.mock("../src/Media/Recording/RecordingProcessor", () => ({
+  RecordingProcessor: class { process = processRecording; },
+}));
+
 class Track {
   readyState = "live";
   muted = false;
@@ -63,7 +68,11 @@ class Recorder {
   start() { this.state = "recording"; }
   stop() { this.stopCalls++; this.state = "inactive"; }
   data(text = "encoded-video") { this.ondataavailable?.({ data: new Blob([text], { type: this.mimeType }) }); }
-  finalize() { this.data(); this.onstop?.(); }
+  async finalize() {
+    this.data();
+    this.onstop?.();
+    await vi.advanceTimersByTimeAsync(0);
+  }
 }
 
 function setup() {
@@ -115,6 +124,7 @@ describe("RecordingController", () => {
     AudioContextStub.instances = [];
     AudioContextStub.suspended = false;
     AudioContextStub.pending = false;
+    processRecording.mockReset().mockImplementation(async blob => blob);
     vi.stubGlobal("MediaRecorder", Recorder);
     vi.stubGlobal("AudioContext", AudioContextStub);
     vi.stubGlobal("MediaStream", Stream);
@@ -134,7 +144,7 @@ describe("RecordingController", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("times 15 seconds from the first frame and waits for final data before delivering once", async () => {
+  it("times 20 seconds from the first frame and waits for final data before delivering once", async () => {
     const s = setup();
     s.controller.start("task-1", s.readTracks);
     await vi.advanceTimersByTimeAsync(2_000);
@@ -142,12 +152,12 @@ describe("RecordingController", () => {
     s.videos[0]!.callback?.();
     const recorder = Recorder.instances[0]!;
     recorder.data("first");
-    await vi.advanceTimersByTimeAsync(14_999);
+    await vi.advanceTimersByTimeAsync(19_999);
     expect(recorder.stopCalls).toBe(0);
     await vi.advanceTimersByTimeAsync(1);
     expect(recorder.stopCalls).toBe(1);
     expect(s.events).toHaveLength(0);
-    recorder.finalize();
+    await recorder.finalize();
     expect(s.events).toHaveLength(1);
     expect(s.events[0]).toMatchObject({ type: EventType.completed, taskID: "task-1", result: { hasAudio: true, reason: Reason.durationLimit } });
     const event = s.events[0]!;
@@ -174,7 +184,7 @@ describe("RecordingController", () => {
     const again = s.controller.stop(reason);
     expect(stopped).toBe(again);
     expect(recorder.stopCalls).toBe(1);
-    recorder.finalize();
+    await recorder.finalize();
     await stopped;
     expect(s.events[0]).toMatchObject({ type: EventType.interrupted, result: { reason } });
   });
@@ -196,7 +206,7 @@ describe("RecordingController", () => {
     expect(context.sources).toHaveLength(2);
     expect(recorder.stream.getTracks()).toEqual(original);
     const stopped = s.controller.stop(Reason.generationEnded);
-    recorder.finalize();
+    await recorder.finalize();
     await stopped;
     expect(s.events[0]).toMatchObject({ result: { hasAudio: true } });
   });
@@ -206,7 +216,7 @@ describe("RecordingController", () => {
     s.setTracks({ videoTrack: s.videoTrack as unknown as MediaStreamTrack });
     const recorder = await s.start();
     const stopped = s.controller.stop(Reason.generationEnded);
-    recorder.finalize();
+    await recorder.finalize();
     await stopped;
     expect(s.events[0]).toMatchObject({ type: EventType.interrupted, result: { hasAudio: false } });
   });
@@ -219,15 +229,15 @@ describe("RecordingController", () => {
     if (kind === "ended") s.videoTrack.readyState = "ended";
     await vi.advanceTimersByTimeAsync(100);
     expect(recorder.stopCalls).toBe(1);
-    recorder.finalize();
+    await recorder.finalize();
     expect(s.events[0]).toMatchObject({ type: EventType.interrupted, result: { reason: Reason.mediaInterrupted } });
   });
 
-  it("treats an unsolicited native stop as interruption, not 15-second completion", async () => {
+  it("treats an unsolicited native stop as interruption, not 20-second completion", async () => {
     const s = setup();
     const recorder = await s.start();
     recorder.state = "inactive";
-    recorder.finalize();
+    await recorder.finalize();
     expect(s.events[0]).toMatchObject({ type: EventType.interrupted });
   });
 
@@ -236,9 +246,9 @@ describe("RecordingController", () => {
     const first = await s.start("first");
     const second = await s.start("second");
     expect(first.stopCalls).toBe(1);
-    first.finalize();
+    await first.finalize();
     const stopped = s.controller.stop(Reason.generationEnded);
-    second.finalize();
+    await second.finalize();
     await stopped;
     expect(s.events.map(event => event.taskID)).toEqual(["first", "second"]);
     expect(AudioContextStub.instances.every(context => context.close.mock.calls.length === 1)).toBe(true);
@@ -249,7 +259,7 @@ describe("RecordingController", () => {
     const recorder = await s.start();
     recorder.data();
     recorder.onerror?.();
-    recorder.finalize();
+    await recorder.finalize();
     expect(s.events).toHaveLength(1);
     expect(s.events[0]).toMatchObject({ type: EventType.failed });
     expect(s.events[0]).not.toHaveProperty("result");
@@ -272,7 +282,7 @@ describe("RecordingController", () => {
     await stopped;
     expect(s.events).toHaveLength(1);
     expect(s.events[0]).toMatchObject({ type: EventType.failed });
-    recorder.finalize();
+    await recorder.finalize();
     expect(s.events).toHaveLength(1);
     expect(vi.getTimerCount()).toBe(0);
   });
@@ -321,7 +331,7 @@ describe("RecordingController", () => {
     s.controller.setListener(undefined);
     expect(recorder.stopCalls).toBe(0);
     const stopped = s.controller.stop(Reason.generationEnded);
-    recorder.finalize();
+    await recorder.finalize();
     await stopped;
     expect(s.events).toHaveLength(0);
   });
@@ -347,7 +357,39 @@ describe("RecordingController", () => {
     const s = setup();
     const recorder = await s.start();
     recorder.ondataavailable?.({ data: { size: 65 * 1024 * 1024 } as Blob });
-    recorder.finalize();
+    await recorder.finalize();
     expect(s.events[0]).toMatchObject({ type: EventType.failed });
+  });
+
+  it("releases RTC cleanup before processing completes and then delivers the processed blob", async () => {
+    let complete!: (blob: Blob) => void;
+    processRecording.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    const s = setup();
+    const recorder = await s.start();
+    const stopped = s.controller.stop(Reason.generationEnded);
+    await recorder.finalize();
+    await stopped;
+    expect(s.events).toHaveLength(0);
+    expect(AudioContextStub.instances[0]!.close).toHaveBeenCalledOnce();
+    expect(s.videoTrack.stop).not.toHaveBeenCalled();
+
+    const blob = new Blob(["compacted"], { type: "video/mp4" });
+    complete(blob);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(s.events).toHaveLength(1);
+    expect(s.events[0]).toMatchObject({ type: EventType.interrupted, result: { blob } });
+  });
+
+  it("falls back to the original file when post-processing fails", async () => {
+    processRecording.mockRejectedValueOnce(new Error("unsupported file"));
+    const s = setup();
+    const recorder = await s.start();
+    s.controller.stop(Reason.generationEnded);
+    await recorder.finalize();
+    const event = s.events[0]!;
+    expect(event.type).toBe(EventType.interrupted);
+    if (event.type !== EventType.failed) {
+      expect(await event.result.blob.text()).toBe("encoded-video");
+    }
   });
 });

@@ -311,7 +311,7 @@ Animated images are captured as a single still frame.
 ### Record a generated clip
 
 Recording is off by default. Set `record: true` when starting a new generation
-to record approximately 15 seconds of the original remote video and audio.
+to record approximately 20 seconds of the original remote video and audio.
 Register the listener before starting:
 
 ```javascript
@@ -339,6 +339,15 @@ await realtime.startGeneration({
 - The timer starts when a remote video frame is available, independently of the
   attached view. Frame interpolation, interaction effects, and overlays are not recorded.
 - Recording errors do not stop generation. `startGeneration` does not wait for the file.
+- Before delivery, the SDK shortens unusually long video-frame intervals and cuts
+  the same intervals from audio. Cuts align to complete audio-packet boundaries;
+  neither track is re-encoded, and all video frames are preserved. The resulting
+  clip can be shorter than the recording period. Speech during removed intervals
+  is lost, and audio splices can be audible. This does not reconstruct missing
+  motion or smooth visual jumps.
+- Gap removal runs after recording and does not delay RTC cleanup. It requires
+  a supported MP4 or WebM recording; if processing fails or times out, the SDK
+  logs a warning and returns the original clip instead.
 - `record` is ignored on condition updates; it cannot stop or restart a recording.
 - Restarting ends the old recording. `restart: true` with `record: true` reports a
   recording failure for the new task; generation still restarts normally.
@@ -347,7 +356,7 @@ await realtime.startGeneration({
 - Audio arriving later is included after its arrival. `hasAudio` indicates that an
   enabled, unmuted remote audio track was observed during recording, not audible speech.
 - Formats depend on browser support; MP4 is not guaranteed. Background scheduling
-  can delay the stop timer, so files are not cropped to exactly 15.000 seconds.
+  can delay the stop timer, so files are not cropped to exactly 20.000 seconds.
 - Audio processing must be allowed by the browser. TRTC recording on mobile Safari
   is currently unsupported because playback muting also disables audio reception.
 - Recording buffers are limited to 64 MiB. The SDK does not upload recordings or

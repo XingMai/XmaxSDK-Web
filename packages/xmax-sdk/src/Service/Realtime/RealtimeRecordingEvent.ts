@@ -24,7 +24,7 @@ export enum RealtimeRecordingFinishReason {
  */
 export interface RealtimeRecordingResult {
   /**
-   * 可供保存、上传或预览的完整文件。
+   * 可供保存、上传或预览的完整文件；成功裁去长帧等待时，时长短于实际录制时间。
    */
   readonly blob: Blob;
 
