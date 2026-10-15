@@ -7,4 +7,5 @@ coverage/
 .pnpm-store/
 .cicd/
 .preview/
+/docs/
 packages/xmax-sdk/README.md
