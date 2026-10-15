@@ -11,6 +11,9 @@ export class RealtimeConfiguration {
    */
   readonly model: RealtimeModelName;
 
+  /** 当前 Manager 的会话 API 地址；指定时优先于模型和全局环境地址。 */
+  readonly apiBaseURL?: string;
+
   /**
    * 实时连接使用的 RTC 提供方。
    */
@@ -26,10 +29,12 @@ export class RealtimeConfiguration {
    *
    * @param init.model 实时生成业务使用的模型；未知名称原样透传，媒体规格沿用 x2.1-preview，RTC 默认使用 Agora。
    * @param init.provider RTC 提供方，默认按模型定义选择；必须受模型支持，创建后不可切换。
+   * @param init.apiBaseURL 当前 Manager 的会话 API 地址，覆盖模型和环境默认地址。
    * @param init.isFrameInterpolationEnabled 是否默认开启远端生成画面的插帧，默认 false。
    */
   constructor(init: {
     model: RealtimeModelName;
+    apiBaseURL?: string;
     provider?: RtcProvider;
     isFrameInterpolationEnabled?: boolean;
   }) {
@@ -45,6 +50,7 @@ export class RealtimeConfiguration {
       );
     }
     this.model = init.model;
+    this.apiBaseURL = init.apiBaseURL;
 
     this.isFrameInterpolationEnabled = init.isFrameInterpolationEnabled ?? false;
   }

@@ -12,6 +12,7 @@ import {
   XmaxConfiguration,
   XmaxEnvironment,
   XmaxLoggerOption,
+  type RealtimeModelName,
   type RealtimeMediaStream,
   type RealtimeLaunchTiming,
   type VideoStatistics,
@@ -33,6 +34,31 @@ import { StatisticsPanel } from "./StatisticsPanel";
 import { compressReferenceImage } from "./compressReferenceImage";
 
 const API_KEY_STORAGE = "xmax.xlab.apiKey";
+
+interface ModelOption {
+  id: string;
+  model: RealtimeModelName;
+  label: string;
+  apiBaseURL: string;
+  provider?: RtcProvider;
+}
+
+// 模型标识、会话地址和 RTC 路由独立配置。
+const MODEL_OPTIONS: readonly ModelOption[] = [
+  { id: "trtc-production", model: RealtimeModel.x2_0_trtc, label: "x2.0-trtc",
+    apiBaseURL: "https://api.xmaxai.com/open/api/v1" },
+  { id: "x2.1-preview-trtc", model: "x2.1-preview-trtc", label: "x2.1-preview-trtc",
+    apiBaseURL: "https://dev.xmaxai.com/open/api/v1", provider: RtcProvider.trtc },
+  ...[
+    RealtimeModel.x2_1_preview,
+    "x2.1-preview-1012",
+    "x2.1-preview-1013",
+    "x2.1-preview-1014",
+  ].map((model) => ({
+    id: model, model, label: modelDisplayName(model),
+    apiBaseURL: "https://dev.xmaxai.com/open/api/v1",
+  })),
+];
 
 /** 相机采集格式：桌面横屏 1920×1024，窄屏竖屏 1024×1920（x2.0 受像素上限约束会自动等比缩小）。 */
 function cameraVideoFormat(): RealtimeVideoFormat {
@@ -69,7 +95,10 @@ export function App() {
   const [apiKey, setApiKey] = useState(
     () => localStorage.getItem(API_KEY_STORAGE) ?? "",
   );
-  const [model, setModel] = useState<RealtimeModel>(RealtimeModel.x2_1_preview);
+  const [modelOptionID, setModelOptionID] = useState<string>(RealtimeModel.x2_1_preview);
+  const modelOption = MODEL_OPTIONS.find((option) => option.id === modelOptionID)!;
+  const model = modelOption.model;
+  const provider = modelOption.provider ?? supportedRtcProviders(model)[0]!;
   const [wechatOpen, setWechatOpen] = useState(false);
   const [keyEditorOpen, setKeyEditorOpen] = useState(false);
   const [useMicrophone, setUseMicrophone] = useState(false);
@@ -297,6 +326,8 @@ export function App() {
     const realtime = client.createRealtimeManager(
       new RealtimeConfiguration({
         model,
+        provider,
+        apiBaseURL: modelOption.apiBaseURL,
         // 与 SDK 一致默认关闭，允许用户在会话中手动切换。
         isFrameInterpolationEnabled: interpolationRequested,
       }),
@@ -606,13 +637,10 @@ export function App() {
           </div>
           <div className="topbarRight">
             <div className="rtcModelPicker">
-              <select className="rtcModelSelect" aria-label="Model" value={model} disabled={busy}
-                onChange={(event) => setModel(event.target.value as RealtimeModel)}>
-                {[
-                  RealtimeModel.x2_0_trtc,
-                  RealtimeModel.x2_1_preview,
-                ].map((option) => (
-                  <option key={option} value={option}>{modelDisplayName(option)}</option>
+              <select className="rtcModelSelect" aria-label="Model" value={modelOptionID} disabled={busy}
+                onChange={(event) => setModelOptionID(event.target.value)}>
+                {MODEL_OPTIONS.map((option) => (
+                  <option key={option.id} value={option.id}>{option.label}</option>
                 ))}
               </select>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -767,7 +795,7 @@ export function App() {
         </div>
         <div className="sessionControls">
           {!isMobileLayout && (
-            <span className="sessionModel" aria-label="当前模型">{modelDisplayName(model)}</span>
+            <span className="sessionModel" aria-label="当前模型">{modelOption.label}</span>
           )}
           <StatisticsToggle visible={statisticsVisible} onChange={setStatisticsVisible} />
           <RemoteVolumeControl volume={remoteAudioVolume} disabled={!sessionActive || !realtimeRef.current}
@@ -819,7 +847,7 @@ export function App() {
               { label: "播放缓冲延迟", value: formatVideoMetric(remoteVideoStatistics?.jitterBufferDelayMs, "ms") },
               { label: "下行丢包率", value: formatVideoMetric(remoteVideoStatistics?.downlinkLossPercent, "%") },
               { label: "下行网络质量", value: formatNetworkQuality(networkStatistics?.downlinkQuality), title: "本端所有下行连接的平均网络质量" },
-              supportedRtcProviders(model)[0] !== RtcProvider.trtc
+              provider !== RtcProvider.trtc
                 ? { label: "RTT（云端）", value: formatVideoMetric(remoteVideoStatistics?.rttMs, "ms"), title: "本端 SDK 到 RTC 云端的往返延迟" }
                 : { label: "下行 RTT", value: formatVideoMetric(networkStatistics?.downlinkRttMs, "ms"), title: "本端所有下行连接到 RTC 云端的平均往返延迟，不是单程耗时" },
               { label: "E2E（RTC 估算）", value: formatVideoMetric(remoteVideoStatistics?.endToEndDelayMs, "ms") },

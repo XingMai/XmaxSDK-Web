@@ -52,13 +52,13 @@ export class XmaxClient {
 
   /**
    * 创建实时媒体 Manager。
-   * 模型专用地址优先于环境默认地址，并用于该 Manager 的整个会话生命周期。
+   * 显式会话地址优先于模型地址和环境默认地址，用于该 Manager 的整个会话生命周期。
    *
    * @param options 实时生成模型等业务配置。
    * @returns 可用于本地相机预览、实时连接与生成的实时 Manager。
    */
   createRealtimeManager(options: RealtimeConfiguration): XmaxRealtimeManaging {
-    const baseURL = modelBaseURL(options.model);
+    const baseURL = options.apiBaseURL ?? modelBaseURL(options.model);
     const apiService = baseURL
       ? new ApiService({ apiKey: this.configuration.apiKey, baseURL })
       : this.apiService;
