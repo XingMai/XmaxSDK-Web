@@ -71,6 +71,7 @@ export class XmaxRealtimeGenerationManager {
    * @param options.mirror 是否由后端水平翻转输入，默认 false；仅用于 start 信令。
    * @param options.faceRestoration 是否回贴原始人脸，默认 false。
    * @param options.onStartSent start 信令发送成功后的可选异步回调。
+   * @param options.onRemoteReady 远端视频就绪后通知任务标识，不等待录制等附加功能。
    * @param options.extraParams 合并到本次 start 的 params，不缓存。
    */
   async start(options: {
@@ -84,6 +85,7 @@ export class XmaxRealtimeGenerationManager {
     mirror?: boolean;
     faceRestoration?: boolean;
     onStartSent?: () => Promise<void>;
+    onRemoteReady?: (taskID: string) => void;
     extraParams?: RealtimeExtraParams;
   }): Promise<string> {
     const context = this.validateContext(options.context);
@@ -114,6 +116,8 @@ export class XmaxRealtimeGenerationManager {
 
       // 生成确认后再等待远端轨道就绪，并应用远端音频配置。
       await options.waitUntilRemoteReady();
+      options.ensureCurrent();
+      options.onRemoteReady?.(taskID);
       options.ensureCurrent();
 
       await this.streamController.activateRemoteAudio();

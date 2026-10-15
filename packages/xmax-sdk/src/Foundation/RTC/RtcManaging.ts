@@ -156,6 +156,12 @@ export interface RtcManaging {
   subscribeRemoteAudio(userID: string, subscribe: boolean): Promise<void>;
 
   /**
+   * 获取播放音量处理前的远端音轨；尚未订阅到音频时返回空值。
+   * 不支持独立采集与静音播放的平台抛出错误。
+   */
+  getRemoteAudioTrack(userID: string): MediaStreamTrack | undefined;
+
+  /**
    * 当前平台是否支持远端音量控制。
    *
    * iOS Safari/WKWebView 不支持，该平台上音量设置降级为播放/静音二值控制，

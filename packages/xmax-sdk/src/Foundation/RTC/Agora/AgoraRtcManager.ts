@@ -676,6 +676,13 @@ export class AgoraRtcManager implements RtcManaging {
   }
 
   /**
+   * 获取原始远端音轨，不依赖声网音频播放器是否处于播放状态。
+   */
+  getRemoteAudioTrack(userID: string): MediaStreamTrack | undefined {
+    return this.client?.remoteUsers.find(user => String(user.uid) === userID)?.audioTrack?.getMediaStreamTrack();
+  }
+
+  /**
    * 按房间顺序发送消息，限制每秒包数与总字节；失败返回给原业务调用。
    */
   sendRoomMessage(message: string): Promise<void> {

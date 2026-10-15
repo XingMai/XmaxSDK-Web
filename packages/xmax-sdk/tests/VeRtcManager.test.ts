@@ -173,6 +173,14 @@ describe("VeRTC file media", () => {
 });
 
 describe("VeRTC media and protocol", () => {
+  it("exposes raw remote audio independently of playback volume", async () => {
+    const s = setup();
+    await s.joined();
+    s.manager.setRemoteAudioVolume(0, "bot");
+    expect(s.manager.getRemoteAudioTrack("bot")).toBe(s.audio);
+    expect(s.engine.getRemoteStreamTrack).toHaveBeenCalledWith("bot", s.sdk.StreamIndex.STREAM_INDEX_MAIN, "audio");
+  });
+
   it("rejects nonzero camera rotation instead of silently ignoring it", async () => {
     const s = setup();
     await expect(s.manager.startCameraCapture({ width: 1024, height: 1920, frameRate: 30,

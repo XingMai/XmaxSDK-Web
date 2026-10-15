@@ -9,6 +9,7 @@ import type { RealtimeVideoFormat } from "../Service/Realtime/RealtimeVideoForma
 import type { ModelSize } from "../Service/Realtime/RealtimeModel";
 import type { RoomListener } from "./Room/RoomControlling";
 import type { RoomEventTargetSize } from "./Room/RoomEvent";
+import type { RecordingTracks } from "../Foundation/Media/Recording/RecordingTracks";
 
 /**
  * 远端结果流及其可供渲染层绑定的视频轨。
@@ -72,6 +73,11 @@ export interface StreamGenerationOptions {
  * 定义传输层向 Core 暴露的统一能力。
  */
 export interface StreamControlling {
+  /**
+   * 获取当前实际生成机器人的录制轨道；不建立订阅，不转移轨道所有权。
+   */
+  getRemoteRecordingTracks(): RecordingTracks | undefined;
+
   /**
    * 监听本端上下行网络统计，传入 undefined 取消。
    */

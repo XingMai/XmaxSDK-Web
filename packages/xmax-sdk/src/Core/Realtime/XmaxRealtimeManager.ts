@@ -10,6 +10,8 @@ import { snapshotExtraParams, type RealtimeExtraParams } from "../../Service/Rea
 import type { NetworkStatistics, NetworkStatisticsListener } from "../../Foundation/RTC/NetworkStatistics";
 import type { RemoteVideoStatistics, RemoteVideoStatisticsListener, VideoStatistics, VideoStatisticsListener } from "../../Foundation/RTC/VideoStatistics";
 import { MediaController } from "../../Media/MediaController";
+import { RecordingController } from "../../Media/Recording/RecordingController";
+import { RealtimeRecordingFinishReason, type RealtimeRecordingListener } from "../../Service/Realtime/RealtimeRecordingEvent";
 import type { MediaControlling } from "../../Media/MediaControlling";
 import { RenderController } from "../../Render/RenderController";
 import type { RenderControlling } from "../../Render/RenderControlling";
@@ -80,6 +82,11 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    */
   readonly options: RealtimeConfiguration;
   private readonly mediaService: MediaService;
+
+  /**
+   * 可选的任务录制；未开启时不分配浏览器录制资源。
+   */
+  private readonly recordingController = new RecordingController();
 
   /**
    * 本地流创建时的生成格式；上行编码调整不改变模型输入配置与远端插帧尺寸。
@@ -184,6 +191,9 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         void this.errorHandler.report(error);
       },
       remoteStreamListener: (binding) => {
+        if (!binding) {
+          void this.recordingController.stop(RealtimeRecordingFinishReason.mediaInterrupted);
+        }
         this.clearRemoteVideoStatistics();
         this.connectionManager.handleRemoteStreamBinding(binding);
       },
@@ -991,6 +1001,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    * @param options.restart 是否保留 RTC 连接并创建新任务发送 start，默认 false；不预先发送 stop。
    * @param options.faceRestoration 是否启用原始人脸回贴，默认 false；正在生成时通过 change_condition 更新。
    * @param options.extraParams 合并到本次 start 或 change_condition 的 params；不缓存，自动恢复时不携带，不允许覆盖 SDK 字段。
+   * @param options.record 是否录制远端原始音视频约 15 秒，默认 false；仅 start 有效，条件更新时忽略，重启录制暂不支持。
    * @returns 承载远端生成画面的媒体流。
    * @throws extraParams 包含非 JSON 数据、循环引用或 SDK 保留字段时，在连接或更新前抛出 invalidConfiguration。
    * @throws 本地流不属于当前 Manager、缺少可用的条件上下文、信令发送
@@ -1002,6 +1013,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     restart?: boolean;
     faceRestoration?: boolean;
     extraParams?: RealtimeExtraParams;
+    record?: boolean;
   }): Promise<RealtimeMediaStream> {
     const extraParams = snapshotExtraParams(options.extraParams);
     return this.coordinator.run(
@@ -1048,9 +1060,24 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
           await this.performConnect(options.localStream, token);
         }
 
-        return this.performStartGeneration(token, videoFormat, context, options.restart ?? false, options.faceRestoration ?? false, extraParams);
+        return this.performStartGeneration(
+          token,
+          videoFormat,
+          context,
+          options.restart ?? false,
+          options.faceRestoration ?? false,
+          extraParams,
+          options.record ?? false,
+        );
       },
     );
+  }
+
+  /**
+   * 设置录制最终事件监听器；清除监听不停止录制，录制错误不影响生成。
+   */
+  setRecordingListener(listener?: RealtimeRecordingListener): void {
+    this.recordingController.setListener(listener);
   }
 
   /**
@@ -1189,6 +1216,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    * @param restart 是否替换当前生成任务并重新发送 start。
    * @param faceRestoration 是否回贴原始人脸。
    * @param extraParams 合并到本次 start 的 params，不缓存。
+   * @param record 是否为本次任务开启独立录制，不影响生成返回时间。
    * @returns 承载生成结果的远端媒体流。
    */
   private async performStartGeneration(
@@ -1198,8 +1226,14 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     restart: boolean,
     faceRestoration: boolean,
     extraParams?: RealtimeExtraParams,
+    record = false,
   ): Promise<RealtimeMediaStream> {
     token.setFailureScope(RealtimeTerminationScope.connection);
+    if (restart) {
+      // 旧任务独立收尾，不让文件封装阻塞新任务的生成信令。
+      void this.recordingController.stop(RealtimeRecordingFinishReason.restarted);
+    }
+
     const initialLevel = this.qualityHistory?.read("downlink") ?? 1;
     const targetSize = this.downlinkQualityController ? qualityVideoSize(videoFormat, initialLevel) : undefined;
     await this.prepareFrameInterpolation(targetSize ?? videoFormat, token);
@@ -1218,6 +1252,15 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       ),
       context,
       restart,
+      onRemoteReady: record ? taskID => {
+        if (restart) {
+          this.recordingController.reportFailure(taskID, new XmaxError(
+            XmaxErrorCode.invalidConfiguration, "Recording restarted generation tasks is not supported",
+          ));
+        } else {
+          this.recordingController.start(taskID, () => this.streamController.getRemoteRecordingTracks());
+        }
+      } : undefined,
       targetSize,
       mirror: this.mediaController.source === "camera" &&
         this.currentLocalTrack?.position === CameraPosition.front,
@@ -1248,11 +1291,12 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
 
     const onFinish = this.mediaController.onNetworkVideoFinish;
     if (this.mediaController.source === "networkVideo") {
-      this.streamController.activateNetworkVideoCompletion(onFinish && (() => {
+      this.streamController.activateNetworkVideoCompletion(() => {
         if (this.currentState.taskID === taskID && this.currentState.connectionState === RealtimeConnectionState.generating) {
-          return onFinish();
+          void this.recordingController.stop(RealtimeRecordingFinishReason.generationEnded);
+          return onFinish?.();
         }
-      }));
+      });
     }
 
     return this.connectionManager.makeRemoteStream();
@@ -1279,6 +1323,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     scope: RealtimeTerminationScope,
     taskID: string,
   ): Promise<RealtimeCleanupResult> {
+    const recordingFinished = this.recordingController.stop(RealtimeRecordingFinishReason.generationEnded);
     this.mediaController.pauseLocalVideo();
     this.launchTimer.cancel();
     this.remoteFrameDisplayHandler = undefined;
@@ -1291,6 +1336,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     this.connectionManager.stopHeartbeat();
     await this.generationManager.reset(taskID);
     const sessionID = await this.connectionManager.disconnect();
+    await recordingFinished;
 
     if (scope === RealtimeTerminationScope.all) {
       this.generationVideoFormat = undefined;

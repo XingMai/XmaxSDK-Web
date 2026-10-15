@@ -3,6 +3,7 @@ import type { CameraRotation } from "../../Foundation/Media/Camera/CameraRotatio
 import type { NetworkStatisticsListener } from "../../Foundation/RTC/NetworkStatistics";
 import type { RealtimeContext } from "../../Service/Realtime/RealtimeContext";
 import type { RealtimeExtraParams } from "../../Service/Realtime/RealtimeExtraParams";
+import type { RealtimeRecordingListener } from "../../Service/Realtime/RealtimeRecordingEvent";
 import type { RealtimeMediaStream } from "../../Service/Realtime/RealtimeMediaStream";
 import type {
   RealtimeState,
@@ -18,6 +19,11 @@ import type { RemoteVideoStatisticsListener, VideoStatisticsListener } from "../
  * 定义 SDK 对接入方提供的实时媒体与生成控制能力。
  */
 export interface XmaxRealtimeManaging {
+  /**
+   * 监听录制完成、中断或失败；传入 undefined 清除监听，不停止正在进行的录制。
+   */
+  setRecordingListener(listener?: RealtimeRecordingListener): void;
+
   /**
    * 实时能力配置。
    */
@@ -264,6 +270,7 @@ export interface XmaxRealtimeManaging {
    * @param options.restart 是否保留 RTC 连接并创建新任务发送 start，默认 false；不预先发送 stop。
    * @param options.faceRestoration 是否启用原始人脸回贴，默认 false；正在生成时通过 change_condition 更新。
    * @param options.extraParams 合并到本次 start 或 change_condition 的 params；不缓存，自动恢复时不携带，不允许覆盖 SDK 字段。
+   * @param options.record 是否录制远端原始音视频约 15 秒，默认 false；仅 start 有效，条件更新时忽略，重启录制暂不支持。
    * @returns 承载远端生成画面的媒体流。
    * @throws extraParams 包含非 JSON 数据、循环引用或 SDK 保留字段时，在连接或更新前抛出 invalidConfiguration。
    * @throws 本地流不属于当前 Manager、缺少可用的条件上下文、信令发送
@@ -275,5 +282,6 @@ export interface XmaxRealtimeManaging {
     restart?: boolean;
     faceRestoration?: boolean;
     extraParams?: RealtimeExtraParams;
+    record?: boolean;
   }): Promise<RealtimeMediaStream>;
 }

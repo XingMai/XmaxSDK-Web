@@ -581,6 +581,16 @@ export class TrtcRtcManager implements RtcManaging {
   }
 
   /**
+   * 获取原始远端音轨；不支持独立播放音量的平台暂不开放录制。
+   */
+  getRemoteAudioTrack(userID: string): MediaStreamTrack | undefined {
+    if (!canControlTrtcRemoteAudioVolume()) {
+      throw new XmaxError(XmaxErrorCode.mediaError, "TRTC recording cannot preserve remote audio while muted on this platform");
+    }
+    return this.requireEngine().getAudioTrack(userID) ?? undefined;
+  }
+
+  /**
    * 设置指定远端用户的音频播放音量。
    *
    * iOS Safari/WKWebView 不允许 JS 修改媒体元素音量（TRTC 官方标注

@@ -15,6 +15,7 @@ import type { RemoteStreamBinding } from "../src/Stream/StreamControlling";
 import type { VideoEncodingConfiguration } from "../src/Foundation/RTC/VideoEncodingConfiguration";
 
 class RtcManagingStub implements RtcManaging {
+  getRemoteAudioTrack = vi.fn((_userID: string): MediaStreamTrack | undefined => undefined);
   async updateCredentials(): Promise<void> {}
   isInitialized = true;
 
@@ -516,6 +517,22 @@ describe("StreamController", () => {
     expect(() =>
       controller.beginGeneration({ taskID: "task-001", videoFormat, context }),
     ).toThrowError(expect.objectContaining({ code: XmaxErrorCode.rtcError }));
+  });
+
+  it("only exposes the active generation bot's recording tracks", async () => {
+    const { controller, rtc } = makeStream();
+    expect(controller.getRemoteRecordingTracks()).toBeUndefined();
+    expect(rtc.getRemoteAudioTrack).not.toHaveBeenCalled();
+    await controller.connect(connection, false, noopEnsureActive);
+    const ready = controller.beginGeneration({ taskID: "record", videoFormat, context });
+    emitRemoteVideo(rtc, "bot001", true);
+    await ready;
+    const audio = { kind: "audio" } as MediaStreamTrack;
+    rtc.getRemoteAudioTrack.mockReturnValue(audio);
+    expect(controller.getRemoteRecordingTracks()).toEqual({ videoTrack: rtc.remoteVideoTrack, audioTrack: audio });
+    expect(rtc.getRemoteAudioTrack).toHaveBeenCalledWith("bot001");
+    await controller.disconnect();
+    expect(controller.getRemoteRecordingTracks()).toBeUndefined();
   });
 
   it("replaces a running generation with start without stop, republishing, or rejoining", async () => {

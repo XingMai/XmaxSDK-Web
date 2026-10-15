@@ -32,6 +32,8 @@ class FakeRtcEngine {
   startRemoteVideoCalls: unknown[] = [];
   stopRemoteVideoCalls: unknown[] = [];
   remoteVideoTrack = { id: "remote-track" } as unknown as MediaStreamTrack;
+  remoteAudioTrack = { id: "remote-audio" } as unknown as MediaStreamTrack;
+  getAudioTrack = vi.fn((_userID: string) => this.remoteAudioTrack);
   muteRemoteAudioCalls: Array<[string, boolean]> = [];
   volumeCalls: Array<[string, number]> = [];
 
@@ -699,6 +701,8 @@ describe("TrtcRtcManager", () => {
 
     manager.setRemoteAudioVolume(80, "bot001");
     manager.setRemoteAudioVolume(150, "bot001");
+    expect(manager.getRemoteAudioTrack("bot001")).toBe(engine.remoteAudioTrack);
+    expect(engine.getAudioTrack).toHaveBeenCalledWith("bot001");
     expect(engine.volumeCalls).toEqual([
       ["bot001", 80],
       ["bot001", 100],
@@ -720,6 +724,7 @@ describe("TrtcRtcManager", () => {
 
       vi.stubGlobal("navigator", { userAgent: IPHONE_UA, maxTouchPoints: 5 });
       expect(manager.supportsRemoteAudioVolumeControl).toBe(false);
+      expect(() => manager.getRemoteAudioTrack("bot001")).toThrow("cannot preserve remote audio");
     });
 
     it("falls back to mute control on iOS where remote volume is unsupported", async () => {

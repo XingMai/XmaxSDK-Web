@@ -408,6 +408,7 @@ button:disabled,
 
 .remoteVolumeButton,
 .interpolationPill,
+.recordingDownload,
 .sessionModel,
 .sessionTimer {
   border: 1px solid #e2e5ea;
@@ -453,7 +454,27 @@ button:disabled,
   background: #eef1ff;
 }
 
+.recordingDownload {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  gap: 6px;
+  height: 36px;
+  padding: 0 12px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.recordingDownload:hover {
+  color: var(--text);
+}
+
 .remoteVolumeButton:focus-visible,
+.recordingDownload:focus-visible,
 .statisticsToggle:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
@@ -1418,12 +1439,14 @@ button:disabled,
   }
 
   .remoteVolumeButton,
+  .recordingDownload,
   .statisticsToggle {
     width: 30px;
     height: 30px;
   }
 
   .remoteVolumeButton svg,
+  .recordingDownload svg,
   .statisticsToggle svg {
     width: 14px;
     height: 14px;
@@ -1433,6 +1456,14 @@ button:disabled,
     height: 30px;
     padding: 0 10px;
     font-size: 12px;
+  }
+
+  .recordingDownload {
+    padding: 0;
+  }
+
+  .recordingDownload span {
+    display: none;
   }
 
   .stopButton {

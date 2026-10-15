@@ -15,6 +15,7 @@ import { RoomMessageCodec } from "../src/Stream/Room/RoomMessageCodec";
 import type { VideoEncodingConfiguration } from "../src/Foundation/RTC/VideoEncodingConfiguration";
 
 class RtcManagingStub implements RtcManaging {
+  getRemoteAudioTrack(): MediaStreamTrack | undefined { return undefined; }
   async updateCredentials(): Promise<void> {}
   isInitialized = true;
   joinRoomCalls: RtcRoomJoinConfiguration[] = [];

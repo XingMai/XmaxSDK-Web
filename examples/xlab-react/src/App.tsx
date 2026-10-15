@@ -4,6 +4,7 @@ import {
   RealtimeConnectionState,
   RealtimeContext,
   RealtimeModel,
+  RealtimeRecordingEventType,
   modelDisplayName,
   RealtimeVideoFormat,
   RtcProvider,
@@ -31,9 +32,10 @@ import { StatisticsToggle } from "./StatisticsToggle";
 import { FrameInterpolationToggle } from "./FrameInterpolationToggle";
 import { StatisticsPanel } from "./StatisticsPanel";
 import { compressReferenceImage } from "./compressReferenceImage";
+import { RecordingDownload, recordingFileName, type RecordingDownloadFile } from "./RecordingDownload";
 
 const API_KEY_STORAGE = "xmax.xlab.apiKey";
-const ENABLE_QUALITY_DEBUG = false;
+const ENABLE_QUALITY_DEBUG = true;
 
 /** 相机采集格式：桌面横屏 1920×1024，窄屏竖屏 1024×1920（x2.0 受像素上限约束会自动等比缩小）。 */
 function cameraVideoFormat(): RealtimeVideoFormat {
@@ -91,6 +93,7 @@ export function App() {
   const [interpolationRequested, setInterpolationRequested] = useState(false);
   const [interpolationSwitching, setInterpolationSwitching] = useState(false);
   const [remoteAudioVolume, setRemoteAudioVolume] = useState(0);
+  const [recordingFile, setRecordingFile] = useState<RecordingDownloadFile>();
   const [statisticsVisible, setStatisticsVisible] = useState(
     () => !window.matchMedia("(max-width: 720px)").matches,
   );
@@ -100,6 +103,9 @@ export function App() {
   );
 
   const realtimeRef = useRef<XmaxRealtimeManaging | undefined>(undefined);
+  // 停止会话后仍接收其收尾结果；新会话或卸载时才撤销归属。
+  const recordingOwnerRef = useRef<XmaxRealtimeManaging>();
+  const recordingURLRef = useRef<string>();
   const generationBusyRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const wechatRef = useRef<HTMLDivElement>(null);
@@ -227,6 +233,11 @@ export function App() {
     return () => {
       const realtime = realtimeRef.current;
       realtimeRef.current = undefined;
+      recordingOwnerRef.current = undefined;
+      if (recordingURLRef.current) {
+        URL.revokeObjectURL(recordingURLRef.current);
+        recordingURLRef.current = undefined;
+      }
       void realtime?.close();
     };
   }, []);
@@ -303,6 +314,28 @@ export function App() {
       }),
     );
     realtimeRef.current = realtime;
+    recordingOwnerRef.current = realtime;
+    if (recordingURLRef.current) {
+      URL.revokeObjectURL(recordingURLRef.current);
+      recordingURLRef.current = undefined;
+    }
+    setRecordingFile(undefined);
+    realtime.setRecordingListener(event => {
+      if (recordingOwnerRef.current !== realtime) return;
+      if (event.type === RealtimeRecordingEventType.failed) {
+        setErrorText(`录制失败：${event.error.message}`);
+        return;
+      }
+
+      const url = URL.createObjectURL(event.result.blob);
+      if (recordingURLRef.current) URL.revokeObjectURL(recordingURLRef.current);
+      recordingURLRef.current = url;
+      setRecordingFile({
+        url,
+        fileName: recordingFileName(event.taskID, event.result.blob.type),
+        interrupted: event.type === RealtimeRecordingEventType.interrupted,
+      });
+    });
     // 会话建立成功后是否已切换到生成页面。
     let switchedToSession = false;
     try {
@@ -347,6 +380,7 @@ export function App() {
             prompt: reference.prompt,
             referencePath: reference.reference_path,
           }),
+          record: true,
         });
         if (realtimeRef.current === realtime) setRemoteStream(remote);
       });
@@ -388,8 +422,8 @@ export function App() {
     }
   }
 
-  /** 临时上下行调档入口；与生成操作互斥，自动调档仍保持开启。 */
-  async function handleAdjustQuality(link: "uplink" | "downlink", direction: "upgrade" | "downgrade") {
+  /** 临时下行调档入口；与生成操作互斥，自动调档仍保持开启。 */
+  async function handleAdjustDownlinkQuality(direction: "upgrade" | "downgrade") {
     const realtime = realtimeRef.current;
     if (!realtime || generationBusyRef.current || stateText !== RealtimeConnectionState.generating) return;
 
@@ -398,11 +432,7 @@ export function App() {
     setErrorText("");
 
     try {
-      if (link === "uplink") {
-        await realtime.adjustUplinkQuality(direction);
-      } else {
-        await realtime.adjustDownlinkQuality(direction);
-      }
+      await realtime.adjustDownlinkQuality(direction);
     } catch (error) {
       if (realtimeRef.current === realtime) {
         setErrorText(error instanceof Error ? error.message : String(error));
@@ -434,6 +464,7 @@ export function App() {
         localStream,
         context,
         faceRestoration: faceRestorationForMode(mode),
+        record: true,
       });
       if (realtimeRef.current === realtime) setRemoteStream(remote);
     } catch (error) {
@@ -633,6 +664,7 @@ export function App() {
             <img className="brandLogo" src="/xmax-wordmark.png" alt="Xmax" />
           </div>
           <div className="topbarRight">
+            <RecordingDownload file={recordingFile} />
             <div className="rtcModelPicker">
               <select className="rtcModelSelect" aria-label="Model" value={model} disabled={busy}
                 onChange={(event) => setModel(event.target.value as RealtimeModel)}>
@@ -799,6 +831,7 @@ export function App() {
           {!isMobileLayout && (
             <span className="sessionModel" aria-label="当前模型">{modelDisplayName(model)}</span>
           )}
+          <RecordingDownload file={recordingFile} />
           <StatisticsToggle visible={statisticsVisible} onChange={setStatisticsVisible} />
           <RemoteVolumeControl volume={remoteAudioVolume} disabled={!sessionActive || !realtimeRef.current}
             onChange={handleRemoteVolumeChange} />
@@ -816,21 +849,17 @@ export function App() {
       </header>
 
       {ENABLE_QUALITY_DEBUG && supportedRtcProviders(model)[0] !== RtcProvider.vertc && (
-        <>
-          {(["uplink", "downlink"] as const).map(link => (
-            <div key={link} className="qualityDebug" role="group" aria-label={`${link === "uplink" ? "上行" : "下行"}档位调试`}>
-              <span>{link === "uplink" ? `上行${supportedRtcProviders(model)[0] === RtcProvider.trtc ? "（仅帧率）" : ""}` : "下行"}调试 · 自动调档仍开启</span>
-              <button type="button" disabled={busy || stateText !== RealtimeConnectionState.generating}
-                onClick={() => handleAdjustQuality(link, "downgrade")}>
-                降一档
-              </button>
-              <button type="button" disabled={busy || stateText !== RealtimeConnectionState.generating}
-                onClick={() => handleAdjustQuality(link, "upgrade")}>
-                升一档
-              </button>
-            </div>
-          ))}
-        </>
+        <div className="qualityDebug" role="group" aria-label="下行档位调试">
+          <span>下行调试 · 自动调档仍开启</span>
+          <button type="button" disabled={busy || stateText !== RealtimeConnectionState.generating}
+            onClick={() => handleAdjustDownlinkQuality("downgrade")}>
+            降一档
+          </button>
+          <button type="button" disabled={busy || stateText !== RealtimeConnectionState.generating}
+            onClick={() => handleAdjustDownlinkQuality("upgrade")}>
+            升一档
+          </button>
+        </div>
       )}
 
       <div className="stageRow">

@@ -13,6 +13,7 @@ import { RoomController } from "./Room/RoomController";
 import type { ModelSize } from "../Service/Realtime/RealtimeModel";
 import type { EncodingControlling } from "./Encoding/EncodingControlling";
 import { EncodingController } from "./Encoding/EncodingController";
+import type { RecordingTracks } from "../Foundation/Media/Recording/RecordingTracks";
 import type {
   RemoteStreamListener,
   StreamControlling,
@@ -216,6 +217,18 @@ export class StreamController implements StreamControlling {
    */
   get hasGenerationTask(): boolean {
     return this.state.generationTaskID !== undefined;
+  }
+
+  /**
+   * 按活动结果流身份读取原始音视频，避免录制房间内其他用户的媒体。
+   */
+  getRemoteRecordingTracks(): RecordingTracks | undefined {
+    const userID = this.state.activeRemoteStream?.userID;
+    const videoTrack = userID && this.state.remoteVideoTracks.get(userID);
+    if (!userID || !videoTrack) {
+      return undefined;
+    }
+    return { videoTrack, audioTrack: this.rtcManager.getRemoteAudioTrack(userID) };
   }
 
   /**

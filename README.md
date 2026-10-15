@@ -308,6 +308,53 @@ Animated images are captured as a single still frame.
 
 <br>
 
+### Record a generated clip
+
+Recording is off by default. Set `record: true` when starting a new generation
+to record approximately 15 seconds of the original remote video and audio.
+Register the listener before starting:
+
+```javascript
+import { RealtimeRecordingEventType } from "@xmaxai/web-sdk";
+
+realtime.setRecordingListener(event => {
+  if (event.type === RealtimeRecordingEventType.failed) {
+    console.error("Recording failed", event.taskID, event.error);
+    return;
+  }
+
+  const { blob, hasAudio, reason } = event.result;
+  // Save, upload, or preview blob here. Use blob.type to identify its format.
+  // completed: reached the time limit; interrupted: finalized an earlier end.
+  console.log(event.taskID, blob, hasAudio, reason);
+});
+
+await realtime.startGeneration({
+  localStream,
+  context: new RealtimeContext({ prompt: "Make the scene come alive" }),
+  record: true,
+});
+```
+
+- The timer starts when a remote video frame is available, independently of the
+  attached view. Frame interpolation, interaction effects, and overlays are not recorded.
+- Recording errors do not stop generation. `startGeneration` does not wait for the file.
+- `record` is ignored on condition updates; it cannot stop or restart a recording.
+- Restarting ends the old recording. `restart: true` with `record: true` reports a
+  recording failure for the new task; generation still restarts normally.
+- An early end returns `interrupted` only if the recorder finalizes a nonempty file
+  without an encoding error. Empty or failed recordings return `failed`.
+- Audio arriving later is included after its arrival. `hasAudio` indicates that an
+  enabled, unmuted remote audio track was observed during recording, not audible speech.
+- Formats depend on browser support; MP4 is not guaranteed. Background scheduling
+  can delay the stop timer, so files are not cropped to exactly 15.000 seconds.
+- Audio processing must be allowed by the browser. TRTC recording on mobile Safari
+  is currently unsupported because playback muting also disables audio reception.
+- Recording buffers are limited to 64 MiB. The SDK does not upload recordings or
+  retain a copy after delivery. Clear the listener with `setRecordingListener(undefined)`.
+
+<br>
+
 ### Using React
 
 Use `XmaxRealtimeVideo` as your primary React view. Store the local and remote

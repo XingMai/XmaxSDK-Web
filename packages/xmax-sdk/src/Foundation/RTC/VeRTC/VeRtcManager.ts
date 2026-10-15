@@ -428,6 +428,13 @@ export class VeRtcManager implements RtcManaging {
     this.applyAudioVolume(userID);
   }
 
+  /**
+   * 获取原始远端音轨，独立于 audio 元素的静音和播放音量。
+   */
+  getRemoteAudioTrack(userID: string): MediaStreamTrack | undefined {
+    return this.requireEngine().getRemoteStreamTrack(userID, this.sdk!.StreamIndex.STREAM_INDEX_MAIN, "audio");
+  }
+
   setRemoteAudioVolume(volume: number, userID: string): void {
     this.audioVolumes.set(userID, Number.isFinite(volume) ? Math.max(0, Math.min(100, Math.round(volume))) : 0);
     this.applyAudioVolume(userID);

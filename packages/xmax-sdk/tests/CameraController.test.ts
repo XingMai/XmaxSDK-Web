@@ -72,6 +72,7 @@ class FakeMediaStreamTrack {
 }
 
 class RtcManagingStub implements RtcManaging {
+  getRemoteAudioTrack(): MediaStreamTrack | undefined { return undefined; }
   async updateCredentials(): Promise<void> {}
   isInitialized = false;
   initializeCalls = 0;

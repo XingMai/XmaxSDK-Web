@@ -40,7 +40,8 @@ function setup(environment = XmaxEnvironment.china) {
     off: vi.fn((event: string) => { trackHandlers.delete(event); }),
     setEncoderConfiguration: vi.fn(async () => {}), setOptimizationMode: vi.fn(async () => {}) };
   const microphone = { close: vi.fn() };
-  const audio = { play: vi.fn(), stop: vi.fn(), setVolume: vi.fn() };
+  const audio = { play: vi.fn(), stop: vi.fn(), setVolume: vi.fn(),
+    getMediaStreamTrack: vi.fn(() => ({ kind: "audio" } as MediaStreamTrack)) };
   const user = { uid: "bot", hasAudio: true, hasVideo: true, audioTrack: audio } as unknown as IAgoraRTCRemoteUser;
   const client = {
     on: vi.fn((event: string, handler: (...args: any[]) => void) => { handlers.set(event, handler); }),
@@ -505,6 +506,9 @@ describe("AgoraRtcManager", () => {
     s.manager.setRemoteAudioVolume(0, "bot");
     await s.manager.subscribeRemoteAudio("bot", true);
     expect(s.audio.play).not.toHaveBeenCalled();
+    expect(s.manager.getRemoteAudioTrack("bot")).toMatchObject({ kind: "audio" });
+    expect(s.audio.getMediaStreamTrack).toHaveBeenCalledOnce();
+    expect(s.manager.getRemoteAudioTrack("unrelated-user")).toBeUndefined();
     s.manager.setRemoteAudioVolume(32, "bot");
     expect(s.audio.setVolume).toHaveBeenLastCalledWith(32);
     expect(s.audio.setVolume.mock.invocationCallOrder.at(-1)!).toBeLessThan(s.audio.play.mock.invocationCallOrder.at(-1)!);
