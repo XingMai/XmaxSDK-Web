@@ -2,6 +2,7 @@ import type { RemoteStream } from "../Foundation/RTC/RemoteStream";
 import type { NetworkStatisticsListener } from "../Foundation/RTC/NetworkStatistics";
 import type { RemoteVideoStatisticsListener, VideoStatisticsListener } from "../Foundation/RTC/VideoStatistics";
 import type { RealtimeContext } from "../Service/Realtime/RealtimeContext";
+import type { RealtimeExtraParams } from "../Service/Realtime/RealtimeExtraParams";
 import type { RealtimePoint } from "../Service/Realtime/RealtimePoint";
 import type { RtcSessionConnection } from "../Service/Realtime/RealtimeSessionConnection";
 import type { RealtimeVideoFormat } from "../Service/Realtime/RealtimeVideoFormat";
@@ -33,16 +34,6 @@ export type RemoteStreamListener = (binding: RemoteStreamBinding | null) => void
  * 生成开始/变更信令的公共参数。
  */
 export interface StreamGenerationOptions {
-  /** 原始人脸回贴，用于 start 和 change_condition，默认 false。 */
-  faceRestoration?: boolean;
-
-  /** 后端输入镜像，仅用于 start；非前置摄像头输入为 false。 */
-  mirror?: boolean;
-  /**
-   * 开始信令发送成功后启动本地文件播放，不等待生成确认；更新条件时不调用。
-   */
-  onStartSent?: () => Promise<void>;
-
   /**
    * 当前生成任务的唯一标识。
    */
@@ -54,14 +45,27 @@ export interface StreamGenerationOptions {
   videoFormat: RealtimeVideoFormat;
 
   /**
-   * 当前连接的回传尺寸；缺省时保持生成尺寸。
-   */
-  targetSize?: RoomEventTargetSize;
-
-  /**
    * 当前生成任务使用的条件上下文。
    */
   context: RealtimeContext;
+
+  /** 仅开始生成时使用：替换已运行任务并发送 start，默认 false，不预先发送 stop。 */
+  restart?: boolean;
+
+  /** 当前连接的回传尺寸，缺省时不发送；网络视频 start 默认使用生成尺寸。 */
+  targetSize?: RoomEventTargetSize;
+
+  /** 后端输入镜像，仅用于 start；非前置摄像头输入为 false。 */
+  mirror?: boolean;
+
+  /** 原始人脸回贴，用于 start 和 change_condition，默认 false。 */
+  faceRestoration?: boolean;
+
+  /** 开始信令发送成功后的回调，不等待生成确认；更新条件时不调用。 */
+  onStartSent?: () => Promise<void>;
+
+  /** 合并到本次生成信令的 params，不缓存。 */
+  extraParams?: RealtimeExtraParams;
 }
 
 /**
@@ -133,6 +137,15 @@ export interface StreamControlling {
   /**
    * 建立生成任务并发送开始信令。
    *
+   * @param options.taskID 当前生成任务标识。
+   * @param options.videoFormat 模型生成使用的视频规格。
+   * @param options.context 本次生成条件。
+   * @param options.restart 是否保留连接并替换当前生成任务，默认 false；不预先发送 stop。
+   * @param options.targetSize 回传尺寸，缺省时不发送；网络视频默认使用生成尺寸。
+   * @param options.mirror 是否由后端镜像输入画面，默认 false。
+   * @param options.faceRestoration 是否回贴原始人脸，默认 false。
+   * @param options.onStartSent start 发送成功后的回调，不等待生成确认。
+   * @param options.extraParams 合并到本次 start 的 params，不缓存。
    * @returns 等待远端结果流确认的 Promise：机器人视频发布并完成
    * 订阅后兑现；超时、取消或订阅失败时拒绝。
    * @throws 配置无效时同步抛错；信令发送失败或确认超时通过 Promise 拒绝。
@@ -154,6 +167,15 @@ export interface StreamControlling {
   /**
    * 发送生成条件变更信令。
    *
+   * @param options.taskID 当前生成任务标识。
+   * @param options.videoFormat 模型生成使用的视频规格。
+   * @param options.context 本次生成条件。
+   * @param options.restart 本次条件更新不使用该字段。
+   * @param options.targetSize 回传尺寸，缺省时不发送。
+   * @param options.mirror 本次条件更新不使用该字段。
+   * @param options.faceRestoration 是否回贴原始人脸，默认 false。
+   * @param options.onStartSent 本次条件更新不调用该回调。
+   * @param options.extraParams 合并到本次 change_condition 的 params，不缓存。
    * @throws RTC 房间未就绪或条件变更信令发送失败时抛出错误。
    */
   updateGeneration(options: StreamGenerationOptions): Promise<void>;

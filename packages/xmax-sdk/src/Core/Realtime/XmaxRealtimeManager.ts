@@ -6,6 +6,7 @@ import { createRtcManager } from "../../Foundation/RTC/RtcFactory";
 import { XmaxEnvironment } from "../../Foundation/Runtime/XmaxEnvironment";
 import type { RtcManaging } from "../../Foundation/RTC/RtcManaging";
 import { RtcProvider } from "../../Foundation/RTC/RtcProvider";
+import { snapshotExtraParams, type RealtimeExtraParams } from "../../Service/Realtime/RealtimeExtraParams";
 import type { NetworkStatistics, NetworkStatisticsListener } from "../../Foundation/RTC/NetworkStatistics";
 import type { RemoteVideoStatistics, RemoteVideoStatisticsListener, VideoStatistics, VideoStatisticsListener } from "../../Foundation/RTC/VideoStatistics";
 import { MediaController } from "../../Media/MediaController";
@@ -982,23 +983,29 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   /**
    * 按需建立连接并开始生成。
    *
-   * 尚未连接时先建立实时连接；已在生成时仅更新生成条件，不重启生成。
+   * 尚未连接时先建立实时连接；已在生成时默认更新条件，restart 为 true 时重新开始生成。
    * 首次生成必须提供条件上下文，之后缺省时复用最近一次缓存的上下文。
    *
    * @param options.localStream 由当前 Manager 创建的摄像头、外部视频轨、本地文件或网络视频源。
    * @param options.context 本次生成使用的条件上下文；缺省时复用缓存。
+   * @param options.restart 是否保留 RTC 连接并创建新任务发送 start，默认 false；不预先发送 stop。
    * @param options.faceRestoration 是否启用原始人脸回贴，默认 false；正在生成时通过 change_condition 更新。
+   * @param options.extraParams 合并到本次 start 或 change_condition 的 params；不缓存，自动恢复时不携带，不允许覆盖 SDK 字段。
    * @returns 承载远端生成画面的媒体流。
+   * @throws extraParams 包含非 JSON 数据、循环引用或 SDK 保留字段时，在连接或更新前抛出 invalidConfiguration。
    * @throws 本地流不属于当前 Manager、缺少可用的条件上下文、信令发送
    * 或生成确认失败时抛出错误；失败时自动停止生成任务并释放连接资源。
    */
   async startGeneration(options: {
     localStream: RealtimeMediaStream;
     context?: RealtimeContext;
+    restart?: boolean;
     faceRestoration?: boolean;
+    extraParams?: RealtimeExtraParams;
   }): Promise<RealtimeMediaStream> {
+    const extraParams = snapshotExtraParams(options.extraParams);
     return this.coordinator.run(
-      RealtimeOperationKind.generation,
+      options.restart === true ? RealtimeOperationKind.generationRestart : RealtimeOperationKind.generation,
       undefined,
       async (token) => {
         const localTrack = options.localStream.videoTrack;
@@ -1015,14 +1022,16 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
             "The local video format is unavailable",
           );
         }
-        // 已在生成时只更新条件，不重新连接或启动任务。
+        // 默认只更新条件；显式重启时沿用连接并创建新任务。
         const currentState = this.coordinator.currentState;
-        if (currentState.connectionState === RealtimeConnectionState.generating) {
+        const isGenerating = currentState.connectionState === RealtimeConnectionState.generating;
+        if (isGenerating && options.restart !== true) {
           await this.generationManager.update(currentState.taskID, {
             videoFormat,
-            faceRestoration: options.faceRestoration ?? false,
-            targetSize: this.downlinkQualityController ? this.downlinkQualityState?.size : undefined,
             context: options.context,
+            targetSize: this.downlinkQualityController ? this.downlinkQualityState?.size : undefined,
+            faceRestoration: options.faceRestoration ?? false,
+            extraParams,
           });
           token.ensureCurrent();
           return this.connectionManager.makeRemoteStream();
@@ -1035,11 +1044,11 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         const context = referenceVideo ? new RealtimeContext({ ...supplied, referenceVideo }) : supplied;
 
         // 尚未连接时先建立实时连接。
-        if (currentState.connectionState !== RealtimeConnectionState.connected) {
+        if (currentState.connectionState !== RealtimeConnectionState.connected && !isGenerating) {
           await this.performConnect(options.localStream, token);
         }
 
-        return this.performStartGeneration(token, videoFormat, context, options.faceRestoration ?? false);
+        return this.performStartGeneration(token, videoFormat, context, options.restart ?? false, options.faceRestoration ?? false, extraParams);
       },
     );
   }
@@ -1173,12 +1182,22 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
 
   /**
    * 编排插帧、首帧计时和生成状态，任务与确认由生成管理器负责。
+   *
+   * @param token 当前生成操作的取消与状态控制令牌。
+   * @param videoFormat 模型生成使用的视频规格。
+   * @param context 本次已解析的生成条件。
+   * @param restart 是否替换当前生成任务并重新发送 start。
+   * @param faceRestoration 是否回贴原始人脸。
+   * @param extraParams 合并到本次 start 的 params，不缓存。
+   * @returns 承载生成结果的远端媒体流。
    */
   private async performStartGeneration(
     token: RealtimeOperationToken,
     videoFormat: NonNullable<RealtimeVideoTrack["videoFormat"]>,
     context: RealtimeContext,
+    restart: boolean,
     faceRestoration: boolean,
+    extraParams?: RealtimeExtraParams,
   ): Promise<RealtimeMediaStream> {
     token.setFailureScope(RealtimeTerminationScope.connection);
     const initialLevel = this.qualityHistory?.read("downlink") ?? 1;
@@ -1192,21 +1211,23 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
 
     const taskID = await this.generationManager.start({
       videoFormat,
-      targetSize,
-      context,
-      faceRestoration,
-      mirror: this.mediaController.source === "camera" &&
-        this.currentLocalTrack?.position === CameraPosition.front,
       signal: token.signal,
       ensureCurrent: () => token.ensureCurrent(),
+      waitUntilRemoteReady: () => this.connectionManager.waitUntilRemoteTrackReady(
+        REMOTE_FIRST_FRAME_TIMEOUT_MS, token.signal,
+      ),
+      context,
+      restart,
+      targetSize,
+      mirror: this.mediaController.source === "camera" &&
+        this.currentLocalTrack?.position === CameraPosition.front,
+      faceRestoration,
       onStartSent: this.mediaController.source === "localVideo" ? async () => {
         token.ensureCurrent();
         await this.mediaController.startLocalVideo(token.signal);
         token.ensureCurrent();
       } : undefined,
-      waitUntilRemoteReady: () => this.connectionManager.waitUntilRemoteTrackReady(
-        REMOTE_FIRST_FRAME_TIMEOUT_MS, token.signal,
-      ),
+      extraParams,
     });
 
     const sessionID = this.connectionManager.currentSessionID;

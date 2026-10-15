@@ -2,6 +2,7 @@ import type { CameraPosition } from "../../Foundation/Media/Camera/CameraPositio
 import type { CameraRotation } from "../../Foundation/Media/Camera/CameraRotation";
 import type { NetworkStatisticsListener } from "../../Foundation/RTC/NetworkStatistics";
 import type { RealtimeContext } from "../../Service/Realtime/RealtimeContext";
+import type { RealtimeExtraParams } from "../../Service/Realtime/RealtimeExtraParams";
 import type { RealtimeMediaStream } from "../../Service/Realtime/RealtimeMediaStream";
 import type {
   RealtimeState,
@@ -255,19 +256,24 @@ export interface XmaxRealtimeManaging {
   /**
    * 按需建立连接并开始生成。
    *
-   * 尚未连接时先建立实时连接；已在生成时仅更新生成条件，不重启生成。
+   * 尚未连接时先建立实时连接；已在生成时默认更新条件，restart 为 true 时重新开始生成。
    * 首次生成必须提供条件上下文，之后缺省时复用最近一次缓存的上下文。
    *
    * @param options.localStream 由当前 Manager 创建的摄像头、外部视频轨、本地文件或网络视频源。
    * @param options.context 本次生成使用的条件上下文；缺省时复用缓存。
+   * @param options.restart 是否保留 RTC 连接并创建新任务发送 start，默认 false；不预先发送 stop。
    * @param options.faceRestoration 是否启用原始人脸回贴，默认 false；正在生成时通过 change_condition 更新。
+   * @param options.extraParams 合并到本次 start 或 change_condition 的 params；不缓存，自动恢复时不携带，不允许覆盖 SDK 字段。
    * @returns 承载远端生成画面的媒体流。
+   * @throws extraParams 包含非 JSON 数据、循环引用或 SDK 保留字段时，在连接或更新前抛出 invalidConfiguration。
    * @throws 本地流不属于当前 Manager、缺少可用的条件上下文、信令发送
    * 或生成确认失败时抛出错误；失败时自动停止生成任务并释放连接资源。
    */
   startGeneration(options: {
     localStream: RealtimeMediaStream;
     context?: RealtimeContext;
+    restart?: boolean;
     faceRestoration?: boolean;
+    extraParams?: RealtimeExtraParams;
   }): Promise<RealtimeMediaStream>;
 }

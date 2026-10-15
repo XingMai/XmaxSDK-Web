@@ -1,6 +1,7 @@
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import { RuntimeInfo } from "../../Foundation/Runtime/RuntimeInfo";
 import type { RealtimeContext } from "../../Service/Realtime/RealtimeContext";
+import type { RealtimeExtraParams } from "../../Service/Realtime/RealtimeExtraParams";
 import type { RealtimePoint } from "../../Service/Realtime/RealtimePoint";
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 
@@ -16,9 +17,6 @@ export interface RoomEventTargetSize {
  * 生成条件类信令的公共参数。
  */
 export interface RoomEventGenerationOptions {
-  /** 是否回贴原始人脸，默认 false。 */
-  faceRestoration?: boolean;
-
   /**
    * 业务用户标识。
    */
@@ -35,14 +33,18 @@ export interface RoomEventGenerationOptions {
   videoFormat: RealtimeVideoFormat;
 
   /**
-   * 服务端生成后的回传尺寸；缺省时保持生成尺寸。
-   */
-  targetSize?: RoomEventTargetSize;
-
-  /**
    * 当前生成条件。
    */
   context: RealtimeContext;
+
+  /** 服务端生成后的回传尺寸，缺省时不发送；网络视频 start 默认使用生成尺寸。 */
+  targetSize?: RoomEventTargetSize;
+
+  /** 是否回贴原始人脸，默认 false。 */
+  faceRestoration?: boolean;
+
+  /** 合并到本次生成信令的 params，不缓存。 */
+  extraParams?: RealtimeExtraParams;
 }
 
 /**
@@ -54,8 +56,27 @@ export interface RoomEventGenerationOptions {
 export class RoomEvent {
   /**
    * 生成开始信令。
+   *
+   * @param options.userID 业务用户标识。
+   * @param options.taskID 当前生成任务标识。
+   * @param options.videoFormat 模型生成使用的视频规格。
+   * @param options.context 本次生成条件。
+   * @param options.targetSize 回传尺寸，缺省时不发送；网络视频默认使用生成尺寸。
+   * @param options.mirror 是否由后端镜像输入画面，默认 false。
+   * @param options.faceRestoration 是否回贴原始人脸，默认 false。
+   * @param options.extraParams 已校验的本次扩展参数，合并到 params。
+   * @returns 序列化后的 start 房间消息。
    */
-  static start(options: RoomEventGenerationOptions & { mirror?: boolean }): string {
+  static start(options: {
+    userID: string;
+    taskID: string;
+    videoFormat: RealtimeVideoFormat;
+    context: RealtimeContext;
+    targetSize?: RoomEventTargetSize;
+    mirror?: boolean;
+    faceRestoration?: boolean;
+    extraParams?: RealtimeExtraParams;
+  }): string {
     return RoomEvent.encode({
       event: "start",
       params: {
@@ -78,6 +99,15 @@ export class RoomEvent {
 
   /**
    * 生成条件变更信令。
+   *
+   * @param options.userID 业务用户标识。
+   * @param options.taskID 当前生成任务标识。
+   * @param options.videoFormat 模型生成使用的视频规格。
+   * @param options.context 本次生成条件。
+   * @param options.targetSize 回传尺寸，缺省时不发送。
+   * @param options.faceRestoration 是否回贴原始人脸，默认 false。
+   * @param options.extraParams 已校验的本次扩展参数，合并到 params。
+   * @returns 序列化后的 change_condition 房间消息。
    */
   static changeCondition(options: RoomEventGenerationOptions): string {
     return RoomEvent.encode({
@@ -147,7 +177,10 @@ export class RoomEvent {
   }
 
   /**
-   * 生成条件参数：模型、生成尺寸、回传尺寸、文本与参考图路径。
+   * 组装生成条件参数，包含人脸回贴配置及本次扩展参数。
+   *
+   * @param options 本次生成条件类信令的参数。
+   * @returns start 与 change_condition 共用的 params 字段。
    */
   private static generationParameters(
     options: RoomEventGenerationOptions,
@@ -164,6 +197,7 @@ export class RoomEvent {
         : undefined,
       prompt: options.context.prompt,
       ref_image_path: options.context.referencePath,
+      ...options.extraParams,
     };
   }
 

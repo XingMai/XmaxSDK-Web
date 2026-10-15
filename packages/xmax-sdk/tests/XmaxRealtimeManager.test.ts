@@ -2427,6 +2427,125 @@ describe("XmaxRealtimeManager connect", () => {
 });
 
 describe("XmaxRealtimeManager startGeneration", () => {
+  it("restarts with a new task on the same connection and only uses this call's extraParams", async () => {
+    const { manager, camera, stream, session } = makeManager();
+    const localStream = makeLocalStream(camera);
+    const first = manager.startGeneration({ localStream, context: testContext, extraParams: { old: true } });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+    stream.confirmationDeferreds[0]!.resolve();
+    await first;
+    const sessionID = manager.currentState.sessionID;
+    const firstTask = manager.currentState.taskID;
+
+    await manager.startGeneration({ localStream, restart: false });
+    expect(stream.updateCalls).toHaveLength(1);
+    const restarted = manager.startGeneration({ localStream, restart: true, extraParams: { static_generate: true } });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(2));
+    expect(stream.beginCalls[1]).toMatchObject({ context: testContext, restart: true, extraParams: { static_generate: true } });
+    expect(stream.beginCalls[1]!.taskID).not.toBe(firstTask);
+    expect(stream.updateCalls).toHaveLength(1);
+    expect(session.createCalls).toBe(1);
+    expect(stream.connectCalls).toHaveLength(1);
+    expect(stream.disconnectCalls).toBe(0);
+    expect(stream.stopGenerationCalls).toHaveLength(0);
+    await expect(manager.startGeneration({ localStream, restart: true })).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    stream.confirmationDeferreds[1]!.resolve();
+    await restarted;
+    expect(manager.currentState.sessionID).toBe(sessionID);
+    expect(manager.currentState.taskID).toBe(stream.beginCalls[1]!.taskID);
+
+    const again = manager.startGeneration({ localStream, restart: true });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(3));
+    expect(stream.beginCalls[2]!.extraParams).toBeUndefined();
+    stream.confirmationDeferreds[2]!.resolve();
+    await again;
+    await manager.startGeneration({ localStream });
+    expect(stream.updateCalls).toHaveLength(2);
+    expect(stream.beginCalls).toHaveLength(3);
+    await manager.close();
+  });
+
+  it("accepts restart on the first generation", async () => {
+    const { manager, camera, stream } = makeManager();
+    const localStream = makeLocalStream(camera);
+    const pending = manager.startGeneration({ localStream, context: testContext, restart: true });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+    stream.confirmationDeferreds[0]!.resolve();
+    await pending;
+    expect(stream.stopGenerationCalls).toHaveLength(0);
+    expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.generating);
+    await manager.close();
+  });
+
+  it("cleans up the connection when a forced restart fails", async () => {
+    const { manager, camera, stream, session } = makeManager();
+    const localStream = makeLocalStream(camera);
+    const first = manager.startGeneration({ localStream, context: testContext });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+    stream.confirmationDeferreds[0]!.resolve();
+    await first;
+    stream.failBegin = new XmaxError(XmaxErrorCode.rtcError, "restart failed");
+    await expect(manager.startGeneration({ localStream, restart: true })).rejects.toThrow("restart failed");
+    expect(stream.disconnectCalls).toBeGreaterThan(0);
+    expect(session.closedSessionIDs).toHaveLength(1);
+    expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.ready);
+    await manager.close();
+  });
+
+  it("cancels an in-flight restart when closing without resurrecting it on late confirmation", async () => {
+    const { manager, camera, stream } = makeManager();
+    const localStream = makeLocalStream(camera);
+    const first = manager.startGeneration({ localStream, context: testContext });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+    stream.confirmationDeferreds[0]!.resolve();
+    await first;
+    const pending = manager.startGeneration({ localStream, restart: true });
+    const rejected = expect(pending).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(2));
+    await manager.close();
+    await rejected;
+    stream.confirmationDeferreds[1]!.resolve();
+    await Promise.resolve();
+    expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.idle);
+    expect(stream.disconnectCalls).toBeGreaterThan(0);
+  });
+
+  it("forwards extraParams only for the current call, with no reuse on updates or restart", async () => {
+    const { manager, camera, stream } = makeManager();
+    const localStream = makeLocalStream(camera);
+    const extraParams = { static_generate: true, static_image_path: "https://example.com/image.jpg" };
+    const pending = manager.startGeneration({ localStream, context: testContext, extraParams });
+    extraParams.static_generate = false;
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+    expect(stream.beginCalls[0]!.extraParams).toEqual({ ...extraParams, static_generate: true });
+    stream.confirmationDeferreds[0]!.resolve();
+    await pending;
+
+    await manager.startGeneration({ localStream, extraParams: { custom: [1, false, null] } });
+    expect(stream.updateCalls[0]!.extraParams).toEqual({ custom: [1, false, null] });
+    await manager.startGeneration({ localStream });
+    expect(stream.updateCalls[1]!.extraParams).toBeUndefined();
+    expect(stream.beginCalls).toHaveLength(1);
+
+    await manager.disconnect();
+    const restarted = manager.startGeneration({ localStream, context: testContext });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(2));
+    expect(stream.beginCalls[1]!.extraParams).toBeUndefined();
+    stream.confirmationDeferreds[1]!.resolve();
+    await restarted;
+    await manager.close();
+  });
+
+  it("rejects conflicting extraParams before opening a connection", async () => {
+    const { manager, camera, stream, session } = makeManager();
+    const localStream = makeLocalStream(camera);
+    await expect(manager.startGeneration({ localStream, context: testContext, extraParams: { mirror: true } }))
+      .rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    expect(stream.beginCalls).toHaveLength(0);
+    expect(session.createCalls).toBe(0);
+    await manager.close();
+  });
+
   it.each([true, false, undefined])("forwards faceRestoration=%s on start and supports changing it without restarting", async faceRestoration => {
     const { manager, camera, stream } = makeManager();
     const localStream = makeLocalStream(camera);

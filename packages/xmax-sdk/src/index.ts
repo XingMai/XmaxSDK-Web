@@ -77,6 +77,7 @@ export {
 } from "./Service/Realtime/RealtimeVideoFormat";
 export type { RealtimeVideoFormatInit } from "./Service/Realtime/RealtimeVideoFormat";
 export { RealtimeVideoTrack } from "./Service/Realtime/RealtimeVideoTrack";
+export type { JsonValue, RealtimeExtraParams } from "./Service/Realtime/RealtimeExtraParams";
 
 /**
  * Service / Media

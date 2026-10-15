@@ -14,6 +14,8 @@ export enum RealtimeOperationKind {
   media = "media",
   connection = "connection",
   generation = "generation",
+  /** 保留连接并替换生成任务；失败按生成生命周期清理。 */
+  generationRestart = "generationRestart",
   cameraSwitch = "cameraSwitch",
 
   /**
@@ -263,7 +265,7 @@ export class RealtimeCoordinator {
       throw error;
     }
 
-    // 已在生成时，startGeneration 只更新条件，与回传尺寸调整共用配置操作。
+    // 普通生成调用在运行中只更新条件；强制重启保持独立的生命周期操作类型。
     const operationKind =
       kind === RealtimeOperationKind.generation &&
       this.state.connectionState === RealtimeConnectionState.generating

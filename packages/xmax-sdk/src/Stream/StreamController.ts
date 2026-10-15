@@ -318,8 +318,17 @@ export class StreamController implements StreamControlling {
   /**
    * 建立生成任务并发送开始信令。
    *
+   * @param options.taskID 当前生成任务标识。
+   * @param options.videoFormat 模型生成使用的视频规格。
+   * @param options.context 本次生成条件。
+   * @param options.restart 是否保留连接并替换当前生成任务，默认 false；不预先发送 stop。
+   * @param options.targetSize 回传尺寸，缺省时不发送；网络视频默认使用生成尺寸。
+   * @param options.mirror 是否由后端镜像输入画面，默认 false。
+   * @param options.faceRestoration 是否回贴原始人脸，默认 false。
+   * @param options.onStartSent start 发送成功后的回调，不等待生成确认。
+   * @param options.extraParams 合并到本次 start 的 params，不缓存。
    * @returns 等待远端结果流确认的 Promise。
-   * @throws 任务标识无效、RTC 房间未就绪或已有生成任务时同步抛错；
+   * @throws 任务标识无效、RTC 房间未就绪、旧任务仍在启动或未指定 restart 且已有生成任务时同步抛错；
    * 发送失败或确认超时通过返回的 Promise 拒绝。
    */
   beginGeneration(options: StreamGenerationOptions): Promise<void> {
@@ -333,7 +342,7 @@ export class StreamController implements StreamControlling {
     if (!this.state.roomID) {
       throw new XmaxError(XmaxErrorCode.rtcError, "RTC room is not configured");
     }
-    if (this.state.generationTaskID) {
+    if (this.state.generationTaskID && (!options.restart || this.state.generationWaiter)) {
       throw new XmaxError(
         XmaxErrorCode.rtcError,
         "Realtime generation is already active",
@@ -373,11 +382,12 @@ export class StreamController implements StreamControlling {
     try {
       const sending = this.roomController.startGeneration({
         taskID,
+        videoFormat: options.videoFormat,
+        context: options.context,
+        targetSize: options.targetSize,
         mirror: options.mirror ?? false,
         faceRestoration: options.faceRestoration ?? false,
-        videoFormat: options.videoFormat,
-        targetSize: options.targetSize,
-        context: options.context,
+        extraParams: options.extraParams,
       });
       const state = this.state;
       const sent = Promise.resolve(sending).then(async () => {
@@ -433,16 +443,26 @@ export class StreamController implements StreamControlling {
   /**
    * 发送生成条件变更信令。
    *
+   * @param options.taskID 当前生成任务标识。
+   * @param options.videoFormat 模型生成使用的视频规格。
+   * @param options.context 本次生成条件。
+   * @param options.restart 本次条件更新不使用该字段。
+   * @param options.targetSize 回传尺寸，缺省时不发送。
+   * @param options.mirror 本次条件更新不使用该字段。
+   * @param options.faceRestoration 是否回贴原始人脸，默认 false。
+   * @param options.onStartSent 本次条件更新不调用该回调。
+   * @param options.extraParams 合并到本次 change_condition 的 params，不缓存。
    * @throws RTC 房间未就绪或条件变更信令发送失败时抛出错误。
    */
   async updateGeneration(options: StreamGenerationOptions): Promise<void> {
     try {
       await this.roomController.changeGenerationCondition({
         taskID: options.taskID,
-        faceRestoration: options.faceRestoration ?? false,
         videoFormat: options.videoFormat,
-        targetSize: options.targetSize,
         context: options.context,
+        targetSize: options.targetSize,
+        faceRestoration: options.faceRestoration ?? false,
+        extraParams: options.extraParams,
       });
     } catch (error) {
       throw XmaxError.from(error);

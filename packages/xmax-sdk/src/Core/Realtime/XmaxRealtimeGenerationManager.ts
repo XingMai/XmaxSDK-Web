@@ -1,6 +1,7 @@
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
 import type { RealtimeContext } from "../../Service/Realtime/RealtimeContext";
+import type { RealtimeExtraParams } from "../../Service/Realtime/RealtimeExtraParams";
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import type { StreamControlling } from "../../Stream/StreamControlling";
 import type { RoomEventTargetSize } from "../../Stream/Room/RoomEvent";
@@ -9,10 +10,16 @@ import type { InteractionControlling } from "../../Media/Interaction/Interaction
 import type { RenderControlling } from "../../Render/RenderControlling";
 
 interface GenerationOptions {
-  faceRestoration?: boolean;
+  /** 模型生成使用的视频规格。 */
   videoFormat: RealtimeVideoFormat;
-  targetSize?: RoomEventTargetSize;
+  /** 生成条件，缺省复用最近缓存的上下文。 */
   context?: RealtimeContext;
+  /** 服务端生成后的回传尺寸，缺省时不发送。 */
+  targetSize?: RoomEventTargetSize;
+  /** 是否回贴原始人脸，默认 false。 */
+  faceRestoration?: boolean;
+  /** 合并到本次生成信令的 params，不缓存。 */
+  extraParams?: RealtimeExtraParams;
 }
 
 /**
@@ -55,35 +62,51 @@ export class XmaxRealtimeGenerationManager {
    * 发送生成指令并等待确认、远端就绪和音频激活，成功后返回任务标识。
    * 条件上下文在生成确认后缓存；启动失败时尽力停止本次任务并保留原始错误。
    * @param options.videoFormat 模型生成使用的视频规格。
-   * @param options.targetSize 服务端生成后的回传尺寸，缺省使用生成尺寸。
-   * @param options.context 生成条件，缺省复用最近缓存的上下文。
-   * @param options.faceRestoration 是否回贴原始人脸，默认 false。
-   * @param options.mirror 是否由后端水平翻转输入，默认 false；仅用于 start 信令。
    * @param options.signal 取消本次生成启动的信号。
    * @param options.ensureCurrent 校验当前操作仍有效。
    * @param options.waitUntilRemoteReady 等待远端生成流就绪。
+   * @param options.context 生成条件，缺省复用最近缓存的上下文。
+   * @param options.restart 是否替换当前任务并重新发送 start，默认 false；不发送 stop。
+   * @param options.targetSize 服务端生成后的回传尺寸，缺省时不发送。
+   * @param options.mirror 是否由后端水平翻转输入，默认 false；仅用于 start 信令。
+   * @param options.faceRestoration 是否回贴原始人脸，默认 false。
    * @param options.onStartSent start 信令发送成功后的可选异步回调。
+   * @param options.extraParams 合并到本次 start 的 params，不缓存。
    */
-  async start(options: GenerationOptions & {
-    mirror?: boolean;
+  async start(options: {
+    videoFormat: RealtimeVideoFormat;
     signal: AbortSignal;
     ensureCurrent: () => void;
     waitUntilRemoteReady: () => Promise<void>;
+    context?: RealtimeContext;
+    restart?: boolean;
+    targetSize?: RoomEventTargetSize;
+    mirror?: boolean;
+    faceRestoration?: boolean;
     onStartSent?: () => Promise<void>;
+    extraParams?: RealtimeExtraParams;
   }): Promise<string> {
     const context = this.validateContext(options.context);
     options.ensureCurrent();
 
     const taskID = this.taskIDGenerator();
+    if (options.restart) {
+      this.interactionController.stopInteraction();
+      this.renderController.setInteractionEnabled(false);
+    }
     this.activeTaskID = taskID;
 
     try {
       const confirmation = this.streamController.beginGeneration({
-        taskID, videoFormat: options.videoFormat, context,
+        taskID,
+        videoFormat: options.videoFormat,
+        context,
+        restart: options.restart,
         ...(options.targetSize && { targetSize: options.targetSize }),
         mirror: options.mirror ?? false,
         faceRestoration: options.faceRestoration ?? false,
         ...(options.onStartSent && { onStartSent: options.onStartSent }),
+        extraParams: options.extraParams,
       });
       await this.awaitConfirmation(confirmation, options.signal);
       options.ensureCurrent();
@@ -109,9 +132,10 @@ export class XmaxRealtimeGenerationManager {
    * 更新活动任务的生成条件；信令发送成功后才覆盖缓存，无任务或上下文时抛错。
    * @param taskID 当前活动任务标识。
    * @param options.videoFormat 模型生成使用的视频规格。
-   * @param options.targetSize 服务端生成后的回传尺寸。
    * @param options.context 生成条件，缺省复用最近缓存的上下文。
+   * @param options.targetSize 服务端生成后的回传尺寸，缺省时不发送。
    * @param options.faceRestoration 是否回贴原始人脸，默认 false。
+   * @param options.extraParams 合并到本次 change_condition 的 params，不缓存。
    */
   async update(taskID: string | undefined, options: GenerationOptions): Promise<void> {
     const context = options.context ?? this.currentContext;
@@ -120,9 +144,12 @@ export class XmaxRealtimeGenerationManager {
     }
 
     await this.streamController.updateGeneration({
-      taskID, videoFormat: options.videoFormat, context,
-      faceRestoration: options.faceRestoration ?? false,
+      taskID,
+      videoFormat: options.videoFormat,
+      context,
       ...(options.targetSize && { targetSize: options.targetSize }),
+      faceRestoration: options.faceRestoration ?? false,
+      extraParams: options.extraParams,
     });
     if (this.activeTaskID !== taskID) throw RealtimeCoordinator.cancelledError();
     this.currentContext = context;

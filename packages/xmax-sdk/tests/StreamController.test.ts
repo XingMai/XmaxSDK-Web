@@ -518,6 +518,60 @@ describe("StreamController", () => {
     ).toThrowError(expect.objectContaining({ code: XmaxErrorCode.rtcError }));
   });
 
+  it("replaces a running generation with start without stop, republishing, or rejoining", async () => {
+    const { controller, rtc } = makeStream();
+    await controller.connect(connection, false, noopEnsureActive);
+    const first = controller.beginGeneration({ taskID: "first", videoFormat, context });
+    emitRemoteVideo(rtc, "bot001", true);
+    await first;
+    const subscriptions = rtc.subscribeRemoteVideoCalls.length;
+    expect(() => controller.beginGeneration({ taskID: "blocked", videoFormat, context })).toThrow("already active");
+    await controller.beginGeneration({ taskID: "second", videoFormat, context, restart: true, extraParams: { static_generate: true } });
+    const messages = rtc.sentMessages.map(raw => JSON.parse(raw));
+    expect(messages.filter(event => event.event === "start").map(event => event.uid)).toEqual(["first", "second"]);
+    expect(messages.some(event => event.event === "stop")).toBe(false);
+    expect(messages[1].params.static_generate).toBe(true);
+    expect(messages[1].params).not.toHaveProperty("restart");
+    expect(rtc.joinRoomCalls).toHaveLength(1);
+    expect(rtc.leaveRoomCalls).toBe(0);
+    expect(rtc.publishLocalVideoCalls).toBe(1);
+    expect(rtc.subscribeRemoteVideoCalls).toHaveLength(subscriptions);
+    await controller.disconnect();
+  });
+
+  it("does not replace a generation that is still waiting to start", async () => {
+    const { controller } = makeStream();
+    await controller.connect(connection, false, noopEnsureActive);
+    const first = controller.beginGeneration({ taskID: "first", videoFormat, context });
+    const rejected = expect(first).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
+    expect(() => controller.beginGeneration({ taskID: "second", videoFormat, context, restart: true })).toThrow("already active");
+    await controller.disconnect();
+    await rejected;
+  });
+
+  it("merges extraParams into start and change_condition params without retaining them", async () => {
+    const { controller, rtc } = makeStream();
+    await controller.connect(connection, false, noopEnsureActive);
+    const extraParams = { static_generate: true, static_image_path: "https://example.com/image.jpg" };
+    const confirmation = controller.beginGeneration({ taskID: "extra-task", videoFormat, context, extraParams });
+    await vi.waitFor(() => expect(rtc.sentMessages.length).toBeGreaterThan(0));
+    const start = JSON.parse(rtc.sentMessages[0]!);
+    expect(start.event).toBe("start");
+    expect(start.params).toMatchObject(extraParams);
+    expect(start).not.toHaveProperty("static_generate");
+    expect(start.params).not.toHaveProperty("extraParams");
+    emitRemoteVideo(rtc, "bot001", true);
+    await confirmation;
+
+    await controller.updateGeneration({ taskID: "extra-task", videoFormat, context, extraParams });
+    await controller.updateGeneration({ taskID: "extra-task", videoFormat, context });
+    const updates = rtc.sentMessages.map(raw => JSON.parse(raw)).filter(event => event.event === "change_condition");
+    expect(updates[0].params).toMatchObject(extraParams);
+    expect(updates[1].params).not.toHaveProperty("static_generate");
+    expect(updates[1].params).not.toHaveProperty("static_image_path");
+    await controller.disconnect();
+  });
+
   it.each([true, false, undefined])("maps faceRestoration=%s to start.params.face_replace", async faceRestoration => {
     const { controller, rtc } = makeStream();
     await controller.connect(connection, false, noopEnsureActive);
