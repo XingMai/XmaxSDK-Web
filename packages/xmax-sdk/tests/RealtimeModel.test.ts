@@ -39,20 +39,26 @@ describe("custom realtime models", () => {
     expect(modelDisplayName(RealtimeModel.x2_0_trtc)).toBe("X2.1-preview-trtc");
     expect(modelBaseURL(RealtimeModel.x2_0_trtc)).toBeUndefined();
     expect(modelDisplayName(RealtimeModel.x2_1_preview)).toBe("X2.1-preview-agora");
-    expect(Object.values(RealtimeModel)).toEqual(["x2.0", "x2.0-trtc", "x2.1-preview", "x2.1-preview-1014"]);
+    expect(Object.values(RealtimeModel)).toEqual([
+      "x2.0", "x2.0-trtc", "x2.1-preview", "x2.1-preview-1014",
+      "x2.1.1-preview-cn", "x2.1.1-preview-us",
+    ]);
     expect(modelBaseURL(RealtimeModel.x2_0)).toBeUndefined();
     expect(resolutionBuckets(RealtimeModel.x2_0)).toEqual([]);
     expect(maximumInputPixels(RealtimeModel.x2_0)).toBe(1280000);
   });
 });
 
-describe("x2.1-preview-1014", () => {
-  it("uses preview media defaults and Agora on dev without changing the model identifier", () => {
-    const model = RealtimeModel.x2_1_preview_1014;
-    const preview = RealtimeModel.x2_1_preview;
-    expect(model).toBe("x2.1-preview-1014");
-    expect(modelDisplayName(model)).toBe("X2.1-preview-1014");
-    expect(modelBaseURL(model)).toBe("https://dev.xmaxai.com/open/api/v1");
+describe("preview model variants", () => {
+  it.each([
+    [RealtimeModel.x2_1_preview_1014, "x2.1-preview-1014", "X2.1-preview-1014", "https://dev.xmaxai.com/open/api/v1"],
+    [RealtimeModel.x2_1_1_preview_cn, "x2.1.1-preview-cn", "X2.1.1-preview-cn", "https://cloud.xmax.22duck.cn/open/api/v1"],
+    [RealtimeModel.x2_1_1_preview_us, "x2.1.1-preview-us", "X2.1.1-preview-us", "https://api.xmax.ai/open/api/v1"],
+  ] as const)("uses the expected endpoint and preview-1014 media defaults for %s", (model, identifier, displayName, baseURL) => {
+    const preview = RealtimeModel.x2_1_preview_1014;
+    expect(model).toBe(identifier);
+    expect(modelDisplayName(model)).toBe(displayName);
+    expect(modelBaseURL(model)).toBe(baseURL);
     expect(supportedRtcProviders(model)).toEqual([RtcProvider.agora]);
     expect(new RealtimeConfiguration({ model })).toMatchObject({ model, provider: RtcProvider.agora });
     expect(resolutionBuckets(model)).toEqual(resolutionBuckets(preview));
