@@ -5,6 +5,8 @@ import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFo
 import type { StreamControlling } from "../../Stream/StreamControlling";
 import type { RoomEventTargetSize } from "../../Stream/Room/RoomEvent";
 import { RealtimeCoordinator } from "./RealtimeCoordinator";
+import type { InteractionControlling } from "../../Media/Interaction/InteractionControlling";
+import type { RenderControlling } from "../../Render/RenderControlling";
 
 interface GenerationOptions {
   faceRestoration?: boolean;
@@ -32,10 +34,9 @@ export class XmaxRealtimeGenerationManager {
    * 注入房间传输组件和任务标识生成器，不创建会话或启动生成。
    */
   constructor(
-    /**
-     * 传输依赖与标识生成策略
-     */
     private readonly streamController: StreamControlling,
+    private readonly interactionController: InteractionControlling,
+    private readonly renderController: RenderControlling,
     private readonly taskIDGenerator: () => string = XmaxRealtimeGenerationManager.createTaskID,
   ) {}
 
@@ -95,6 +96,8 @@ export class XmaxRealtimeGenerationManager {
       await this.streamController.activateRemoteAudio();
       options.ensureCurrent();
 
+      this.interactionController.startInteraction(taskID, options.videoFormat);
+      this.renderController.setInteractionEnabled(true, options.videoFormat);
       return taskID;
     } catch (error) {
       await this.stop(taskID);
@@ -123,6 +126,8 @@ export class XmaxRealtimeGenerationManager {
     });
     if (this.activeTaskID !== taskID) throw RealtimeCoordinator.cancelledError();
     this.currentContext = context;
+    this.interactionController.startInteraction(taskID, options.videoFormat);
+    this.renderController.setInteractionEnabled(true, options.videoFormat);
   }
 
   /**
@@ -136,6 +141,8 @@ export class XmaxRealtimeGenerationManager {
     if (!taskID || this.activeTaskID !== taskID) return;
 
     this.activeTaskID = undefined;
+    this.interactionController.stopInteraction();
+    this.renderController.setInteractionEnabled(false);
     const completion = (async () => {
       try {
         await this.streamController.stopGeneration(taskID);
@@ -157,6 +164,8 @@ export class XmaxRealtimeGenerationManager {
    */
   async reset(taskID?: string): Promise<void> {
     this.currentContext = undefined;
+    this.interactionController.stopInteraction();
+    this.renderController.setInteractionEnabled(false);
     // Coordinator 进入 disconnecting 后可能不再携带 taskID，仍须停止本类持有的任务。
     await this.stop(this.activeTaskID ?? (taskID || undefined));
   }

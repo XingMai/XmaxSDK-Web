@@ -5,6 +5,10 @@ import { RenderStatisticsController } from "./RenderStatisticsController";
 import type { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
 import { VideoRenderRegistry } from "../../Service/Realtime/VideoRenderBinding";
 import { RemoteVideoFramePipeline, type RemoteFrameInterpolationOptions } from "./RemoteVideoFramePipeline";
+import { TrajectoryRegistry } from "../Trajectory/TrajectoryRegistry";
+import { TrajectoryOverlayView } from "../Trajectory/TrajectoryOverlayView";
+import { DefaultTrajectoryEffectRenderer } from "../Trajectory/DefaultTrajectoryEffectRenderer";
+import type { TrajectoryEffectRendering } from "../Trajectory/TrajectoryEffectRendering";
 
 const OBJECT_FIT: Record<VideoContentMode, "contain" | "cover"> = {
   [VideoContentMode.fit]: "contain",
@@ -69,12 +73,20 @@ export class XmaxVideoView {
   private detached = false;
 
   /**
+   * 轨迹交互配置与懒加载视图
+   */
+  private interactionEnabled = true;
+  private customTrajectoryRenderer?: TrajectoryEffectRendering;
+  private trajectoryOverlay?: TrajectoryOverlayView;
+
+  /**
    * 创建单轨视频视图。
    *
    * @param options.videoContentMode 视频内容显示模式，默认 fill。
    */
-  constructor(options?: { videoContentMode?: VideoContentMode }) {
+  constructor(options?: { videoContentMode?: VideoContentMode; isInteractionEnabled?: boolean }) {
     this.contentMode = options?.videoContentMode ?? VideoContentMode.fill;
+    this.interactionEnabled = options?.isInteractionEnabled ?? true;
 
     this.element = document.createElement("div");
     this.element.style.position = "relative";
@@ -95,6 +107,36 @@ export class XmaxVideoView {
     this.applyContentMode();
 
     this.element.appendChild(this.videoElement);
+  }
+
+  /**
+   * 是否允许远端轨迹交互；本地轨道没有交互绑定，不受此开关影响。
+   */
+  get isInteractionEnabled(): boolean { return this.interactionEnabled; }
+
+  /**
+   * 关闭时立即取消当前手势，不影响视频播放。
+   */
+  set isInteractionEnabled(enabled: boolean) {
+    this.interactionEnabled = enabled;
+    this.trajectoryOverlay?.configure(this.contentMode, this.mirrored, enabled);
+  }
+
+  /**
+   * 自定义轨迹视觉效果；undefined 表示使用 SDK 默认效果。
+   */
+  get trajectoryRenderer(): TrajectoryEffectRendering | undefined { return this.customTrajectoryRenderer; }
+
+  /**
+   * 替换效果前释放旧动画，采样及网络发送仍由 SDK 管理。
+   */
+  set trajectoryRenderer(renderer: TrajectoryEffectRendering | undefined) {
+    if (this.customTrajectoryRenderer === renderer) {
+      return;
+    }
+    this.disposeTrajectory();
+    this.customTrajectoryRenderer = renderer;
+    this.attachTrajectory();
   }
 
   /**
@@ -177,6 +219,7 @@ export class XmaxVideoView {
   attach(to: HTMLElement): void {
     this.detached = false;
     to.appendChild(this.element);
+    this.attachTrajectory();
 
     // 浏览器可能在移出 DOM 时暂停 MediaStream video；重新挂载要恢复解码回调。
     if ((this.videoElement.srcObject || this.videoElement.getAttribute("src")) && this.videoElement.autoplay && !this.videoElement.ended && this.videoElement.paused && typeof this.videoElement.play === "function") {
@@ -197,6 +240,7 @@ export class XmaxVideoView {
    */
   detach(): void {
     this.detached = true;
+    this.disposeTrajectory();
     this.statisticsController.stop();
     this.stopInterpolation();
     this.cancelFrameDisplayNotification();
@@ -308,6 +352,7 @@ export class XmaxVideoView {
     const binding = VideoRenderRegistry.binding(track);
     if (binding) {
       binding.attachHandler(this, this.contentMode);
+      this.attachTrajectory();
       return;
     }
 
@@ -325,6 +370,7 @@ export class XmaxVideoView {
    * 解绑当前轨道并清空渲染内容。
    */
   private detachCurrentTrack(): void {
+    this.disposeTrajectory();
     this.statisticsController.stop();
     const track = this.currentTrack;
     if (track) {
@@ -391,6 +437,7 @@ export class XmaxVideoView {
    * 应用显示模式与镜像样式。
    */
   private applyContentMode(): void {
+    this.trajectoryOverlay?.configure(this.contentMode, this.mirrored, this.interactionEnabled);
     this.videoElement.style.objectFit = OBJECT_FIT[this.contentMode];
     this.videoElement.style.transform = this.mirrored ? "scaleX(-1)" : "";
     if (this.interpolationCanvas) {
@@ -404,5 +451,31 @@ export class XmaxVideoView {
    */
   private startRenderStatistics(): void {
     if (!this.detached) this.statisticsController.start();
+  }
+
+  /**
+   * 仅为具备交互能力的轨道创建覆盖层，普通视频和本地预览不分配 Canvas。
+   */
+  private attachTrajectory(): void {
+    if (this.detached || this.trajectoryOverlay || !this.currentTrack) {
+      return;
+    }
+    const binding = TrajectoryRegistry.binding(this.currentTrack);
+    if (!binding) {
+      return;
+    }
+    const overlay = new TrajectoryOverlayView(this.customTrajectoryRenderer ?? new DefaultTrajectoryEffectRenderer());
+    this.trajectoryOverlay = overlay;
+    overlay.configure(this.contentMode, this.mirrored, this.interactionEnabled);
+    this.element.appendChild(overlay.element);
+    binding.attach(overlay);
+  }
+
+  /**
+   * 换轨或卸载时移除全部交互资源；再次挂载时重新建立绑定。
+   */
+  private disposeTrajectory(): void {
+    this.trajectoryOverlay?.dispose();
+    this.trajectoryOverlay = undefined;
   }
 }

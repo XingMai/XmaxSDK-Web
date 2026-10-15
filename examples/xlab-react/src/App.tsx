@@ -850,6 +850,7 @@ export function App() {
             <div className="remoteVideo" key={remoteStream.id}>
               <XmaxVideo
                 track={remoteStream.videoTrack}
+                isInteractionEnabled
                 style={{ width: "100%", height: "100%" }}
               />
             </div>

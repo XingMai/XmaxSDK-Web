@@ -1,37 +1,37 @@
 export interface RealtimePointInit {
   /**
-   * 归一化横坐标。
+   * 模型输入像素横坐标。
    */
   x: number;
 
   /**
-   * 归一化纵坐标。
+   * 模型输入像素纵坐标。
    */
   y: number;
 }
 
 /**
- * 归一化坐标系中的二维点。
+ * 模型输入像素坐标系中的二维点。
  */
 export class RealtimePoint {
   /**
    * 坐标
    */
   /**
-   * 归一化横坐标。
+   * 模型输入像素横坐标。
    */
   readonly x: number;
 
   /**
-   * 归一化纵坐标。
+   * 模型输入像素纵坐标。
    */
   readonly y: number;
 
   /**
-   * 创建归一化坐标点。
+   * 创建模型输入像素坐标点。
    *
-   * @param init.x 归一化横坐标。
-   * @param init.y 归一化纵坐标。
+   * @param init.x 模型输入像素横坐标。
+   * @param init.y 模型输入像素纵坐标。
    */
   constructor(init: RealtimePointInit) {
     this.x = init.x;

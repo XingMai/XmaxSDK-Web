@@ -1,3 +1,5 @@
+import { InteractionController } from "../src/Media/Interaction/InteractionController";
+import { RenderController } from "../src/Render/RenderController";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { XmaxRealtimeConnectionManager } from "../src/Core/Realtime/XmaxRealtimeConnectionManager";
 import { XmaxRealtimeGenerationManager } from "../src/Core/Realtime/XmaxRealtimeGenerationManager";
@@ -57,7 +59,7 @@ afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(
 describe("XmaxRealtimeGenerationManager", () => {
   function setup() {
     const { methods: stream, controller } = makeStream();
-    const manager = new XmaxRealtimeGenerationManager(controller, () => "task-test?os=web");
+    const manager = new XmaxRealtimeGenerationManager(controller, new InteractionController(async () => {}), new RenderController(), () => "task-test?os=web");
     const op = operation();
     const options = { ...op, videoFormat, context, waitUntilRemoteReady: vi.fn(async () => {}) };
     return { manager, stream, options, op };
@@ -168,7 +170,7 @@ describe("XmaxRealtimeGenerationManager", () => {
 
   it("keeps the web task ID wire format", async () => {
     const { controller } = makeStream();
-    const manager = new XmaxRealtimeGenerationManager(controller);
+    const manager = new XmaxRealtimeGenerationManager(controller, new InteractionController(async () => {}), new RenderController());
     const id = await manager.start({ ...operation(), videoFormat, context, waitUntilRemoteReady: async () => {} });
     expect(id).toMatch(/^task-[A-Za-z0-9_-]{22}\?os=web$/);
     await manager.reset();
@@ -189,17 +191,22 @@ describe("XmaxRealtimeConnectionManager", () => {
       stopHeartbeat: vi.fn(),
     };
     const events = { onHeartbeatFailure: vi.fn(), onFrameDisplayed: vi.fn(), onRenderAttached: vi.fn(), onRenderDetached: vi.fn() };
+    const render = new RenderController({
+      onFrameDisplayed: events.onFrameDisplayed,
+      onAttached: events.onRenderAttached,
+      onDetached: events.onRenderDetached,
+    });
     const manager = new XmaxRealtimeConnectionManager({
       provider,
       sessionService: service, streamController: controller, timing: new RealtimeLaunchTimer(),
-      remoteAudioVolume: () => 0.25, ...events,
+      remoteAudioVolume: () => 0.25, ...events, renderController: render, onInteraction: vi.fn(),
     });
     const op = operation();
     const options = {
       localTrack: new RealtimeVideoTrack({ id: "local", videoFormat }), model: RealtimeModel.x2_0_trtc,
       includeLocalAudio: true, ensureCurrent: op.ensureCurrent, onPublished: vi.fn(),
     };
-    return { manager, stream, service, events, options, op, session, connection };
+    return { manager, stream, service, events, options, op, session, connection, render };
   }
 
   it.each([RtcProvider.trtc, RtcProvider.agora, RtcProvider.vertc])("starts %s HTTP heartbeat after local publication without waiting for a remote frame", async (provider) => {
@@ -240,14 +247,14 @@ describe("XmaxRealtimeConnectionManager", () => {
   });
 
   it("updates the current render target without clearing it on a stale detach", async () => {
-    const { manager, events, options } = setup();
+    const { render, manager, events, options } = setup();
     const remote = await manager.connect(options);
     const binding = VideoRenderRegistry.binding(remote.videoTrack!)!;
     const previous = { isMirrored: false, setMediaStream: vi.fn(), setFrameInterpolation: vi.fn() };
     const current = { isMirrored: false, setMediaStream: vi.fn(), setFrameInterpolation: vi.fn() };
 
     binding.attachHandler(previous, VideoContentMode.fit);
-    events.onRenderAttached.mockImplementation(() => manager.setFrameInterpolation(undefined));
+    events.onRenderAttached.mockImplementation(() => render.setFrameInterpolation(undefined));
     binding.attachHandler(current, VideoContentMode.fit);
     expect(previous.setFrameInterpolation).toHaveBeenCalledWith(undefined);
     expect(current.setFrameInterpolation.mock.contexts).toEqual([current]);
@@ -270,13 +277,13 @@ describe("XmaxRealtimeConnectionManager", () => {
   });
 
   it("supports render targets without frame interpolation", async () => {
-    const { manager, options } = setup();
+    const { render, manager, options } = setup();
     const remote = await manager.connect(options);
     const binding = VideoRenderRegistry.binding(remote.videoTrack!)!;
     const view = { isMirrored: false, setMediaStream: vi.fn() };
 
     binding.attachHandler(view, VideoContentMode.fit);
-    expect(() => manager.setFrameInterpolation(undefined)).not.toThrow();
+    expect(() => render.setFrameInterpolation(undefined)).not.toThrow();
     binding.detachHandler(view);
     await manager.disconnect();
   });

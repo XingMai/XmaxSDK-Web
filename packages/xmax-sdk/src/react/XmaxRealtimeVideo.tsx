@@ -2,6 +2,7 @@ import {
   VideoContentMode,
   XmaxRealtimeVideoView,
   type RealtimeVideoTrack,
+  type TrajectoryEffectRendering,
 } from "../index";
 import {
   useEffect,
@@ -29,6 +30,16 @@ export interface XmaxRealtimeVideoProps {
    * 容器类名。
    */
   className?: string;
+
+  /**
+   * 是否允许远端轨迹交互，默认 true；本地轨道不参与。
+   */
+  isInteractionEnabled?: boolean;
+
+  /**
+   * 自定义轨迹视觉效果，不传时使用默认效果；一个实例仅供一个视图使用。
+   */
+  trajectoryRenderer?: TrajectoryEffectRendering;
 
   /**
    * 容器样式。
@@ -82,6 +93,18 @@ export function XmaxRealtimeVideo(props: XmaxRealtimeVideoProps) {
       view.videoContentMode = props.videoContentMode;
     }
   }, [props.videoContentMode]);
+
+  useEffect(() => {
+    if (viewRef.current) {
+      viewRef.current.isInteractionEnabled = props.isInteractionEnabled ?? true;
+    }
+  }, [props.isInteractionEnabled]);
+
+  useEffect(() => {
+    if (viewRef.current) {
+      viewRef.current.trajectoryRenderer = props.trajectoryRenderer;
+    }
+  }, [props.trajectoryRenderer]);
 
   return (
     <div

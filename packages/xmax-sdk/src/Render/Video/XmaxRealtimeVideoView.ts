@@ -1,6 +1,7 @@
 import { VideoContentMode } from "../../Foundation/Media/Video/VideoContentMode";
 import type { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
 import { XmaxVideoView } from "./XmaxVideoView";
+import type { TrajectoryEffectRendering } from "../Trajectory/TrajectoryEffectRendering";
 
 const REMOTE_FADE_DURATION_MS = 300;
 
@@ -43,6 +44,7 @@ export class XmaxRealtimeVideoView {
     localTrack?: RealtimeVideoTrack;
     remoteTrack?: RealtimeVideoTrack;
     videoContentMode?: VideoContentMode;
+    isInteractionEnabled?: boolean;
   }) {
     this.contentMode = options?.videoContentMode ?? VideoContentMode.fill;
     this.currentLocalTrack = options?.localTrack;
@@ -53,8 +55,8 @@ export class XmaxRealtimeVideoView {
     this.element.style.overflow = "hidden";
     this.element.style.backgroundColor = "black";
 
-    this.localVideoView = new XmaxVideoView({ videoContentMode: this.contentMode });
-    this.remoteVideoView = new XmaxVideoView({ videoContentMode: this.contentMode });
+    this.localVideoView = new XmaxVideoView({ videoContentMode: this.contentMode, isInteractionEnabled: false });
+    this.remoteVideoView = new XmaxVideoView({ videoContentMode: this.contentMode, isInteractionEnabled: options?.isInteractionEnabled });
     for (const view of [this.localVideoView, this.remoteVideoView]) {
       view.element.style.position = "absolute";
       view.element.style.inset = "0";
@@ -71,6 +73,26 @@ export class XmaxRealtimeVideoView {
   get localTrack(): RealtimeVideoTrack | undefined {
     return this.currentLocalTrack;
   }
+
+  /**
+   * 只控制远端视图的轨迹交互，本地预览始终不接管手势。
+   */
+  get isInteractionEnabled(): boolean { return this.remoteVideoView.isInteractionEnabled; }
+
+  /**
+   * 转交远端交互开关。
+   */
+  set isInteractionEnabled(enabled: boolean) { this.remoteVideoView.isInteractionEnabled = enabled; }
+
+  /**
+   * 远端视图的自定义轨迹效果。
+   */
+  get trajectoryRenderer(): TrajectoryEffectRendering | undefined { return this.remoteVideoView.trajectoryRenderer; }
+
+  /**
+   * undefined 恢复默认效果，不改变轨迹发送逻辑。
+   */
+  set trajectoryRenderer(renderer: TrajectoryEffectRendering | undefined) { this.remoteVideoView.trajectoryRenderer = renderer; }
 
   /**
    * 替换本地预览轨道；轨道未变化时保留当前绑定。

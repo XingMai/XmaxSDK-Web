@@ -302,6 +302,23 @@ import { VideoContentMode } from "@xmaxai/web-sdk";
 See the [React component](./packages/xmax-sdk/src/react/XmaxRealtimeVideo.tsx) for state binding and the
 [example project](#example-project) for a complete implementation.
 
+### Interact with the generated video
+
+`XmaxVideo` and `XmaxRealtimeVideo` support dragging on the remote output with a
+mouse, pen, or multiple touch points. Interaction becomes available after generation
+starts. The SDK maps the displayed coordinates to the model input and sends the
+trajectory automatically; local previews do not send interaction events.
+
+Set `isInteractionEnabled={false}` to disable interaction without stopping playback.
+The framework-independent views expose the same `isInteractionEnabled` property.
+
+Use `trajectoryRenderer` to supply a `TrajectoryEffectRendering` implementation for
+custom visuals, or leave it undefined to use the default glowing trail. A renderer
+only controls visuals, not sampling or signaling; use a separate instance per view
+and release its animation resources in `reset()`.
+
+The generated response to dragging depends on the model and generation prompt.
+
 <br>
 
 ### Listen for events

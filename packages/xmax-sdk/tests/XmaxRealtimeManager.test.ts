@@ -1,4 +1,5 @@
 import { RtcProvider } from "../src/Foundation/RTC/RtcProvider";
+import { TrajectoryRegistry } from "../src/Render/Trajectory/TrajectoryRegistry";
 import { QualityHistory } from "../src/Stream/Quality/QualityHistory";
 import type { RtcManaging } from "../src/Foundation/RTC/RtcManaging";
 import { LocalVideoController } from "../src/Media/Video/LocalVideoController";
@@ -315,6 +316,75 @@ function makeLocalStream(camera: CameraControllingStub): RealtimeMediaStream {
 }
 
 const testContext = new RealtimeContext({ prompt: "a red cube" });
+
+describe("XmaxRealtimeManager interaction lifecycle", () => {
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+  it.each([RealtimeModel.x2_0_trtc, RealtimeModel.x2_1_preview, RealtimeModel.x2_0])("binds %s output gestures only after generation and keeps model coordinates during quality changes", async model => {
+    const s = makeManager(async () => false, false, model);
+    const provider = s.manager.options.provider;
+    if (provider !== RtcProvider.trtc) {
+      vi.spyOn(s.session, "createSession").mockResolvedValue(new RealtimeSession({ id: "interaction-session", connection: {
+        provider, appID: "app", roomID: "room", userID: "user", roomToken: "token", botID: "bot",
+      } }));
+    }
+    const send = vi.spyOn(s.stream, "sendTracks");
+    const local = makeLocalStream(s.camera);
+    const remote = await s.manager.connect(local);
+    const binding = TrajectoryRegistry.binding(remote.videoTrack!)!;
+    const sample = { points: [{ x: 320, y: 180 }], viewportSize: { width: 640, height: 360 }, contentMode: VideoContentMode.fill, mirrored: false };
+    expect(TrajectoryRegistry.binding(local.videoTrack!)).toBeUndefined();
+    binding.submit(sample);
+    expect(send).not.toHaveBeenCalled();
+
+    const start = s.manager.startGeneration({ localStream: local, context: testContext });
+    await vi.waitFor(() => expect(s.stream.beginCalls).toHaveLength(1));
+    binding.submit(sample);
+    expect(send).not.toHaveBeenCalled();
+    s.stream.confirmationDeferreds[0]!.resolve();
+    await start;
+    const taskID = s.manager.currentState.taskID;
+    binding.submit(sample);
+    expect(send).toHaveBeenLastCalledWith(taskID, [{ x: 640, y: 360 }]);
+    await Promise.resolve();
+
+    if (provider !== RtcProvider.vertc) {
+      await s.manager.adjustUplinkQuality("downgrade");
+      await s.manager.adjustDownlinkQuality("downgrade");
+      binding.submit(sample);
+      expect(send).toHaveBeenLastCalledWith(taskID, [{ x: 640, y: 360 }]);
+      await Promise.resolve();
+    }
+    await s.manager.startGeneration({ localStream: local, context: new RealtimeContext({ prompt: "drag" }) });
+    binding.submit(sample);
+    expect(send).toHaveBeenLastCalledWith(taskID, [{ x: 640, y: 360 }]);
+    await Promise.resolve();
+    const count = send.mock.calls.length;
+
+    await s.manager.disconnect();
+    expect(TrajectoryRegistry.binding(remote.videoTrack!)).toBeUndefined();
+    binding.submit(sample);
+    expect(send).toHaveBeenCalledTimes(count);
+    expect(local.videoTrack).toBe(s.camera.currentTrack);
+    await s.manager.close();
+  });
+
+  it("never enables interaction after failed generation confirmation", async () => {
+    const s = makeManager(async () => false);
+    const local = makeLocalStream(s.camera);
+    const remote = await s.manager.connect(local);
+    const binding = TrajectoryRegistry.binding(remote.videoTrack!)!;
+    const send = vi.spyOn(s.stream, "sendTracks");
+    const start = s.manager.startGeneration({ localStream: local, context: testContext });
+    const rejected = expect(start).rejects.toThrow("generation failed");
+    await vi.waitFor(() => expect(s.stream.beginCalls).toHaveLength(1));
+    s.stream.confirmationDeferreds[0]!.reject(new Error("generation failed"));
+    await rejected;
+    binding.submit({ points: [{ x: 1, y: 1 }], viewportSize: { width: 100, height: 100 }, contentMode: VideoContentMode.fill, mirrored: false });
+    expect(send).not.toHaveBeenCalled();
+    await s.manager.close();
+  });
+});
 
 describe("XmaxRealtimeManager adaptive quality", () => {
   const adaptiveModel = RealtimeModel.x2_1_preview;
