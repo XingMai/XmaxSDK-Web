@@ -165,6 +165,19 @@ export interface XmaxRealtimeManaging {
   }): Promise<RealtimeMediaStream>;
 
   /**
+   * 从本地 File/Blob 创建图片视频流，支持 TRTC、Agora 和 VeRTC。
+   * 等比缩放并居中补黑边，持续发送同一静止画面，不上传文件、不采集摄像头或麦克风。
+   * 创建后可直接预览，仍需调用 startGeneration 开始生成；disconnect 保留图片源，close 释放全部资源。
+   * @param options.file 包含浏览器可解码图片的本地 File 或 Blob；动图仅取解码时的静止快照。
+   * @param options.videoFormat 期望的视频规格；尺寸自动匹配最接近宽高比的模型档位，等距时优先横屏。
+   * @throws 文件或格式无效、浏览器无法解码、Canvas 采集不可用或已有活动源时抛错。
+   */
+  createLocalImageStream(options: {
+    file: Blob;
+    videoFormat: RealtimeVideoFormat;
+  }): Promise<RealtimeMediaStream>;
+
+  /**
    * 接收用户自行采集或处理的实时视频轨，仅视频，不采集或发送音频。
    * 不要求绑定 SDK 预览；旋转、裁剪及本地预览由调用方负责，后端 mirror 固定 false。
    * SDK 持有轨道副本：disconnect 保留输入，close 释放副本，不停止调用方原始轨道。
@@ -187,7 +200,7 @@ export interface XmaxRealtimeManaging {
    * 上行自适应以本次成功应用的完整格式作为新的 L1 基准；Agora 按档位缩放尺寸和帧率，TRTC 临时仅调帧率。
    *
    * @param videoFormat 本次完整的上行尺寸、帧率和编码配置。
-   * @throws 无本地相机、外部或文件视频流、其他操作进行中、参数无效或 RTC 更新失败时抛错。
+   * @throws 无本地相机、外部、图片或文件视频流、其他操作进行中、参数无效或 RTC 更新失败时抛错。
    */
   updateUplinkVideoFormat(videoFormat: RealtimeVideoFormat): Promise<void>;
 
@@ -221,7 +234,7 @@ export interface XmaxRealtimeManaging {
    * 启用帧检测时，发布前并行等待相机预热（固定 200ms），避免把黑帧推给 RTC。
    * 返回的远端媒体流在生成开始后承载远端生成画面。
    *
-   * @param localStream 由当前 Manager 创建的摄像头、外部视频轨、本地文件或网络视频源。
+   * @param localStream 由当前 Manager 创建的摄像头、外部视频轨、本地图片、本地视频文件或网络视频源。
    * @returns 远端生成结果占位的媒体流。
    * @throws 本地流不属于当前 Manager、已有活动连接、会话创建或进房
    * 发布失败时抛出错误；失败时自动释放连接资源并恢复本地预览。

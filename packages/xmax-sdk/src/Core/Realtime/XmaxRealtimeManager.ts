@@ -195,6 +195,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       onCameraError: error => { void this.errorHandler.report(error); },
       onVideoError: error => { void this.coordinator.terminateWithError(error, RealtimeTerminationScope.connection); },
       onExternalError: error => { void this.coordinator.terminateWithError(error, RealtimeTerminationScope.all); },
+      onImageError: error => { void this.coordinator.terminateWithError(error, RealtimeTerminationScope.all); },
       interactionListener: (taskID, points) => this.streamController.sendTracks(taskID, points),
     });
     this.renderController = new RenderController({
@@ -720,6 +721,27 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
 
       // 不在浏览器播放解锁之前等待网络或 RTC 初始化，保留用户点击的激活状态。
       const stream = await this.mediaController.createLocalVideoStream(options, token.signal);
+      token.ensureCurrent();
+      await this.mediaController.prepareSource(() => token.ensureCurrent());
+
+      this.generationVideoFormat = stream.videoTrack?.videoFormat;
+      await this.coordinator.commit(new RealtimeState({ connectionState: RealtimeConnectionState.ready }), token);
+      return stream;
+    });
+  }
+
+  /**
+   * 创建本地图片静止视频源并准备 RTC，失败或取消时释放本次资源。
+   */
+  async createLocalImageStream(options: Parameters<XmaxRealtimeManaging["createLocalImageStream"]>[0]): Promise<RealtimeMediaStream> {
+    return this.coordinator.run(RealtimeOperationKind.media, undefined, async token => {
+      this.mediaController.ensureNoLocalSource();
+      this.mediaController.validateExternalMediaSupport("image");
+      token.setFailureScope(RealtimeTerminationScope.all);
+      this.launchTimer.start();
+      this.clearVideoStatistics();
+
+      const stream = await this.mediaController.createLocalImageStream(options, token.signal);
       token.ensureCurrent();
       await this.mediaController.prepareSource(() => token.ensureCurrent());
 

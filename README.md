@@ -282,6 +282,32 @@ await realtime.updateUplinkVideoFormat(new RealtimeVideoFormat({
 
 <br>
 
+### Generate from a local image
+
+Use `createLocalImageStream` instead of `createLocalCameraStream` to use a local
+image as the video input. It accepts a browser-decodable `File` or `Blob`, fits the
+image into the model's input dimensions without cropping, and continuously sends
+the same frame without audio. No image upload or camera permission is required.
+
+```javascript
+const localStream = await realtime.createLocalImageStream({
+  file: imageFile, // File from an <input type="file" accept="image/*">.
+  videoFormat: new RealtimeVideoFormat({ width: 1024, height: 1920, fps: 30 }),
+});
+
+const remoteStream = await realtime.startGeneration({
+  localStream,
+  context: new RealtimeContext({ prompt: "Make the scene come alive" }),
+});
+```
+
+Bind the returned tracks to the same video views used for camera input.
+TRTC, Agora, and VeRTC use the existing external-video publishing path.
+`disconnect()` retains the image for reconnection; `close()` releases its resources.
+Animated images are captured as a single still frame.
+
+<br>
+
 ### Using React
 
 Use `XmaxRealtimeVideo` as your primary React view. Store the local and remote

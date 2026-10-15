@@ -7,6 +7,7 @@ import type { CameraControlling, CameraPreviewReadyHandler } from "./Camera/Came
 import { LocalVideoController } from "./Video/LocalVideoController";
 import { NetworkVideoController } from "./Video/NetworkVideoController";
 import { ExternalVideoController } from "./Video/ExternalVideoController";
+import { LocalImageController } from "./Image/LocalImageController";
 import { InteractionController } from "./Interaction/InteractionController";
 import type { InteractionListener } from "./Interaction/InteractionControlling";
 import type { InteractionFrame } from "./Interaction/InteractionFrame";
@@ -21,6 +22,7 @@ export class MediaController implements MediaControlling {
    */
   private readonly camera: CameraControlling;
   private readonly video: LocalVideoController;
+  private readonly image: LocalImageController;
   private readonly network = new NetworkVideoController();
   private readonly external: ExternalVideoController;
   private readonly interaction: InteractionController;
@@ -35,6 +37,7 @@ export class MediaController implements MediaControlling {
     onCameraError: (error: XmaxError) => void;
     onVideoError: (error: XmaxError) => void;
     onExternalError: (error: XmaxError) => void;
+    onImageError: (error: XmaxError) => void;
     interactionListener: InteractionListener;
   }) {
     this.camera = dependencies.cameraController ?? new CameraController({
@@ -43,6 +46,7 @@ export class MediaController implements MediaControlling {
       errorListener: dependencies.onCameraError,
     });
     this.video = new LocalVideoController(dependencies.onVideoError);
+    this.image = new LocalImageController(dependencies.onImageError);
     this.external = new ExternalVideoController(dependencies.onExternalError);
     this.interaction = new InteractionController(dependencies.interactionListener);
   }
@@ -51,7 +55,7 @@ export class MediaController implements MediaControlling {
    * 当前可发布的轨道。
    */
   get uplinkTrack() {
-    return this.external.currentTrack ?? this.video.currentTrack ?? this.camera.currentTrack;
+    return this.external.currentTrack ?? this.video.currentTrack ?? this.image.currentTrack ?? this.camera.currentTrack;
   }
 
   /**
@@ -70,6 +74,9 @@ export class MediaController implements MediaControlling {
     }
     if (this.video.isActive) {
       return "localVideo";
+    }
+    if (this.image.isActive) {
+      return "localImage";
     }
     if (this.network.currentTrack) {
       return "networkVideo";
@@ -113,7 +120,7 @@ export class MediaController implements MediaControlling {
    * 创建前拒绝覆盖活动源或尚未完成的文件准备。
    */
   ensureNoLocalSource(): void {
-    if (this.currentTrack || this.video.isActive) {
+    if (this.currentTrack || this.video.isActive || this.image.isActive) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Close the current local stream before creating another one");
     }
   }
@@ -121,7 +128,7 @@ export class MediaController implements MediaControlling {
   /**
    * 保持现有外部轨道能力校验与错误语义。
    */
-  validateExternalMediaSupport(kind: "local" | "external"): void {
+  validateExternalMediaSupport(kind: "local" | "external" | "image"): void {
     if (!this.dependencies.rtcManager.setExternalMediaTracks) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, `The RTC provider does not support ${kind} video streams`);
     }
@@ -148,6 +155,15 @@ export class MediaController implements MediaControlling {
     this.ensureNoLocalSource();
     return this.video.create(options, this.dependencies.mediaService, signal);
   }
+
+  /**
+   * 解码本地图片并准备静止视频轨，不申请设备权限。
+   */
+  createLocalImageStream(options: Parameters<MediaControlling["createLocalImageStream"]>[0], signal: AbortSignal) {
+    this.ensureNoLocalSource();
+    return this.image.create(options, this.dependencies.mediaService, signal);
+  }
+
   /**
    * 接管外部视频轨副本，不停止调用方原始轨道。
    */
@@ -163,7 +179,7 @@ export class MediaController implements MediaControlling {
     await rtc.initialize();
     ensureCurrent();
 
-    const track = this.external.currentTrack ?? this.video.currentTrack;
+    const track = this.external.currentTrack ?? this.video.currentTrack ?? this.image.currentTrack;
     if (track?.mediaStreamTrack) {
       await rtc.setExternalMediaTracks!({ videoTrack: track.mediaStreamTrack, audioTrack: this.video.audioTrack });
       ensureCurrent();
@@ -229,6 +245,9 @@ export class MediaController implements MediaControlling {
       }
     } finally {
       this.external.stop();
+      if (this.image.isActive) {
+        this.image.stop();
+      }
       if (this.video.isActive) {
         await this.video.stop();
       }

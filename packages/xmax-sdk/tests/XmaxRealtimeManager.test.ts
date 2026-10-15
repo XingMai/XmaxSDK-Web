@@ -3,6 +3,7 @@ import { TrajectoryRegistry } from "../src/Render/Trajectory/TrajectoryRegistry"
 import { QualityHistory } from "../src/Stream/Quality/QualityHistory";
 import type { RtcManaging } from "../src/Foundation/RTC/RtcManaging";
 import { LocalVideoController } from "../src/Media/Video/LocalVideoController";
+import { LocalImageController } from "../src/Media/Image/LocalImageController";
 import { RealtimeVideoSampleMethod } from "../src/Service/Realtime/RealtimeReferenceVideo";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { NetworkStatisticsListener } from "../src/Foundation/RTC/NetworkStatistics";
@@ -1272,6 +1273,105 @@ describe("XmaxRealtimeManager local video", () => {
     expect(s.manager.currentState.connectionState).toBe(RealtimeConnectionState.idle);
     await s.manager.createLocalVideoStream(options);
     await s.manager.close();
+  });
+});
+
+describe("XmaxRealtimeManager local image", () => {
+  afterEach(() => vi.restoreAllMocks());
+  const options = {
+    file: new Blob(["image fixture"]),
+    videoFormat: new RealtimeVideoFormat({ width: 1920, height: 1024, fps: 30 }),
+  };
+
+  function setupImage(provider = RtcProvider.trtc) {
+    const video = { kind: "video" } as MediaStreamTrack;
+    const track = new RealtimeVideoTrack({ id: "local-image", videoFormat: options.videoFormat });
+    track.mediaStreamTrack = video;
+    let active = false;
+    vi.spyOn(LocalImageController.prototype, "currentTrack", "get").mockImplementation(() => active ? track : undefined);
+    vi.spyOn(LocalImageController.prototype, "isActive", "get").mockImplementation(() => active);
+    const create = vi.spyOn(LocalImageController.prototype, "create").mockImplementation(async () => {
+      active = true;
+      return new RealtimeMediaStream({ id: StreamID.local, videoTrack: track });
+    });
+    const stop = vi.spyOn(LocalImageController.prototype, "stop").mockImplementation(() => { active = false; });
+    const model = { [RtcProvider.trtc]: RealtimeModel.x2_0_trtc, [RtcProvider.agora]: RealtimeModel.x2_1_preview, [RtcProvider.vertc]: RealtimeModel.x2_0 }[provider];
+    const s = makeManager(undefined, false, model);
+    if (provider !== RtcProvider.trtc) {
+      vi.spyOn(s.session, "createSession").mockResolvedValue(new RealtimeSession({
+        id: "session-image", connection: { provider, roomID: "room", appID: "app", userID: "user", roomToken: "token", botID: "bot" },
+      }));
+    }
+    return { ...s, video, track, create, stop };
+  }
+
+  it.each([RtcProvider.trtc, RtcProvider.agora, RtcProvider.vertc])(
+    "publishes a silent image through %s and retains it across reconnects",
+    async provider => {
+      const s = setupImage(provider);
+      const local = await s.manager.createLocalImageStream(options);
+      expect(s.rtc.setExternalMediaTracks).toHaveBeenCalledWith({ videoTrack: s.video, audioTrack: undefined });
+      expect(s.manager.currentState.connectionState).toBe(RealtimeConnectionState.ready);
+      await s.manager.connect(local);
+      expect(s.stream.connectCalls[0]).toMatchObject({ includeLocalAudio: false, publishLocalMedia: true });
+      expect(s.camera.waitForValidCameraFrame).not.toHaveBeenCalled();
+
+      const generating = s.manager.startGeneration({ localStream: local, context: testContext });
+      await vi.waitFor(() => expect(s.stream.beginCalls).toHaveLength(1));
+      expect(s.stream.beginCalls[0]).toMatchObject({ mirror: false, videoFormat: options.videoFormat });
+      expect(s.stream.beginCalls[0]!.onStartSent).toBeUndefined();
+      s.stream.confirmationDeferreds[0]!.resolve();
+      await generating;
+      await s.manager.stopLocalCameraStream();
+      expect(s.stop).not.toHaveBeenCalled();
+      await expect(s.manager.createLocalImageStream(options)).rejects.toThrow("Close the current local stream");
+      const format = new RealtimeVideoFormat({ width: 960, height: 512, fps: 20 });
+      await s.manager.updateUplinkVideoFormat(format);
+      expect(s.track.videoFormat).toBe(format);
+
+      await s.manager.disconnect();
+      expect(s.stop).not.toHaveBeenCalled();
+      expect(s.manager.currentState.connectionState).toBe(RealtimeConnectionState.ready);
+      await s.manager.connect(local);
+      expect(s.create).toHaveBeenCalledOnce();
+      await s.manager.close();
+      expect(s.stop).toHaveBeenCalledOnce();
+      expect(s.rtc.destroy).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("rejects adapters without external track support before image decoding", async () => {
+    const s = setupImage();
+    Object.assign(s.rtc, { setExternalMediaTracks: undefined });
+    await expect(s.manager.createLocalImageStream(options)).rejects.toThrow("does not support image video");
+    expect(s.create).not.toHaveBeenCalled();
+    expect(s.rtc.initialize).not.toHaveBeenCalled();
+  });
+
+  it("releases the image when RTC attachment fails, then allows a retry", async () => {
+    const s = setupImage();
+    s.rtc.setExternalMediaTracks.mockRejectedValueOnce(new Error("image track failed"));
+    await expect(s.manager.createLocalImageStream(options)).rejects.toThrow("image track failed");
+    expect(s.stop).toHaveBeenCalledOnce();
+    expect(s.rtc.destroy).toHaveBeenCalledOnce();
+    expect(s.manager.currentState.connectionState).toBe(RealtimeConnectionState.idle);
+    await s.manager.createLocalImageStream(options);
+    await s.manager.close();
+  });
+
+  it("cancels creation during RTC initialization and does not install a stale track", async () => {
+    const s = setupImage();
+    const initializing = makeDeferred<void>();
+    s.rtc.initialize.mockReturnValueOnce(initializing.promise);
+    const creating = s.manager.createLocalImageStream(options);
+    const rejected = expect(creating).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
+    await vi.waitFor(() => expect(s.rtc.initialize).toHaveBeenCalled());
+    const closing = s.manager.close();
+    initializing.resolve();
+    await rejected;
+    await closing;
+    expect(s.rtc.setExternalMediaTracks).not.toHaveBeenCalled();
+    expect(s.stop).toHaveBeenCalledOnce();
   });
 });
 

@@ -33,6 +33,7 @@ import { StatisticsPanel } from "./StatisticsPanel";
 import { compressReferenceImage } from "./compressReferenceImage";
 
 const API_KEY_STORAGE = "xmax.xlab.apiKey";
+const ENABLE_QUALITY_DEBUG = false;
 
 /** 相机采集格式：桌面横屏 1920×1024，窄屏竖屏 1024×1920（x2.0 受像素上限约束会自动等比缩小）。 */
 function cameraVideoFormat(): RealtimeVideoFormat {
@@ -814,7 +815,7 @@ export function App() {
         </div>
       </header>
 
-      {supportedRtcProviders(model)[0] !== RtcProvider.vertc && (
+      {ENABLE_QUALITY_DEBUG && supportedRtcProviders(model)[0] !== RtcProvider.vertc && (
         <>
           {(["uplink", "downlink"] as const).map(link => (
             <div key={link} className="qualityDebug" role="group" aria-label={`${link === "uplink" ? "上行" : "下行"}档位调试`}>
