@@ -16,20 +16,20 @@ export function recordingFileName(taskID: string, mimeType: string): string {
 export function RecordingDownload({ file }: { file?: RecordingDownloadFile }) {
   if (!file) return null;
 
-  const label = file.interrupted ? "Download partial recording" : "Download recording";
+  const label = file.interrupted ? "下载录制片段" : "下载录制结果";
   return (
     <a
       className="recordingDownload"
       href={file.url}
       download={file.fileName}
       aria-label={label}
-      title={file.interrupted ? "Recording ended early. Click to download the saved clip" : "Recording complete. Click to download the video"}
+      title={file.interrupted ? "录制提前结束，点击下载已保存的片段" : "录制完成，点击下载视频"}
     >
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
         strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <path d="M12 3v12m-4-4 4 4 4-4M5 16v4h14v-4" />
       </svg>
-      <span>{file.interrupted ? "Partial recording" : "Recording"}</span>
+      <span>{file.interrupted ? "录制片段" : "录制结果"}</span>
     </a>
   );
 }

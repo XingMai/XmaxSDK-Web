@@ -71,7 +71,7 @@ export function App() {
   const [apiKey, setApiKey] = useState(
     () => localStorage.getItem(API_KEY_STORAGE) ?? "",
   );
-  const [model, setModel] = useState<RealtimeModel>(RealtimeModel.x2_1_1_preview_us);
+  const [model, setModel] = useState<RealtimeModel>(RealtimeModel.x2_0_trtc);
   const [wechatOpen, setWechatOpen] = useState(false);
   const [keyEditorOpen, setKeyEditorOpen] = useState(false);
   const [useMicrophone, setUseMicrophone] = useState(false);
@@ -191,7 +191,7 @@ export function App() {
       new XmaxClient(
         new XmaxConfiguration({
           apiKey: apiKey || "xlab-local-preview",
-          environment: XmaxEnvironment.global,
+          environment: XmaxEnvironment.china,
           loggerOptions: XmaxLoggerOption.all,
         }),
       ),
@@ -322,7 +322,7 @@ export function App() {
     realtime.setRecordingListener(event => {
       if (recordingOwnerRef.current !== realtime) return;
       if (event.type === RealtimeRecordingEventType.failed) {
-        setErrorText(`Recording failed: ${event.error.message}`);
+        setErrorText(`录制失败：${event.error.message}`);
         return;
       }
 
@@ -555,7 +555,7 @@ export function App() {
                 src="https://assets.22duck.fun/image/wechatAccount.jpg"
                 alt="WeChat Official Account"
               />
-              <span>Scan to follow us on WeChat</span>
+              <span>扫码关注微信公众号</span>
             </div>
           )}
         </div>
@@ -610,22 +610,22 @@ export function App() {
   // 上行统计面板组：桌面端在本地预览画面左上角，移动端并入远端大画面左上角。
   const localStatisticsPanels = (
     <>
-      <StatisticsPanel className="launchTiming" label="Startup timing" rows={[
-        { label: "Camera access", value: formatLaunchTiming(launchTiming.cameraMs), title: "Includes permission requests and camera startup" },
-        { label: "Connection", value: formatLaunchTiming(launchTiming.connectionMs), title: "Includes a 200 ms camera warmup" },
-        { label: "Publish stream", value: formatLaunchTiming(launchTiming.publishMs) },
-        { label: "First frame", value: formatLaunchTiming(launchTiming.firstFrameMs) },
-        { label: "Total startup", value: formatLaunchTiming(launchTiming.totalMs), className: "launchTimingTotal" },
+      <StatisticsPanel className="launchTiming" label="启动耗时统计" rows={[
+        { label: "摄像头授权", value: formatLaunchTiming(launchTiming.cameraMs), title: "含系统授权等待与摄像头硬件启动" },
+        { label: "建立连接", value: formatLaunchTiming(launchTiming.connectionMs), title: "含 200ms 相机预热等待" },
+        { label: "发布本地流", value: formatLaunchTiming(launchTiming.publishMs) },
+        { label: "首帧到达", value: formatLaunchTiming(launchTiming.firstFrameMs) },
+        { label: "完整启动耗时", value: formatLaunchTiming(launchTiming.totalMs), className: "launchTimingTotal" },
       ]} />
-      <StatisticsPanel label="Uplink video statistics" rows={[
-        { label: "Uplink resolution", value: formatVideoResolution(localVideoStatistics) },
-        { label: "Uplink FPS", value: formatVideoMetric(localVideoStatistics?.frameRate, "fps") },
-        { label: "Uplink bitrate", value: formatVideoMetric(localVideoStatistics?.bitrateKbps, "kbps") },
+      <StatisticsPanel label="上行视频统计" rows={[
+        { label: "上行分辨率", value: formatVideoResolution(localVideoStatistics) },
+        { label: "上行帧率", value: formatVideoMetric(localVideoStatistics?.frameRate, "fps") },
+        { label: "上行码率", value: formatVideoMetric(localVideoStatistics?.bitrateKbps, "kbps") },
       ]} />
-      <StatisticsPanel label="Uplink network and latency" rows={[
-        { label: "Uplink packet loss", value: formatVideoMetric(localVideoStatistics?.uplinkLossPercent ?? remoteVideoStatistics?.uplinkLossPercent, "%"), title: "Packet loss from this SDK to the RTC cloud, not the local preview" },
-        { label: "Uplink quality", value: formatNetworkQuality(networkStatistics?.uplinkQuality) },
-        { label: "Uplink RTT", value: formatVideoMetric(networkStatistics?.uplinkRttMs, "ms"), title: "Round-trip time of the uplink connection to the RTC cloud; — when unavailable" },
+      <StatisticsPanel label="上行网络与延迟统计" rows={[
+        { label: "上行丢包率", value: formatVideoMetric(localVideoStatistics?.uplinkLossPercent ?? remoteVideoStatistics?.uplinkLossPercent, "%"), title: "本端 SDK → RTC 云端的上行丢包率，不是本地预览丢包率" },
+        { label: "上行网络质量", value: formatNetworkQuality(networkStatistics?.uplinkQuality) },
+        { label: "上行 RTT", value: formatVideoMetric(networkStatistics?.uplinkRttMs, "ms"), title: "本端上行连接到 RTC 云端的往返延迟；未提供时显示 —" },
       ]} />
     </>
   );
@@ -646,7 +646,7 @@ export function App() {
             <div className="rtcModelPicker">
               <select className="rtcModelSelect" aria-label="Model" value={model} disabled={busy}
                 onChange={(event) => setModel(event.target.value as RealtimeModel)}>
-                {[RealtimeModel.x2_1_1_preview_us].map((option) => (
+                {Object.values(RealtimeModel).map((option) => (
                   <option key={option} value={option}>{modelDisplayName(option)}</option>
                 ))}
               </select>
@@ -802,7 +802,7 @@ export function App() {
         </div>
         <div className="sessionControls">
           {!isMobileLayout && (
-            <span className="sessionModel" aria-label="Current model">{modelDisplayName(model)}</span>
+            <span className="sessionModel" aria-label="当前模型">{modelDisplayName(model)}</span>
           )}
           <RecordingDownload file={recordingFile} />
           <StatisticsToggle visible={statisticsVisible} onChange={setStatisticsVisible} />
@@ -847,19 +847,19 @@ export function App() {
           <span className="stageLabel">Result</span>
           <div className="remoteStatistics" id="remote-statistics" hidden={!statisticsVisible}>
             {isMobileLayout && localStatisticsPanels}
-            <StatisticsPanel label="Downlink video statistics" rows={[
-              { label: "Downlink resolution", value: formatVideoResolution(remoteVideoStatistics) },
-              { label: "Downlink FPS", value: formatVideoMetric(remoteVideoStatistics?.frameRate, "fps") },
-              { label: "Downlink bitrate", value: formatVideoMetric(remoteVideoStatistics?.bitrateKbps, "kbps") },
+            <StatisticsPanel label="下行视频统计" rows={[
+              { label: "下行分辨率", value: formatVideoResolution(remoteVideoStatistics) },
+              { label: "下行帧率", value: formatVideoMetric(remoteVideoStatistics?.frameRate, "fps") },
+              { label: "下行码率", value: formatVideoMetric(remoteVideoStatistics?.bitrateKbps, "kbps") },
             ]} />
-            <StatisticsPanel label="Downlink network and latency" rows={[
-              { label: "Jitter buffer delay", value: formatVideoMetric(remoteVideoStatistics?.jitterBufferDelayMs, "ms") },
-              { label: "Downlink packet loss", value: formatVideoMetric(remoteVideoStatistics?.downlinkLossPercent, "%") },
-              { label: "Downlink quality", value: formatNetworkQuality(networkStatistics?.downlinkQuality), title: "Average network quality across all downlink connections" },
+            <StatisticsPanel label="下行网络与延迟统计" rows={[
+              { label: "播放缓冲延迟", value: formatVideoMetric(remoteVideoStatistics?.jitterBufferDelayMs, "ms") },
+              { label: "下行丢包率", value: formatVideoMetric(remoteVideoStatistics?.downlinkLossPercent, "%") },
+              { label: "下行网络质量", value: formatNetworkQuality(networkStatistics?.downlinkQuality), title: "本端所有下行连接的平均网络质量" },
               supportedRtcProviders(model)[0] !== RtcProvider.trtc
-                ? { label: "RTT (cloud)", value: formatVideoMetric(remoteVideoStatistics?.rttMs, "ms"), title: "Round-trip time from this SDK to the RTC cloud" }
-                : { label: "Downlink RTT", value: formatVideoMetric(networkStatistics?.downlinkRttMs, "ms"), title: "Average round-trip time across all downlink connections to the RTC cloud, not one-way latency" },
-              { label: "E2E (RTC estimate)", value: formatVideoMetric(remoteVideoStatistics?.endToEndDelayMs, "ms") },
+                ? { label: "RTT（云端）", value: formatVideoMetric(remoteVideoStatistics?.rttMs, "ms"), title: "本端 SDK 到 RTC 云端的往返延迟" }
+                : { label: "下行 RTT", value: formatVideoMetric(networkStatistics?.downlinkRttMs, "ms"), title: "本端所有下行连接到 RTC 云端的平均往返延迟，不是单程耗时" },
+              { label: "E2E（RTC 估算）", value: formatVideoMetric(remoteVideoStatistics?.endToEndDelayMs, "ms") },
             ]} />
           </div>
           <span className="watermark">✦ Xmax</span>

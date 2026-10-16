@@ -9,10 +9,10 @@ export function StatisticsToggle({ visible, onChange }: StatisticsToggleProps) {
     <button
       type="button"
       className={`statisticsToggle${visible ? " active" : ""}`}
-      aria-label="Show statistics"
+      aria-label="显示统计信息"
       aria-pressed={visible}
       aria-controls="local-statistics remote-statistics"
-      title={visible ? "Hide statistics (collection and logging continue)" : "Show statistics"}
+      title={visible ? "隐藏统计信息（采集和日志继续）" : "显示统计信息"}
       onClick={() => onChange(!visible)}
     >
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

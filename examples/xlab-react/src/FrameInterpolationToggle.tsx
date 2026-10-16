@@ -12,10 +12,10 @@ export function FrameInterpolationToggle({ enabled, switching = false, disabled 
       type="button"
       className={`interpolationPill${enabled ? " active" : ""}`}
       disabled={disabled || switching}
-      aria-label="Frame interpolation"
+      aria-label="插帧"
       aria-pressed={enabled}
       aria-busy={switching}
-      title={switching ? "Switching frame interpolation…" : enabled ? "2× frame interpolation is on. Click to turn off" : "Frame interpolation is off. Click to turn on"}
+      title={switching ? "正在切换插帧…" : enabled ? "2× 插帧已开启，点击关闭" : "插帧已关闭，点击开启"}
       onClick={onToggle}
     >
       <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">

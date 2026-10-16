@@ -7,7 +7,7 @@ it.each([true, false])("reflects feature enabled=%s, not individual interpolated
   expect(html).toContain(`aria-pressed="${enabled}"`);
   expect(html).toContain(`class="interpolationPill${enabled ? " active" : ""}"`);
   expect(html).toContain("<span>2x</span>");
-  expect(html).toContain(enabled ? "Click to turn off" : "Click to turn on");
+  expect(html).toContain(enabled ? "点击关闭" : "点击开启");
 });
 
 it.each([{ switching: true }, { disabled: true }])("disables the button during unavailable or pending operations: %j", (props) => {
