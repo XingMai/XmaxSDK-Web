@@ -35,7 +35,6 @@ import { compressReferenceImage } from "./compressReferenceImage";
 import { RecordingDownload, recordingFileName, type RecordingDownloadFile } from "./RecordingDownload";
 
 const API_KEY_STORAGE = "xmax.xlab.apiKey";
-const ENABLE_QUALITY_DEBUG = true;
 
 /** 相机采集格式：桌面横屏 1920×1024，窄屏竖屏 1024×1920（x2.0 受像素上限约束会自动等比缩小）。 */
 function cameraVideoFormat(): RealtimeVideoFormat {
@@ -72,7 +71,7 @@ export function App() {
   const [apiKey, setApiKey] = useState(
     () => localStorage.getItem(API_KEY_STORAGE) ?? "",
   );
-  const [model, setModel] = useState<RealtimeModel>(RealtimeModel.x2_0_trtc);
+  const [model, setModel] = useState<RealtimeModel>(RealtimeModel.x2_1_1_preview_us);
   const [wechatOpen, setWechatOpen] = useState(false);
   const [keyEditorOpen, setKeyEditorOpen] = useState(false);
   const [useMicrophone, setUseMicrophone] = useState(false);
@@ -422,27 +421,6 @@ export function App() {
     }
   }
 
-  /** 临时下行调档入口；与生成操作互斥，自动调档仍保持开启。 */
-  async function handleAdjustDownlinkQuality(direction: "upgrade" | "downgrade") {
-    const realtime = realtimeRef.current;
-    if (!realtime || generationBusyRef.current || stateText !== RealtimeConnectionState.generating) return;
-
-    generationBusyRef.current = true;
-    setBusy(true);
-    setErrorText("");
-
-    try {
-      await realtime.adjustDownlinkQuality(direction);
-    } catch (error) {
-      if (realtimeRef.current === realtime) {
-        setErrorText(error instanceof Error ? error.message : String(error));
-      }
-    } finally {
-      generationBusyRef.current = false;
-      setBusy(false);
-    }
-  }
-
   /** 提交生成条件：未生成时开始生成，生成中更新条件。 */
   async function handleSubmitPrompt() {
     if (referenceUploading) return;
@@ -668,7 +646,7 @@ export function App() {
             <div className="rtcModelPicker">
               <select className="rtcModelSelect" aria-label="Model" value={model} disabled={busy}
                 onChange={(event) => setModel(event.target.value as RealtimeModel)}>
-                {Object.values(RealtimeModel).map((option) => (
+                {[RealtimeModel.x2_1_1_preview_us].map((option) => (
                   <option key={option} value={option}>{modelDisplayName(option)}</option>
                 ))}
               </select>
@@ -842,20 +820,6 @@ export function App() {
           </button>
         </div>
       </header>
-
-      {ENABLE_QUALITY_DEBUG && supportedRtcProviders(model)[0] !== RtcProvider.vertc && (
-        <div className="qualityDebug" role="group" aria-label="下行档位调试">
-          <span>下行调试 · 自动调档仍开启</span>
-          <button type="button" disabled={busy || stateText !== RealtimeConnectionState.generating}
-            onClick={() => handleAdjustDownlinkQuality("downgrade")}>
-            降一档
-          </button>
-          <button type="button" disabled={busy || stateText !== RealtimeConnectionState.generating}
-            onClick={() => handleAdjustDownlinkQuality("upgrade")}>
-            升一档
-          </button>
-        </div>
-      )}
 
       <div className="stageRow">
         <div className="stage">
