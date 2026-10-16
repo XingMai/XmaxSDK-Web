@@ -44,7 +44,7 @@ function makePreset(
   imageFile: string,
   referenceFile: string,
 ): StylePreset {
-  const base = `https://platform.xmaxai.com/images/source/${group}`;
+  const base = `https://platform.xmax.ai/images/source/${group}`;
   return {
     name,
     thumbnail: `${base}/${imageFile}?presetVersion=${version}`,
@@ -128,25 +128,25 @@ const VIBEX_PRESETS: readonly StylePreset[] = [
 export const EXAMPLE_MODES: readonly ExampleMode[] = [
   {
     key: "charx",
-    label: "角色替换",
+    label: "Character Swap",
     prompt: "视频中角色替换成参考图中角色",
     presets: CHARX_PRESETS,
   },
   {
     key: "clothx",
-    label: "虚拟试衣",
+    label: "Virtual Try-On",
     prompt: "视频中人物衣服替换成参考图中衣服",
     presets: CLOTHX_PRESETS,
   },
   {
     key: "vibex",
-    label: "风格迁移",
+    label: "Style Transfer",
     prompt: "视频风格变为参考图指定的风格",
     presets: VIBEX_PRESETS,
   },
   {
     key: "free",
-    label: "自由输入",
+    label: "Custom Prompt",
     prompt: "",
     presets: [],
   },

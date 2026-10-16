@@ -12,7 +12,7 @@ it.each([false, true])("offers the actual file for download, interrupted=%s", in
   }} />);
   expect(html).toContain('href="blob:test-recording"');
   expect(html).toContain('download="xmax-recording-task.webm"');
-  expect(html).toContain(`aria-label="${interrupted ? "下载录制片段" : "下载录制结果"}"`);
+  expect(html).toContain(`aria-label="${interrupted ? "Download partial recording" : "Download recording"}"`);
   expect(html).toContain('class="recordingDownload"');
   expect(html).not.toContain("disabled");
 });
