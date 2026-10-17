@@ -31,12 +31,10 @@ import { RemoteVolumeControl } from "./RemoteVolumeControl";
 import { StatisticsToggle } from "./StatisticsToggle";
 import { FrameInterpolationToggle } from "./FrameInterpolationToggle";
 import { StatisticsPanel } from "./StatisticsPanel";
-import { QualityDebugControls } from "./QualityDebugControls";
 import { compressReferenceImage } from "./compressReferenceImage";
 import { RecordingDownload, recordingFileName, type RecordingDownloadFile } from "./RecordingDownload";
 
 const API_KEY_STORAGE = "xmax.xlab.apiKey";
-const ENABLE_QUALITY_DEBUG = true;
 
 /** 相机采集格式：桌面横屏 1920×1024，窄屏竖屏 1024×1920。 */
 function cameraVideoFormat(): RealtimeVideoFormat {
@@ -420,31 +418,6 @@ export function App() {
       generationBusyRef.current = false;
       setBusy(false);
       setInterpolationSwitching(false);
-    }
-  }
-
-  /** 临时调档与其他生成操作互斥；失败时保留 SDK 当前档位并显示错误。 */
-  async function handleAdjustQuality(link: "uplink" | "downlink", direction: "upgrade" | "downgrade") {
-    const realtime = realtimeRef.current;
-    if (!realtime || generationBusyRef.current || stateText !== RealtimeConnectionState.generating) return;
-
-    generationBusyRef.current = true;
-    setBusy(true);
-    setErrorText("");
-
-    try {
-      if (link === "uplink") {
-        await realtime.adjustUplinkQuality(direction);
-      } else {
-        await realtime.adjustDownlinkQuality(direction);
-      }
-    } catch (error) {
-      if (realtimeRef.current === realtime) {
-        setErrorText(error instanceof Error ? error.message : String(error));
-      }
-    } finally {
-      generationBusyRef.current = false;
-      setBusy(false);
     }
   }
 
@@ -847,11 +820,6 @@ export function App() {
           </button>
         </div>
       </header>
-
-      {ENABLE_QUALITY_DEBUG && supportedRtcProviders(model)[0] !== RtcProvider.vertc && (
-        <QualityDebugControls disabled={busy || !sessionActive || stateText !== RealtimeConnectionState.generating}
-          onAdjust={handleAdjustQuality} />
-      )}
 
       <div className="stageRow">
         <div className="stage">

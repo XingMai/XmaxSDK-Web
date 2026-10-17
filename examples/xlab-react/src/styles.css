@@ -651,35 +651,6 @@ button:disabled,
   display: none;
 }
 
-.qualityDebug,
-.qualityDebugGroup {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.qualityDebug {
-  justify-content: flex-end;
-  color: var(--text-secondary);
-  font-size: 12px;
-}
-
-.qualityDebug button {
-  min-height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: #fff;
-  color: var(--text-secondary);
-  font-size: 12px;
-}
-
-.qualityDebug button:not(:disabled):hover {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
 .stageRow {
   display: grid;
   grid-template-columns: 1fr 1fr;
