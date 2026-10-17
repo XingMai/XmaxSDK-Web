@@ -1,7 +1,7 @@
 {
   "name": "xmax-sdk-web",
   "private": true,
-  "version": "1.0.9",
+  "version": "1.0.10",
   "license": "MIT",
   "description": "XmaxSDK for Web — Realtime Interactive Video Generation",
   "type": "module",
