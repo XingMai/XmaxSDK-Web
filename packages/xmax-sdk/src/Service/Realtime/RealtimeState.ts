@@ -30,7 +30,13 @@ export enum RealtimeConnectionState {
   connected = "Connected",
 
   /**
-   * 实时连接已建立且生成任务正在运行。
+   * 正在启动生成或等待 SDK 视频视图完成首帧及渲染预热。
+   * startGeneration 返回远端流后仍可能保持此状态，接入方需挂载视频视图。
+   */
+  starting = "Starting",
+
+  /**
+   * 生成任务正在运行，SDK 视频视图已完成渲染预热并开始展示画面。
    */
   generating = "Generating",
 

@@ -10,6 +10,11 @@ import type { RemoteFrameInterpolationOptions } from "../../Render/Video/RemoteV
  */
 export interface VideoRenderTarget {
   /**
+   * 为新生成任务重新等待首帧及渲染预热，不重建媒体流。
+   */
+  prepareForGeneration?: () => void;
+
+  /**
    * 网络视频预览使用的播放器；自定义目标可以不提供。
    */
   readonly videoElement?: HTMLVideoElement;
@@ -38,6 +43,16 @@ export interface VideoRenderTarget {
  * 轨道与渲染视图之间的绑定行为。
  */
 export interface VideoRenderBinding {
+  /**
+   * 远端首帧就绪后的展示预热时长；本地预览不配置。
+   */
+  renderWarmupMs?: number;
+
+  /**
+   * 预热结束、开始渐入时通知轨道拥有者。
+   */
+  renderWarmupCompletedHandler?: () => void;
+
   /**
    * 视图首帧呈现时通知轨道拥有者，独立于视图自身的渐入回调。
    */

@@ -114,6 +114,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    */
   private readonly launchTimer = new RealtimeLaunchTimer();
   private remoteFrameDisplayHandler?: () => void;
+  private remoteRenderWarmupCompletedHandler?: () => void;
 
   /**
    * 媒体权限弹窗观察
@@ -211,6 +212,10 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     });
     this.renderController = new RenderController({
       onFrameDisplayed: () => this.remoteFrameDisplayHandler?.(),
+      onRenderWarmupCompleted: () => {
+        this.remoteRenderWarmupCompletedHandler?.();
+        void this.completeGenerationPresentation().catch(error => this.errorHandler.report(error));
+      },
       onAttached: () => this.applyRemoteInterpolation(),
       onDetached: () => { this.interpolationRevision++; },
     });
@@ -859,7 +864,8 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     const previous = track?.videoFormat;
     const state = this.currentState.connectionState;
     if (!track || !previous ||
-      (state !== RealtimeConnectionState.connected && state !== RealtimeConnectionState.generating)) {
+      (state !== RealtimeConnectionState.connected && state !== RealtimeConnectionState.starting &&
+        state !== RealtimeConnectionState.generating)) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Frame rate updates require a connected local camera, external or file stream");
     }
     if (!Number.isFinite(fps) || fps <= 0) {
@@ -986,6 +992,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         if (
           connectionState === RealtimeConnectionState.connecting ||
           connectionState === RealtimeConnectionState.connected ||
+          connectionState === RealtimeConnectionState.starting ||
           connectionState === RealtimeConnectionState.generating
         ) {
           throw new XmaxError(
@@ -1003,6 +1010,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    *
    * 尚未连接时先建立实时连接；已在生成时默认更新条件，restart 为 true 时重新开始生成。
    * 首次生成必须提供条件上下文，之后缺省时复用最近一次缓存的上下文。
+   * 返回后请将远端流挂载到 SDK 视频视图；首帧及渲染预热完成后状态才进入 generating。
    *
    * @param options.localStream 由当前 Manager 创建的摄像头、外部视频轨、本地文件或网络视频源。
    * @param options.context 本次生成使用的条件上下文；缺省时复用缓存。
@@ -1010,7 +1018,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    * @param options.faceRestoration 是否启用原始人脸回贴，默认 false；正在生成时通过 change_condition 更新。
    * @param options.extraParams 合并到本次 start 或 change_condition 的 params；不缓存，自动恢复时不携带，不允许覆盖 SDK 字段。
    * @param options.record 是否录制远端原始音视频约 20 秒，默认 false；仅 start 有效，条件更新时忽略，重启录制暂不支持。
-   * @returns 承载远端生成画面的媒体流。
+   * @returns 可挂载的远端媒体流，不等待渲染预热；展示就绪以 generating 状态为准。
    * @throws extraParams 包含非 JSON 数据、循环引用或 SDK 保留字段时，在连接或更新前抛出 invalidConfiguration。
    * @throws 本地流不属于当前 Manager、缺少可用的条件上下文、信令发送
    * 或生成确认失败时抛出错误；失败时自动停止生成任务并释放连接资源。
@@ -1044,8 +1052,9 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         }
         // 默认只更新条件；显式重启时沿用连接并创建新任务。
         const currentState = this.coordinator.currentState;
-        const isGenerating = currentState.connectionState === RealtimeConnectionState.generating;
-        if (isGenerating && options.restart !== true) {
+        const hasGeneration = currentState.connectionState === RealtimeConnectionState.generating ||
+          (currentState.connectionState === RealtimeConnectionState.starting && !!currentState.taskID);
+        if (hasGeneration && options.restart !== true) {
           await this.generationManager.update(currentState.taskID, {
             videoFormat,
             context: options.context,
@@ -1064,7 +1073,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         const context = referenceVideo ? new RealtimeContext({ ...supplied, referenceVideo }) : supplied;
 
         // 尚未连接时先建立实时连接。
-        if (currentState.connectionState !== RealtimeConnectionState.connected && !isGenerating) {
+        if (currentState.connectionState !== RealtimeConnectionState.connected && !hasGeneration) {
           await this.performConnect(options.localStream, token);
         }
 
@@ -1170,7 +1179,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     try {
       let beforePublish: (() => Promise<void>) | undefined;
       if (this.mediaController.isFrameValidationEnabled) {
-        // 预热与建连并行，耗时计入连接；进房前预热失败也要接住拒绝，发布屏障仍等待原始结果。
+        // 预热与建连并行；进房前预热失败也要接住拒绝，发布屏障仍等待原始结果。
         const cameraReady = this.mediaController.waitForValidCameraFrame(warmupController.signal).then(() => {
           token.ensureCurrent();
         });
@@ -1242,6 +1251,16 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     record = false,
   ): Promise<RealtimeMediaStream> {
     token.setFailureScope(RealtimeTerminationScope.connection);
+    const sessionID = this.connectionManager.currentSessionID;
+    if (!sessionID) {
+      throw new XmaxError(XmaxErrorCode.sessionError, "Realtime session is unavailable");
+    }
+
+    await this.coordinator.commit(
+      new RealtimeState({ connectionState: RealtimeConnectionState.starting, sessionID }),
+      token,
+    );
+    token.ensureCurrent();
     if (restart) {
       // 旧任务独立收尾，不让文件封装阻塞新任务的生成信令。
       void this.recordingController.stop(RealtimeRecordingFinishReason.restarted);
@@ -1252,9 +1271,14 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     await this.prepareFrameInterpolation(targetSize ?? videoFormat, token);
 
     const completeFirstFrame = this.launchTimer.startFirstFrame();
+    this.remoteRenderWarmupCompletedHandler = undefined;
     this.remoteFrameDisplayHandler = () => {
-      if (!token.signal.aborted) completeFirstFrame();
+      if (!token.signal.aborted) {
+        completeFirstFrame();
+        this.remoteRenderWarmupCompletedHandler ??= this.launchTimer.startRenderWarmup();
+      }
     };
+    this.renderController.prepareForGeneration();
 
     const taskID = await this.generationManager.start({
       videoFormat,
@@ -1286,10 +1310,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       extraParams,
     });
 
-    const sessionID = this.connectionManager.currentSessionID;
-    if (!sessionID) {
-      throw new XmaxError(XmaxErrorCode.sessionError, "Realtime session is unavailable");
-    }
+    token.ensureCurrent();
 
     this.downlinkQualityController?.stop();
     this.downlinkQualityState = {
@@ -1297,15 +1318,21 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       size: targetSize ?? { width: videoFormat.width, height: videoFormat.height },
     };
     await this.coordinator.commit(
-      new RealtimeState({ connectionState: RealtimeConnectionState.generating, sessionID, taskID }),
+      new RealtimeState({ connectionState: RealtimeConnectionState.starting, sessionID, taskID }),
       token,
     );
+    token.ensureCurrent();
+    // 已提前挂载的视图可能先完成预热；任务确认后再尝试提交 generating。
+    await this.completeGenerationPresentation();
+    token.ensureCurrent();
     this.qualityHistory?.write("downlink", initialLevel);
 
     const onFinish = this.mediaController.onNetworkVideoFinish;
     if (this.mediaController.source === "networkVideo") {
       this.streamController.activateNetworkVideoCompletion(() => {
-        if (this.currentState.taskID === taskID && this.currentState.connectionState === RealtimeConnectionState.generating) {
+        if (this.currentState.taskID === taskID &&
+          (this.currentState.connectionState === RealtimeConnectionState.starting ||
+            this.currentState.connectionState === RealtimeConnectionState.generating)) {
           void this.recordingController.stop(RealtimeRecordingFinishReason.generationEnded);
           return onFinish?.();
         }
@@ -1313,6 +1340,20 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     }
 
     return this.connectionManager.makeRemoteStream();
+  }
+
+  /**
+   * 任务启动成功且当前视图完成预热后提交展示就绪状态，不阻塞远端流返回。
+   */
+  private async completeGenerationPresentation(): Promise<void> {
+    const { sessionID, taskID } = this.currentState;
+    if (!sessionID || !taskID) {
+      return;
+    }
+
+    await this.coordinator.remotePreviewDidBecomeReady(
+      sessionID, taskID, () => this.renderController.isReady,
+    );
   }
 
   /**
@@ -1340,6 +1381,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     this.mediaController.pauseLocalVideo();
     this.launchTimer.cancel();
     this.remoteFrameDisplayHandler = undefined;
+    this.remoteRenderWarmupCompletedHandler = undefined;
     this.clearVideoStatistics();
 
     this.interpolationSize = undefined;

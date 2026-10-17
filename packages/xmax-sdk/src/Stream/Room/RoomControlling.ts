@@ -24,11 +24,13 @@ export interface RoomControlling {
    *
    * @param connection 会话下发的 RTC 连接参数。
    * @param ensureActive 确认当前连接操作仍有效的检查；失效时抛出错误。
+   * @param measureRtcJoin 开始进房计时，返回成功进房时调用的完成回调。
    * @throws 已有房间未离开、操作失效或进房失败时抛出错误。
    */
   join(
     connection: RtcSessionConnection,
     ensureActive: () => void,
+    measureRtcJoin?: () => () => void,
   ): Promise<void>;
 
   /**

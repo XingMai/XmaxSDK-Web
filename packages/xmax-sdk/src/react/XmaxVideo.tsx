@@ -55,6 +55,7 @@ export interface XmaxVideoProps {
 
 /**
  * 单轨视频 React 组件：把一路视频轨渲染到容器。
+ * SDK 远端轨道自动预热 1000 ms 后渐入，本地预览直接显示。
  */
 export function XmaxVideo(props: XmaxVideoProps) {
   const containerRef = useRef<HTMLDivElement>(null);

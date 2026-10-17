@@ -1,6 +1,7 @@
 import { VideoContentMode } from "../../Foundation/Media/Video/VideoContentMode";
 import type { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
 import { XmaxVideoView } from "./XmaxVideoView";
+import { VideoRenderRegistry } from "../../Service/Realtime/VideoRenderBinding";
 import type { TrajectoryEffectRendering } from "../Trajectory/TrajectoryEffectRendering";
 
 const REMOTE_FADE_DURATION_MS = 300;
@@ -8,7 +9,7 @@ const REMOTE_FADE_DURATION_MS = 300;
 /**
  * 在本地预览和远端生成画面之间自动切换的视频容器（框架无关）。
  *
- * 设置远端轨道后，容器等待首帧实际提交显示再渐入远端画面；
+ * 设置 SDK 远端轨道后，等待首帧及渲染预热结束再渐入远端画面；
  * 远端轨道置空时立即恢复本地预览。
  */
 export class XmaxRealtimeVideoView {
@@ -107,7 +108,7 @@ export class XmaxRealtimeVideoView {
 
   /**
    * 当前显示的远端生成视频轨道。
-   * 设置新轨道后等待首帧提交显示再渐入；置空时立即恢复本地预览。
+   * SDK 远端轨道等待首帧及预热后渐入；置空时立即恢复本地预览。
    */
   get remoteTrack(): RealtimeVideoTrack | undefined {
     return this.currentRemoteTrack;
@@ -176,18 +177,25 @@ export class XmaxRealtimeVideoView {
   }
 
   /**
-   * 更新远端轨道绑定：重置渐入状态，等待首帧提交后再显示远端画面。
+   * 更新远端轨道绑定；SDK 轨道共用单轨视图的预热，普通轨道等待首帧后渐入。
    */
   private updateRemoteTrack(): void {
     const remoteTrack = this.currentRemoteTrack;
 
     this.remoteVideoView.frameDisplayHandler = undefined;
+    this.remoteVideoView.track = undefined;
     this.remoteVideoView.element.style.transition = "";
     this.remoteVideoView.element.style.opacity = "0";
     this.remoteVideoView.element.style.visibility = "hidden";
-    this.remoteVideoView.track = undefined;
 
     if (!remoteTrack) {
+      return;
+    }
+
+    // SDK 远端轨道由单轨视图统一预热和渐入，不再叠加容器动画。
+    if (VideoRenderRegistry.binding(remoteTrack)?.renderWarmupMs !== undefined) {
+      this.remoteVideoView.element.style.visibility = "visible";
+      this.remoteVideoView.track = remoteTrack;
       return;
     }
 

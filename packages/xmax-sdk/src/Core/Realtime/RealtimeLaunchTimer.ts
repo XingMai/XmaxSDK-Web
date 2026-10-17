@@ -57,11 +57,17 @@ export class RealtimeLaunchTimer {
   }
 
   /**
-   * 开始会话与进房计时，返回连接阶段完成时调用的记录函数。
-   * 相机预热等待计入连接耗时。
+   * 开始创建业务会话的计时。
    */
-  startConnection(): () => void {
-    return this.measure("connectionMs", performance.now());
+  startSession(): () => void {
+    return this.measure("sessionMs", performance.now());
+  }
+
+  /**
+   * 开始 RTC 适配器进房调用的计时。
+   */
+  startRtcJoin(): () => void {
+    return this.measure("rtcJoinMs", performance.now());
   }
 
   /**
@@ -72,10 +78,17 @@ export class RealtimeLaunchTimer {
   }
 
   /**
-   * 开始等待远端显示首帧；完成回调同时记录首帧耗时和实际总耗时。
+   * 开始等待远端首帧提交合成器，不包含后续渲染预热。
    */
   startFirstFrame(): () => void {
     return this.measure("firstFrameMs", performance.now());
+  }
+
+  /**
+   * 首帧就绪后开始渲染预热；结束时记录预热及实际总耗时，不含渐入动画。
+   */
+  startRenderWarmup(): () => void {
+    return this.measure("renderWarmupMs", performance.now());
   }
 
   /**
@@ -90,7 +103,7 @@ export class RealtimeLaunchTimer {
    * 创建当前周期的一次性计时回调；周期失效或该阶段已记录时忽略调用。
    */
   private measure(
-    key: "cameraMs" | "permissionMs" | "connectionMs" | "publishMs" | "firstFrameMs",
+    key: Exclude<keyof RealtimeLaunchTiming, "totalMs">,
     startedAt: number,
   ): () => void {
     const sequence = this.sequence;
@@ -102,7 +115,7 @@ export class RealtimeLaunchTimer {
       this.snapshot = Object.freeze({
         ...this.snapshot,
         [key]: now - startedAt,
-        ...(key === "firstFrameMs" ? { totalMs: now - this.startedAt } : {}),
+        ...(key === "renderWarmupMs" ? { totalMs: now - this.startedAt } : {}),
       });
       this.notify();
     };

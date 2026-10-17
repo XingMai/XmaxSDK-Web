@@ -433,6 +433,13 @@ For camera input, bind the returned video track to a preview view. The SDK enter
 `ready` after it has received a valid frame and the preview view is bound; observe
 this through `setStateListener`.
 
+`startGeneration()` returns a remote stream for mounting; it does not wait for
+the video view to finish preparing. Bind its track to an SDK video component.
+The state remains `RealtimeConnectionState.starting` until the first frame and
+the 1000 ms render warmup are complete, then becomes
+`RealtimeConnectionState.generating` as the video fades in. Use this state to
+dismiss your loading UI. Without an SDK video view, the state stays `starting`.
+
 At generation start, the SDK sends `params.mirror: true` for the front camera
 and `false` for the rear camera, local files, and network videos. The backend
 mirrors the input; generated results are not automatically mirrored in the

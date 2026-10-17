@@ -165,6 +165,45 @@ function makeController() {
 const noopEnsureActive = () => {};
 
 describe("RoomController", () => {
+  it("measures RTC join without heartbeat setup or teardown", async () => {
+    const { controller, rtc, heartbeat } = makeController();
+    let now = 0;
+    let duration: number | undefined;
+    vi.spyOn(heartbeat, "stop").mockImplementation(() => { now += 50; });
+    vi.spyOn(heartbeat, "start").mockImplementation(() => { now += 100; });
+    vi.spyOn(rtc, "joinRoom").mockImplementation(async () => { now += 350; });
+
+    await controller.join(connection, noopEnsureActive, () => {
+      const startedAt = now;
+      return () => { duration = now - startedAt; };
+    });
+
+    expect(duration).toBe(350);
+    expect(now).toBe(500);
+  });
+
+  it.each(["failed", "cancelled"])("does not complete RTC join timing when %s", async outcome => {
+    const { controller, rtc } = makeController();
+    let cancelled = false;
+    const complete = vi.fn();
+    const measure = vi.fn(() => complete);
+    vi.spyOn(rtc, "joinRoom").mockImplementation(async () => {
+      if (outcome === "failed") {
+        throw new Error("join failed");
+      }
+      cancelled = true;
+    });
+
+    await expect(controller.join(connection, () => {
+      if (cancelled) {
+        throw new XmaxError(XmaxErrorCode.cancelled, "cancelled");
+      }
+    }, measure)).rejects.toThrow();
+
+    expect(measure).toHaveBeenCalledOnce();
+    expect(complete).not.toHaveBeenCalled();
+  });
+
   it("uses Agora framing and RTC identity for generation, heartbeat and inbound targeting", async () => {
     const { controller, rtc, heartbeat } = makeController();
     const credentials = { provider: RtcProvider.agora as const, appID: "app", roomID: "000123", userID: "rtc-uid", roomToken: "token" };

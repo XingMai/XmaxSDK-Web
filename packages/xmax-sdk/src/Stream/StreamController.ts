@@ -295,9 +295,10 @@ export class StreamController implements StreamControlling {
     ensureActive: () => void,
     beforePublish?: () => Promise<void>,
     publishLocalMedia = true,
+    measureRtcJoin?: () => () => void,
   ): Promise<void> {
     this.configureRoom({ roomID: connection.roomID, botID: connection.botID });
-    await this.roomController.join(connection, ensureActive);
+    await this.roomController.join(connection, ensureActive, measureRtcJoin);
     ensureActive();
 
     XmaxLogger.stream.info(

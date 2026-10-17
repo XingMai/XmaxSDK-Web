@@ -63,8 +63,8 @@ export class XmaxRealtimeConnectionManager {
 
   /**
    * 创建会话、配置编码、进房并发布本地媒体，启动心跳后返回远端占位流。
-   * 进房结束即记录连接耗时；可选 beforePublish 检查阻塞发布，计入连接耗时；
-   * 发布本地流单独计时。
+   * 会话创建、RTC 进房和本地流发布分别计时；可选 beforePublish 检查阻塞发布，
+   * 其等待只反映在实际完整启动耗时中。
    * @param options.localTrack 当前本地媒体轨道。
    * @param options.remoteVideoFormat 原始生成及远端画面规格，缺省使用本地轨道规格。
    * @param options.localVideoFormat 发布前实际应用的上行编码格式；与原始生成及远端格式分开。
@@ -94,10 +94,11 @@ export class XmaxRealtimeConnectionManager {
 
     // 会话创建成功后立即登记，供失败清理时关闭会话。
     options.ensureCurrent();
-    const completeConnection = this.dependencies.timing.startConnection();
+    const completeSession = this.dependencies.timing.startSession();
     const session = await sessionService.createSession(options.model);
     this.activeSession = session;
     options.ensureCurrent();
+    completeSession();
 
     const connection = session.connection;
     if (!connection) {
@@ -134,13 +135,13 @@ export class XmaxRealtimeConnectionManager {
       options.ensureCurrent();
     }, async () => {
       options.ensureCurrent();
-      // 进房配置完成；预热等待计入连接耗时，发布后单独计时。
+
+      // 预热与建连并行；剩余等待不计入进房或发布耗时。
       await options.beforePublish?.();
-      completeConnection();
+      options.ensureCurrent();
       completePublish = this.dependencies.timing.startPublish();
-    }, publishLocalMedia);
+    }, publishLocalMedia, () => this.dependencies.timing.startRtcJoin());
     options.ensureCurrent();
-    completeConnection();
     completePublish?.();
     options.onPublished();
 

@@ -120,6 +120,7 @@ export interface StreamControlling {
    * @param ensureActive 在异步边界校验当前连接操作仍然有效的回调。
    * @param beforePublish 发布前的可选媒体就绪检查，不阻塞进房。
    * @param publishLocalMedia 是否发布本地媒体，默认 true；网络视频源传 false。
+   * @param measureRtcJoin 仅测量 RTC 适配器进房调用，不含房间消息配置与心跳启动。
    * @throws 连接已取消，或 RTC 进房、房间配置与本地流发布失败时抛出错误。
    */
   connect(
@@ -128,6 +129,7 @@ export interface StreamControlling {
     ensureActive: () => void,
     beforePublish?: () => Promise<void>,
     publishLocalMedia?: boolean,
+    measureRtcJoin?: () => () => void,
   ): Promise<void>;
 
   /**

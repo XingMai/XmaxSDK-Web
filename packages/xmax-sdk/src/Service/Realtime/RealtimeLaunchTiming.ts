@@ -14,19 +14,31 @@ export interface RealtimeLaunchTiming {
    */
   readonly permissionMs?: number;
   /**
-   * 开始创建会话到 RTC 进房配置与相机预热等待完成；不含发布本地流。
+   * 创建业务会话的耗时。
    */
-  readonly connectionMs?: number;
+  readonly sessionMs?: number;
+
+  /**
+   * RTC 适配器进房调用的耗时，不含房间消息配置、心跳启动、预热等待和本地流发布。
+   */
+  readonly rtcJoinMs?: number;
+
   /**
    * 发布本地流到 RTC 房间的耗时。
    */
   readonly publishMs?: number;
   /**
-   * 开始发送生成信令到 SDK 远端视图首次呈现视频帧。
+   * 开始发送生成信令到远端视频首帧提交合成器，不包含渲染预热。
    */
   readonly firstFrameMs?: number;
+
   /**
-   * 开始打开摄像头到 SDK 远端视图首次呈现视频帧的实际总耗时，并非各项之和。
+   * 远端首帧就绪到渲染预热结束的实际等待时间，不含渐入动画。
+   */
+  readonly renderWarmupMs?: number;
+
+  /**
+   * 开始打开摄像头到远端渲染预热结束、开始渐入的实际总耗时，并非各项之和。
    */
   readonly totalMs?: number;
 }

@@ -8,6 +8,16 @@ import type { RemoteFrameInterpolationOptions } from "./Video/RemoteVideoFramePi
  */
 export interface RenderControlling {
   /**
+   * 当前远端视图是否已完成渲染预热。
+   */
+  readonly isReady: boolean;
+
+  /**
+   * 新任务开始前重置展示就绪状态，已有视图重新等待首帧和预热。
+   */
+  prepareForGeneration(): void;
+
+  /**
    * 注册远端画面和交互能力；任务开始前交互不可用。
    */
   registerRemoteTrack(track: RealtimeVideoTrack, listener: (frame: InteractionFrame) => void): void;

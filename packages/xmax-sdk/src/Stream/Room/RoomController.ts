@@ -94,6 +94,7 @@ export class RoomController implements RoomControlling {
   async join(
     connection: RtcSessionConnection,
     ensureActive: () => void,
+    measureRtcJoin?: () => () => void,
   ): Promise<void> {
     try {
       ensureActive();
@@ -115,7 +116,9 @@ export class RoomController implements RoomControlling {
       if (!this.customCodec) this.codec = new RoomMessageCodec(
         connection.provider === RtcProvider.vertc ? null : connection.provider === RtcProvider.agora ? "__agora_chunk__" : "__trtc_chunk__",
       );
-      await this.rtcManager.joinRoom(toRoomJoinConfiguration(connection));
+      const configuration = toRoomJoinConfiguration(connection);
+      const completeRtcJoin = measureRtcJoin?.();
+      await this.rtcManager.joinRoom(configuration);
       ensureActive();
       if (
         this.state.kind !== "joining" ||
@@ -124,6 +127,8 @@ export class RoomController implements RoomControlling {
       ) {
         throw new XmaxError(XmaxErrorCode.cancelled, "RTC room join was cancelled");
       }
+
+      completeRtcJoin?.();
 
       this.state = { kind: "joined", userID: connection.userID };
       this.heartbeat.start(connection.userID);

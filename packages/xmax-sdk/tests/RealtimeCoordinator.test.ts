@@ -33,6 +33,24 @@ function makeCoordinator(options?: {
 }
 
 describe("RealtimeCoordinator", () => {
+  it("enters generating only for the current ready task and ignores late completion", async () => {
+    const { coordinator, states, listener } = makeCoordinator();
+    await coordinator.setStateListener(listener);
+    await coordinator.run(RealtimeOperationKind.generation, undefined, token => coordinator.commit(
+      new RealtimeState({ connectionState: RealtimeConnectionState.starting, sessionID: "session", taskID: "task" }), token,
+    ));
+    await coordinator.remotePreviewDidBecomeReady("old-session", "task", () => true);
+    await coordinator.remotePreviewDidBecomeReady("session", "old-task", () => true);
+    await coordinator.remotePreviewDidBecomeReady("session", "task", () => false);
+    expect(coordinator.currentState.connectionState).toBe(RealtimeConnectionState.starting);
+    await coordinator.remotePreviewDidBecomeReady("session", "task", () => true);
+    await coordinator.remotePreviewDidBecomeReady("session", "task", () => true);
+    expect(states.filter(state => state.connectionState === RealtimeConnectionState.generating)).toHaveLength(1);
+    await coordinator.disconnect();
+    await coordinator.remotePreviewDidBecomeReady("session", "task", () => true);
+    expect(coordinator.currentState.connectionState).toBe(RealtimeConnectionState.idle);
+  });
+
   it("starts in idle state", () => {
     const { coordinator } = makeCoordinator();
     expect(coordinator.currentState.connectionState).toBe(

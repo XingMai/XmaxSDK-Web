@@ -2,6 +2,7 @@ import { VideoContentMode } from "../../Foundation/Media/Video/VideoContentMode"
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
 import type { VideoRenderStatistics } from "./VideoRenderStatistics";
 import { RenderStatisticsController } from "./RenderStatisticsController";
+import { RenderWarmupController } from "./RenderWarmupController";
 import type { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
 import { VideoRenderRegistry } from "../../Service/Realtime/VideoRenderBinding";
 import { RemoteVideoFramePipeline, type RemoteFrameInterpolationOptions } from "./RemoteVideoFramePipeline";
@@ -20,6 +21,7 @@ const OBJECT_FIT: Record<VideoContentMode, "contain" | "cover"> = {
  *
  * 通过 `attach(to:)` 挂载到任意容器元素；设置 `track` 后自动渲染。
  * 轨道注册了渲染绑定时走绑定管线，否则按 `mediaStreamTrack` 直接渲染。
+ * SDK 远端轨道在首帧后预热 1000 ms，再用 300 ms 渐入；本地预览不延迟。
  */
 export class XmaxVideoView {
   /**
@@ -67,6 +69,11 @@ export class XmaxVideoView {
    * 呈现统计组件
    */
   private readonly statisticsController: RenderStatisticsController;
+
+  /**
+   * 远端画面预热与渐入组件
+   */
+  private readonly warmupController: RenderWarmupController;
   /**
    * DOM 挂载状态
    */
@@ -92,6 +99,7 @@ export class XmaxVideoView {
     this.element.style.position = "relative";
     this.element.style.overflow = "hidden";
     this.element.style.backgroundColor = "black";
+    this.warmupController = new RenderWarmupController(this.element);
 
     this.videoElement = document.createElement("video");
     this.statisticsController = new RenderStatisticsController(this.videoElement);
@@ -119,7 +127,7 @@ export class XmaxVideoView {
    */
   set isInteractionEnabled(enabled: boolean) {
     this.interactionEnabled = enabled;
-    this.trajectoryOverlay?.configure(this.contentMode, this.mirrored, enabled);
+    this.trajectoryOverlay?.configure(this.contentMode, this.mirrored, enabled && !this.warmupController.isPending);
   }
 
   /**
@@ -231,6 +239,7 @@ export class XmaxVideoView {
     this.startInterpolation();
     this.startRenderStatistics();
     if ((this.videoElement.srcObject || this.videoElement.getAttribute("src")) && !this.hasNotifiedFrameDisplay) {
+      this.prepareRenderWarmup();
       this.armFrameDisplayNotification();
     }
   }
@@ -244,6 +253,8 @@ export class XmaxVideoView {
     this.statisticsController.stop();
     this.stopInterpolation();
     this.cancelFrameDisplayNotification();
+    this.warmupController.reset();
+    this.hasNotifiedFrameDisplay = false;
     if (this.videoElement.getAttribute("src")) {
       this.videoElement.pause();
     }
@@ -254,6 +265,7 @@ export class XmaxVideoView {
    * 设置网络视频预览；静音播放一次，不捕获或发布媒体轨道。 @internal
    */
   setVideoURL(url: string | null): void {
+    this.warmupController.reset();
     this.statisticsController.stop();
     this.stopInterpolation();
     this.cancelFrameDisplayNotification();
@@ -285,11 +297,26 @@ export class XmaxVideoView {
     this.hasNotifiedFrameDisplay = false;
 
     this.videoElement.srcObject = stream;
+    this.warmupController.reset();
     if (stream) {
       this.videoElement.autoplay = true;
+      this.prepareRenderWarmup();
       this.armFrameDisplayNotification();
       this.startInterpolation();
       this.startRenderStatistics();
+    }
+  }
+
+  /**
+   * 新生成任务重新等待首帧和预热，不替换正在播放的媒体流。 @internal
+   */
+  prepareForGeneration(): void {
+    this.cancelFrameDisplayNotification();
+    this.warmupController.reset();
+    this.hasNotifiedFrameDisplay = false;
+    this.prepareRenderWarmup();
+    if (!this.detached && this.videoElement.srcObject) {
+      this.armFrameDisplayNotification();
     }
   }
 
@@ -370,6 +397,7 @@ export class XmaxVideoView {
    * 解绑当前轨道并清空渲染内容。
    */
   private detachCurrentTrack(): void {
+    this.warmupController.reset();
     this.disposeTrajectory();
     this.statisticsController.stop();
     const track = this.currentTrack;
@@ -400,8 +428,15 @@ export class XmaxVideoView {
       }
       this.hasNotifiedFrameDisplay = true;
       this.cancelFrameDisplayNotification();
+      const notifiedSequence = this.frameNotificationSequence;
       binding?.frameDisplayHandler?.();
       this.frameDisplayHandler?.();
+      if (notifiedSequence === this.frameNotificationSequence) {
+        this.warmupController.start(() => {
+          this.applyContentMode();
+          binding?.renderWarmupCompletedHandler?.();
+        });
+      }
     };
 
     if (typeof this.videoElement.requestVideoFrameCallback === "function") {
@@ -434,10 +469,19 @@ export class XmaxVideoView {
   }
 
   /**
+   * 仅远端渲染绑定启用预热，本地预览和普通媒体直接显示。
+   */
+  private prepareRenderWarmup(): void {
+    const binding = this.currentTrack ? VideoRenderRegistry.binding(this.currentTrack) : undefined;
+    this.warmupController.prepare(binding?.renderWarmupMs);
+    this.applyContentMode();
+  }
+
+  /**
    * 应用显示模式与镜像样式。
    */
   private applyContentMode(): void {
-    this.trajectoryOverlay?.configure(this.contentMode, this.mirrored, this.interactionEnabled);
+    this.trajectoryOverlay?.configure(this.contentMode, this.mirrored, this.interactionEnabled && !this.warmupController.isPending);
     this.videoElement.style.objectFit = OBJECT_FIT[this.contentMode];
     this.videoElement.style.transform = this.mirrored ? "scaleX(-1)" : "";
     if (this.interpolationCanvas) {
@@ -466,7 +510,7 @@ export class XmaxVideoView {
     }
     const overlay = new TrajectoryOverlayView(this.customTrajectoryRenderer ?? new DefaultTrajectoryEffectRenderer());
     this.trajectoryOverlay = overlay;
-    overlay.configure(this.contentMode, this.mirrored, this.interactionEnabled);
+    overlay.configure(this.contentMode, this.mirrored, this.interactionEnabled && !this.warmupController.isPending);
     this.element.appendChild(overlay.element);
     binding.attach(overlay);
   }

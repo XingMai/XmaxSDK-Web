@@ -19,11 +19,13 @@ it("preserves the definition-list structure, metric order, zero values and place
 
 it("preserves launch-panel styling, row tooltips and total highlighting", () => {
   const html = renderToStaticMarkup(<StatisticsPanel className="launchTiming" label="启动耗时统计" rows={[
-    { label: "亮度检测", value: "20 ms", title: "与建立连接并行，未计入连接耗时" },
+    { label: "RTC 进房", value: "200 ms", title: "仅统计 RTC 进房调用耗时" },
+    { label: "渲染预热", value: "1000 ms", title: "首帧后预热，不含渐入动画" },
     { label: "完整启动耗时", value: "1500 ms", className: "launchTimingTotal" },
   ]} />);
 
   expect(html).toBe('<dl class="launchTiming" aria-label="启动耗时统计">'
-    + '<div title="与建立连接并行，未计入连接耗时"><dt>亮度检测</dt><dd>20 ms</dd></div>'
+    + '<div title="仅统计 RTC 进房调用耗时"><dt>RTC 进房</dt><dd>200 ms</dd></div>'
+    + '<div title="首帧后预热，不含渐入动画"><dt>渲染预热</dt><dd>1000 ms</dd></div>'
     + '<div class="launchTimingTotal"><dt>完整启动耗时</dt><dd>1500 ms</dd></div></dl>');
 });

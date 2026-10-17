@@ -264,6 +264,7 @@ export interface XmaxRealtimeManaging {
    *
    * 尚未连接时先建立实时连接；已在生成时默认更新条件，restart 为 true 时重新开始生成。
    * 首次生成必须提供条件上下文，之后缺省时复用最近一次缓存的上下文。
+   * 返回后请将远端流挂载到 SDK 视频视图；首帧及渲染预热完成后状态才进入 generating。
    *
    * @param options.localStream 由当前 Manager 创建的摄像头、外部视频轨、本地文件或网络视频源。
    * @param options.context 本次生成使用的条件上下文；缺省时复用缓存。
@@ -271,7 +272,7 @@ export interface XmaxRealtimeManaging {
    * @param options.faceRestoration 是否启用原始人脸回贴，默认 false；正在生成时通过 change_condition 更新。
    * @param options.extraParams 合并到本次 start 或 change_condition 的 params；不缓存，自动恢复时不携带，不允许覆盖 SDK 字段。
    * @param options.record 是否录制远端原始音视频约 20 秒，默认 false；仅 start 有效，条件更新时忽略，重启录制暂不支持。
-   * @returns 承载远端生成画面的媒体流。
+   * @returns 可挂载的远端媒体流，不等待渲染预热；展示就绪以 generating 状态为准。
    * @throws extraParams 包含非 JSON 数据、循环引用或 SDK 保留字段时，在连接或更新前抛出 invalidConfiguration。
    * @throws 本地流不属于当前 Manager、缺少可用的条件上下文、信令发送
    * 或生成确认失败时抛出错误；失败时自动停止生成任务并释放连接资源。

@@ -268,7 +268,8 @@ export class RealtimeCoordinator {
     // 普通生成调用在运行中只更新条件；强制重启保持独立的生命周期操作类型。
     const operationKind =
       kind === RealtimeOperationKind.generation &&
-      this.state.connectionState === RealtimeConnectionState.generating
+      (this.state.connectionState === RealtimeConnectionState.generating ||
+        (this.state.connectionState === RealtimeConnectionState.starting && !!this.state.taskID))
         ? RealtimeOperationKind.configuration
         : kind;
 
@@ -319,6 +320,24 @@ export class RealtimeCoordinator {
     await this.setState(
       new RealtimeState({ connectionState: RealtimeConnectionState.ready }),
     );
+  }
+
+  /**
+   * 当前生成任务和远端展示均就绪后进入 generating；迟到通知不恢复已结束任务。
+   */
+  async remotePreviewDidBecomeReady(
+    sessionID: string,
+    taskID: string,
+    isCurrent: () => boolean,
+  ): Promise<void> {
+    if (this.termination || this.state.connectionState !== RealtimeConnectionState.starting ||
+      this.state.sessionID !== sessionID || this.state.taskID !== taskID || !isCurrent()) {
+      return;
+    }
+
+    await this.setState(new RealtimeState({
+      connectionState: RealtimeConnectionState.generating, sessionID, taskID,
+    }));
   }
 
   /**

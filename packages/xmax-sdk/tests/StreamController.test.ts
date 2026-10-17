@@ -160,6 +160,23 @@ function emitRemoteVideo(
 }
 
 describe("StreamController", () => {
+  it.each([true, false])("measures only RTC join with local publication enabled: %s", async publishLocalMedia => {
+    const { controller, rtc } = makeStream();
+    const events: string[] = [];
+    vi.spyOn(rtc, "joinRoom").mockImplementation(async () => { events.push("join"); });
+    const beforePublish = vi.fn(async () => { events.push("warmup"); });
+
+    await controller.connect(connection, false, noopEnsureActive, beforePublish, publishLocalMedia, () => {
+      events.push("start");
+      return () => { events.push("complete"); };
+    });
+
+    expect(events).toEqual(publishLocalMedia
+      ? ["start", "join", "complete", "warmup"]
+      : ["start", "join", "complete"]);
+    await controller.disconnect();
+  });
+
   it("delegates frame rate changes without recomputing bitrates or sending room signals", async () => {
     const { controller, rtc } = makeStream();
     await controller.updateUplinkVideoFormat(videoFormat);

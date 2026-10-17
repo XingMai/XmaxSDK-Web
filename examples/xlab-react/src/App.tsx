@@ -260,6 +260,7 @@ export function App() {
 
   const isConnected =
     stateText === RealtimeConnectionState.connected ||
+    stateText === RealtimeConnectionState.starting ||
     stateText === RealtimeConnectionState.generating;
 
   function attachStateListener(
@@ -273,6 +274,7 @@ export function App() {
       setStateText(state.connectionState);
       if (
         state.connectionState === RealtimeConnectionState.connected ||
+        state.connectionState === RealtimeConnectionState.starting ||
         state.connectionState === RealtimeConnectionState.generating
       ) {
         // 会话建立成功后立刻切换到生成页面，不等待首帧。
@@ -612,9 +614,11 @@ export function App() {
     <>
       <StatisticsPanel className="launchTiming" label="启动耗时统计" rows={[
         { label: "摄像头授权", value: formatLaunchTiming(launchTiming.cameraMs), title: "含系统授权等待与摄像头硬件启动" },
-        { label: "建立连接", value: formatLaunchTiming(launchTiming.connectionMs), title: "含 200ms 相机预热等待" },
+        { label: "创建会话", value: formatLaunchTiming(launchTiming.sessionMs) },
+        { label: "RTC 进房", value: formatLaunchTiming(launchTiming.rtcJoinMs), title: "仅统计 RTC 进房调用耗时" },
         { label: "发布本地流", value: formatLaunchTiming(launchTiming.publishMs) },
         { label: "首帧到达", value: formatLaunchTiming(launchTiming.firstFrameMs) },
+        { label: "渲染预热", value: formatLaunchTiming(launchTiming.renderWarmupMs), title: "首帧后预热 1000 ms，再渐入画面；不含渐入动画" },
         { label: "完整启动耗时", value: formatLaunchTiming(launchTiming.totalMs), className: "launchTimingTotal" },
       ]} />
       <StatisticsPanel label="上行视频统计" rows={[
@@ -863,7 +867,7 @@ export function App() {
             ]} />
           </div>
           <span className="watermark">✦ Xmax</span>
-          {!remoteStream && (
+          {(!remoteStream || stateText !== RealtimeConnectionState.generating) && (
             <span className="stageHint">
               {isConnected ? "Generating…" : "Waiting for connection…"}
             </span>

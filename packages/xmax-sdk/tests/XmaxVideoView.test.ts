@@ -56,7 +56,7 @@ class VideoStub extends ElementStub {
   }
 }
 
-function makeView(useFrameCallback = true) {
+function makeView(useFrameCallback = true, renderWarmupMs?: number) {
   const video = new VideoStub();
   if (!useFrameCallback) {
     Object.defineProperty(video, "requestVideoFrameCallback", { value: undefined });
@@ -68,15 +68,142 @@ function makeView(useFrameCallback = true) {
   const track = new RealtimeVideoTrack({ id: "remote" });
   const onBindingFrame = vi.fn();
   const onViewFrame = vi.fn();
+  const onWarmup = vi.fn();
   view.frameDisplayHandler = onViewFrame;
   VideoRenderRegistry.register(track, {
+    renderWarmupMs,
+    renderWarmupCompletedHandler: onWarmup,
     attachHandler: (target) => target.setMediaStream({} as MediaStream),
     detachHandler: (target) => target.setMediaStream(null),
     frameDisplayHandler: onBindingFrame,
   });
   view.track = track;
-  return { view, video, onBindingFrame, onViewFrame };
+  return { view, video, onBindingFrame, onViewFrame, onWarmup };
 }
+
+describe("remote render warmup", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("rearms first-frame and warmup for a new generation without replacing the stream", async () => {
+    const { view, video, onWarmup, onBindingFrame } = makeView(true, 1000);
+    const media = video.srcObject;
+    video.nextFrame();
+    await vi.advanceTimersByTimeAsync(600);
+    view.prepareForGeneration();
+    expect(video.srcObject).toBe(media);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(onWarmup).not.toHaveBeenCalled();
+    video.nextFrame();
+    await vi.advanceTimersByTimeAsync(999);
+    expect(onWarmup).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(onBindingFrame).toHaveBeenCalledTimes(2);
+    expect(onWarmup).toHaveBeenCalledOnce();
+    view.detach();
+  });
+
+  it.each([true, false])("waits 1000 ms after the first frame then fades once (frame callback: %s)", async useFrameCallback => {
+    const { view, video, onBindingFrame, onViewFrame, onWarmup } = makeView(useFrameCallback, 1000);
+    expect(view.element.style.opacity).toBe("0");
+    expect(video.srcObject).not.toBeNull();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(onWarmup).not.toHaveBeenCalled();
+
+    if (useFrameCallback) video.nextFrame();
+    else video.dispatchEvent(new Event("playing"));
+    expect(onBindingFrame).toHaveBeenCalledOnce();
+    expect(onViewFrame).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(999);
+    expect(view.element.style.opacity).toBe("0");
+    expect(onWarmup).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(view.element.style.opacity).toBe("1");
+    expect(view.element.style.transition).toBe("opacity 300ms ease-in-out");
+    expect(onWarmup).toHaveBeenCalledOnce();
+    expect(video.pause).not.toHaveBeenCalled();
+    video.nextFrame();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(onWarmup).toHaveBeenCalledOnce();
+    view.detach();
+  });
+
+  it.each(["detach", "clear", "replace"])("cancels pending warmup on %s", async action => {
+    const { view, video, onWarmup } = makeView(true, 1000);
+    video.nextFrame();
+    await vi.advanceTimersByTimeAsync(600);
+    if (action === "detach") view.detach();
+    else if (action === "clear") view.track = undefined;
+    else view.setMediaStream({} as MediaStream);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(onWarmup).not.toHaveBeenCalled();
+
+    if (action === "detach") view.attach(new ElementStub() as unknown as HTMLElement);
+    if (action !== "clear") {
+      video.nextFrame();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(onWarmup).toHaveBeenCalledOnce();
+    }
+    view.detach();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("does not delay a local binding and respects reduced motion for remote fade", async () => {
+    const local = makeView();
+    local.video.nextFrame();
+    expect(local.view.element.style.opacity).not.toBe("0");
+    expect(vi.getTimerCount()).toBe(0);
+    local.view.detach();
+
+    vi.stubGlobal("matchMedia", () => ({ matches: true }));
+    const remote = makeView(true, 1000);
+    remote.video.nextFrame();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(remote.view.element.style.opacity).toBe("1");
+    expect(remote.view.element.style.transition).toBe("none");
+    remote.view.detach();
+  });
+
+  it("uses the same warmup in the composite view without a second fade", async () => {
+    const videos: VideoStub[] = [];
+    vi.stubGlobal("document", {
+      createElement: (tag: string) => {
+        if (tag !== "video") return new ElementStub();
+        const video = new VideoStub();
+        videos.push(video);
+        return video;
+      },
+    });
+    const animate = vi.fn();
+    vi.stubGlobal("requestAnimationFrame", animate);
+    const remoteTrack = new RealtimeVideoTrack({ id: "remote" });
+    const onWarmup = vi.fn();
+    let target: XmaxVideoView | undefined;
+    VideoRenderRegistry.register(remoteTrack, {
+      renderWarmupMs: 1000,
+      renderWarmupCompletedHandler: onWarmup,
+      attachHandler: view => {
+        target = view as XmaxVideoView;
+        view.setMediaStream({} as MediaStream);
+      },
+      detachHandler: view => view.setMediaStream(null),
+    });
+    const view = new XmaxRealtimeVideoView({ remoteTrack });
+    expect(target!.element.style.visibility).toBe("visible");
+    expect(target!.element.style.opacity).toBe("0");
+    videos[1]!.nextFrame();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(target!.element.style.opacity).toBe("1");
+    expect(onWarmup).toHaveBeenCalledOnce();
+    expect(animate).not.toHaveBeenCalled();
+    view.remoteTrack = undefined;
+    expect(target!.element.style.opacity).toBe("0");
+    view.detach();
+  });
+});
 
 describe("video render statistics", () => {
   beforeEach(() => {
