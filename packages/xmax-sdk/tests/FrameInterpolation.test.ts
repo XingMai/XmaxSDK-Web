@@ -11,7 +11,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe("frame interpolation configuration and support", () => {
   it("defaults off and uses the interpolation flag", () => {
-    const model = RealtimeModel.x2_0_trtc;
+    const model = RealtimeModel.x2_1_1_preview_cn;
     expect(new RealtimeConfiguration({ model }).isFrameInterpolationEnabled).toBe(false);
     expect(new RealtimeConfiguration({ model, isFrameInterpolationEnabled: true }).isFrameInterpolationEnabled).toBe(true);
     expect(new RealtimeConfiguration({ model, isFrameInterpolationEnabled: false }).isFrameInterpolationEnabled).toBe(false);

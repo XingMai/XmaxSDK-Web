@@ -8,7 +8,7 @@ export type RealtimeExtraParams = Record<string, JsonValue>;
 
 const RESERVED_PARAMS = new Set([
   "model", "face_replace", "size", "target_size", "prompt", "ref_image_path",
-  "mirror", "ref_video_path", "sample_method",
+  "mirror", "ref_video_path", "sample_method", "min_bitrate", "max_bitrate",
 ]);
 
 /**

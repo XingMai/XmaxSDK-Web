@@ -7,6 +7,7 @@ import type { RtcRoomJoinConfiguration } from "../src/Foundation/RTC/RoomJoinCon
 import type { RtcManaging } from "../src/Foundation/RTC/RtcManaging";
 import { RealtimeContext } from "../src/Service/Realtime/RealtimeContext";
 import { RealtimePoint } from "../src/Service/Realtime/RealtimePoint";
+import { RealtimeVideoSampleMethod } from "../src/Service/Realtime/RealtimeReferenceVideo";
 import { RealtimeSessionConnection } from "../src/Service/Realtime/RealtimeSessionConnection";
 import { RealtimeVideoFormat } from "../src/Service/Realtime/RealtimeVideoFormat";
 import { RoomController } from "../src/Stream/Room/RoomController";
@@ -95,6 +96,64 @@ const connection = new RealtimeSessionConnection({
 
 const videoFormat = new RealtimeVideoFormat({ width: 832, height: 1472, fps: 30 });
 const context = new RealtimeContext({ prompt: "a cat", referencePath: "ref/1.png" });
+
+describe("downlink bitrate signaling", () => {
+  it.each([false, true])("uses target dimensions independently of uplink bitrate (network=%s)", async network => {
+    const { controller, rtc } = makeController();
+    await controller.join(connection, noopEnsureActive);
+    const source = new RealtimeVideoFormat({ width: 1024, height: 1920, fps: 30, minimumBitrate: 9000, maximumBitrate: 9500 });
+    const context = new RealtimeContext({ prompt: "test", referenceVideo: network
+      ? { path: "https://example.test/video.mp4", sampleMethod: RealtimeVideoSampleMethod.time }
+      : undefined });
+    await controller.startGeneration({ taskID: "task", videoFormat: source, context, targetSize: { width: 640, height: 480 } });
+    expect(JSON.parse(rtc.sentMessages.at(-1)!).params).toMatchObject({
+      size: [1024, 1920], target_size: [640, 480], min_bitrate: 100, max_bitrate: 780,
+    });
+
+    await controller.startGeneration({ taskID: "task", videoFormat: source, context });
+    const fallback = JSON.parse(rtc.sentMessages.at(-1)!).params;
+    expect(fallback).toMatchObject({ min_bitrate: 100, max_bitrate: 3127 });
+    if (network) {
+      expect(fallback.target_size).toEqual([1024, 1920]);
+    } else {
+      expect(fallback).not.toHaveProperty("target_size");
+    }
+    await controller.leave();
+  });
+
+  it.each([[2, 2, 100], [1920, 1080, 3266], [3840, 2160, 10000]])("bounds start and update bitrates at %s×%s", async (width, height, maximum) => {
+    const { controller, rtc } = makeController();
+    await controller.join(connection, noopEnsureActive);
+    for (const fps of [15, 24, 30, 60]) {
+      await controller.startGeneration({ taskID: "task", context, videoFormat: new RealtimeVideoFormat({ width, height, fps }) });
+      await controller.changeTargetSize({ taskID: "task", targetSize: { width, height }, ensureActive: noopEnsureActive });
+      for (const raw of rtc.sentMessages.slice(-2)) {
+        const { params } = JSON.parse(raw);
+        expect(params).toMatchObject({ min_bitrate: 100, max_bitrate: maximum });
+        expect(params).not.toHaveProperty("fps");
+      }
+      expect(JSON.parse(rtc.sentMessages.at(-1)!).params).toEqual({ target_size: [width, height], min_bitrate: 100, max_bitrate: maximum });
+    }
+
+    await controller.changeGenerationCondition({ taskID: "task", context, videoFormat });
+    const params = JSON.parse(rtc.sentMessages.at(-1)!).params;
+    expect(params).not.toHaveProperty("min_bitrate");
+    expect(params).not.toHaveProperty("max_bitrate");
+    await controller.leave();
+  });
+
+  it("does not send invalid or cancelled target updates", async () => {
+    const { controller, rtc } = makeController();
+    await controller.join(connection, noopEnsureActive);
+    for (const targetSize of [{ width: 0, height: 480 }, { width: 640, height: 481 }]) {
+      expect(() => controller.startGeneration({ taskID: "task", videoFormat, context, targetSize })).toThrow();
+      expect(() => controller.changeTargetSize({ taskID: "task", targetSize, ensureActive: noopEnsureActive })).toThrow();
+    }
+    expect(() => controller.changeTargetSize({ taskID: "task", targetSize: videoFormat, ensureActive: () => { throw new Error("cancelled"); } })).toThrow("cancelled");
+    expect(rtc.sentMessages).toHaveLength(0);
+    await controller.leave();
+  });
+});
 
 function makeController() {
   const rtc = new RtcManagingStub();
@@ -260,7 +319,7 @@ describe("RoomController", () => {
       "stop",
       "tracks",
     ]);
-    expect(events[1].params).toEqual({ target_size: [640, 960] });
+    expect(events[1].params).toEqual({ target_size: [640, 960], min_bitrate: 100, max_bitrate: 1304 });
     expect(events[1]).toMatchObject({ user_id: connection.userID, uid: "task-001" });
     expect(events[0].params).not.toHaveProperty("mirror");
     expect(events[3].tracks).toEqual([[0.5, 0.25]]);

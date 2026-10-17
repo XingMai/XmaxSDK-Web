@@ -232,7 +232,7 @@ const client = new XmaxClient(
 );
 
 const realtime = client.createRealtimeManager(
-  new RealtimeConfiguration({ model: RealtimeModel.x2_1_preview })
+  new RealtimeConfiguration({ model: RealtimeModel.x2_1_1_preview_cn })
 );
 
 const localStream = await realtime.createLocalCameraStream({

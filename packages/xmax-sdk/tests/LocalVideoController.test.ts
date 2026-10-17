@@ -3,6 +3,7 @@ import { LocalVideoController } from "../src/Media/Video/LocalVideoController";
 import { MediaService } from "../src/Service/Media/MediaService";
 import { RealtimeVideoFormat, RealtimeVideoEncoderPreference } from "../src/Service/Realtime/RealtimeVideoFormat";
 import { RealtimeModel, resolutionBuckets } from "../src/Service/Realtime/RealtimeModel";
+import * as ModelDefinition from "../src/Service/Realtime/RealtimeModel";
 import { VideoRenderRegistry } from "../src/Service/Realtime/VideoRenderBinding";
 import { VideoContentMode } from "../src/Foundation/Media/Video/VideoContentMode";
 
@@ -101,7 +102,7 @@ describe("LocalVideoController", () => {
     expect(resolutionBuckets(media.model)).toEqual(bucketsBefore);
   });
 
-  it.each([RealtimeModel.x2_1_preview, "custom-model"])("uses the resolution buckets for %s", async (model) => {
+  it.each([RealtimeModel.x2_1_1_preview_cn, "custom-model"])("uses the resolution buckets for %s", async (model) => {
     const s = setup();
     const local = await s.controller.create({
       ...options, videoFormat: new RealtimeVideoFormat({ width: 1280, height: 720, fps: 30 }),
@@ -110,7 +111,8 @@ describe("LocalVideoController", () => {
   });
 
   it("keeps pixel-budget sizing for models without fixed resolutions", async () => {
-    const s = setup(), flexibleMedia = new MediaService(RealtimeModel.x2_0);
+    vi.spyOn(ModelDefinition, "resolutionBuckets").mockReturnValue([]);
+    const s = setup(), flexibleMedia = new MediaService();
     const videoFormat = new RealtimeVideoFormat({ width: 3840, height: 2160, fps: 30 });
     const expected = flexibleMedia.resolveModelInputSize(videoFormat);
     const local = await s.controller.create({ ...options, videoFormat }, flexibleMedia, s.signal.signal);

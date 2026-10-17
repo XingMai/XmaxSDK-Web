@@ -16,6 +16,29 @@ function setup() {
 }
 
 describe("QualityController", () => {
+  it("rejects an incompatible candidate without applying, committing or skipping tiers", async () => {
+    const apply = vi.fn(async () => {});
+    const canApply = vi.fn(() => false);
+    let now = 0;
+    const controller = new QualityController(apply, () => now, {}, canApply);
+    controller.start(2);
+    for (let index = 0; index < 6; index++) {
+      now += 2000;
+      await controller.observe(5);
+    }
+    expect(canApply).toHaveBeenCalledTimes(2);
+    expect(canApply).toHaveBeenLastCalledWith(3);
+    expect(apply).not.toHaveBeenCalled();
+    expect(controller.snapshot.level).toBe(2);
+
+    canApply.mockReturnValue(true);
+    for (let index = 0; index < 3; index++) {
+      now += 2000;
+      await controller.observe(5);
+    }
+    expect(controller.snapshot.level).toBe(3);
+  });
+
   it("is inactive until explicitly started; stops counting on session end", async () => {
     const s = setup();
     await s.samples(5, 10);
@@ -88,11 +111,11 @@ describe("QualityController", () => {
   it("distinguishes L2 and L3 even though both use 24 fps", async () => {
     const s = setup(); s.controller.start(2);
     await s.samples(5, 3);
-    expect(s.controller.snapshot).toMatchObject({ level: 3, frameRate: 24, width: 640, height: 1200 });
+    expect(s.controller.snapshot).toMatchObject({ level: 3, frameRate: 24, width: 664, height: 1248 });
     expect(s.apply).toHaveBeenLastCalledWith(expect.objectContaining({ from: 2, to: 3, frameRate: 24 }), expect.any(AbortSignal));
     await s.sample(1);
     await s.samples(1, 5);
-    expect(s.controller.snapshot).toMatchObject({ level: 2, frameRate: 24, width: 768, height: 1440 });
+    expect(s.controller.snapshot).toMatchObject({ level: 2, frameRate: 24, width: 818, height: 1536 });
   });
 
   it("resets after sample gaps and ignores duplicate timestamps", async () => {

@@ -62,6 +62,8 @@ export class RoomEvent {
    * @param options.videoFormat 模型生成使用的视频规格。
    * @param options.context 本次生成条件。
    * @param options.targetSize 回传尺寸，缺省时不发送；网络视频默认使用生成尺寸。
+   * @param options.minimumBitrate 服务端回传的最低码率，单位为 kbps。
+   * @param options.maximumBitrate 服务端回传的最高码率，单位为 kbps。
    * @param options.mirror 是否由后端镜像输入画面，默认 false。
    * @param options.faceRestoration 是否回贴原始人脸，默认 false。
    * @param options.extraParams 已校验的本次扩展参数，合并到 params。
@@ -73,6 +75,8 @@ export class RoomEvent {
     videoFormat: RealtimeVideoFormat;
     context: RealtimeContext;
     targetSize?: RoomEventTargetSize;
+    minimumBitrate: number;
+    maximumBitrate: number;
     mirror?: boolean;
     faceRestoration?: boolean;
     extraParams?: RealtimeExtraParams;
@@ -81,6 +85,8 @@ export class RoomEvent {
       event: "start",
       params: {
         ...RoomEvent.generationParameters(options),
+        min_bitrate: options.minimumBitrate,
+        max_bitrate: options.maximumBitrate,
         mirror: options.mirror ?? false,
         ...(options.context.referenceVideo && {
           ref_video_path: options.context.referenceVideo.path,
@@ -119,16 +125,20 @@ export class RoomEvent {
   }
 
   /**
-   * 回传尺寸调整信令。
+   * 回传尺寸和码率范围调整信令，码率单位为 kbps。
    */
   static changeTargetSize(options: {
     userID: string;
     taskID: string;
     targetSize: RoomEventTargetSize;
+    minimumBitrate: number;
+    maximumBitrate: number;
   }): string {
     return RoomEvent.encode({
       event: "change_target_size",
       params: {
+        min_bitrate: options.minimumBitrate,
+        max_bitrate: options.maximumBitrate,
         target_size: [
           Math.round(options.targetSize.width),
           Math.round(options.targetSize.height),

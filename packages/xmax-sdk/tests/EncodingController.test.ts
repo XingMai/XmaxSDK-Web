@@ -95,10 +95,10 @@ describe("EncodingController.configure", () => {
     ][] = [
       [1500, 3000, RealtimeVideoEncoderPreference.maintainFramerate, 1500, 3000],
       [0, 500, RealtimeVideoEncoderPreference.maintainQuality, 0, 500],
-      [undefined, 4000, RealtimeVideoEncoderPreference.maintainFramerate, 1805, 4000],
-      [1500, undefined, RealtimeVideoEncoderPreference.maintainFramerate, 1500, 3611],
+      [undefined, 4000, RealtimeVideoEncoderPreference.maintainFramerate, 100, 4000],
+      [1500, undefined, RealtimeVideoEncoderPreference.maintainFramerate, 1500, 2166],
       [2000, 2000, RealtimeVideoEncoderPreference.maintainFramerate, 2000, 2000],
-      [undefined, undefined, RealtimeVideoEncoderPreference.maintainQuality, 1805, 3611],
+      [undefined, undefined, RealtimeVideoEncoderPreference.maintainQuality, 100, 2166],
     ];
 
     for (const [minimum, maximum, preference, expectedMinimum, expectedMaximum] of cases) {
@@ -130,7 +130,7 @@ describe("EncodingController.configure", () => {
       [undefined, 0],
       [3000, 1500],
       [4000, undefined],
-      [undefined, 1000],
+      [undefined, 99],
     ];
 
     for (const [minimum, maximum] of cases) {
@@ -149,7 +149,7 @@ describe("EncodingController.configure", () => {
     expect(rtcManager.encodingConfigurations).toHaveLength(0);
   });
 
-  it("matches every official reference", async () => {
+  it("applies the default budget to every reference", async () => {
     const { controller, rtcManager } = makeController();
     const cases = [
       [160, 120, 15, 65, 130],
@@ -182,35 +182,35 @@ describe("EncodingController.configure", () => {
       [1920, 1080, 60, 4780, 6500],
     ] as const;
 
-    for (const [width, height, fps, minimum, maximum] of cases) {
+    for (const [width, height, fps, , maximum] of cases) {
       await controller.configure(new RealtimeVideoFormat({ width, height, fps }));
       const configuration = lastConfiguration(rtcManager);
-      expect(configuration.minimumBitrate).toBe(minimum);
-      expect(configuration.maximumBitrate).toBe(maximum);
+      expect(configuration.minimumBitrate).toBe(100);
+      expect(configuration.maximumBitrate).toBe(Math.max(100, Math.round(maximum * 0.6)));
     }
   });
 
   it("interpolates and extrapolates upload bitrate", async () => {
     const { controller, rtcManager } = makeController();
     const cases = [
-      [1920, 1080, 24, 2722, 5444],
-      [832, 1472, 24, 1805, 3611],
-      [1472, 832, 24, 1805, 3611],
-      [1024, 1920, 30, 3016, 6031],
-      [1024, 1920, 24, 2606, 5212],
-      [1024, 768, 30, 1516, 3033],
-      [1024, 768, 24, 1310, 2620],
-      [1920, 1080, 120, 9560, 13000],
-      [3840, 2160, 30, 12600, 25200],
-      [120, 120, 30, 77, 154],
-      [1920, 1080, 1, 166, 333],
-      [2, 2, 1, 1, 2],
+      [1920, 1080, 24, 100, 3266],
+      [832, 1472, 24, 100, 2166],
+      [1472, 832, 24, 100, 2166],
+      [1024, 1920, 30, 100, 3619],
+      [1024, 1920, 24, 100, 3127],
+      [1024, 768, 30, 100, 1820],
+      [1024, 768, 24, 100, 1572],
+      [1920, 1080, 120, 100, 7800],
+      [3840, 2160, 30, 100, 15120],
+      [120, 120, 30, 100, 100],
+      [1920, 1080, 1, 100, 200],
+      [2, 2, 1, 100, 100],
     ] as const;
 
-    for (const [width, height, fps, minimum, maximum] of cases) {
+    for (const [width, height, fps, , maximum] of cases) {
       await controller.configure(new RealtimeVideoFormat({ width, height, fps }));
       const configuration = lastConfiguration(rtcManager);
-      expect(configuration.minimumBitrate).toBe(minimum);
+      expect(configuration.minimumBitrate).toBe(100);
       expect(configuration.maximumBitrate).toBe(maximum);
     }
   });
@@ -233,7 +233,7 @@ describe("EncodingController.configure", () => {
         await controller.configure(new RealtimeVideoFormat({ width, height, fps }));
         const configuration = lastConfiguration(rtcManager);
         expect(configuration.minimumBitrate).toBeGreaterThan(0);
-        expect(configuration.maximumBitrate).toBeGreaterThan(
+        expect(configuration.maximumBitrate).toBeGreaterThanOrEqual(
           configuration.minimumBitrate,
         );
         expect(configuration.minimumBitrate).toBeGreaterThanOrEqual(previousMinimum);

@@ -11,9 +11,8 @@ import { XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 
 describe("RTC provider selection", () => {
   const supported = [
-    [RealtimeModel.x2_0, RtcProvider.vertc],
-    [RealtimeModel.x2_0_trtc, RtcProvider.trtc],
-    [RealtimeModel.x2_1_preview, RtcProvider.agora],
+    [RealtimeModel.x2_1_1_preview_cn, RtcProvider.agora],
+    [RealtimeModel.x2_1_1_preview_us, RtcProvider.agora],
   ] as const;
 
   it.each(supported)("defines %s support and default as %s", (model, provider) => {
@@ -50,7 +49,7 @@ describe("RTC provider selection", () => {
   });
 
   it("rejects unknown providers", () => {
-    expect(() => new RealtimeConfiguration({ model: RealtimeModel.x2_1_preview, provider: "unknown" as RtcProvider })).toThrow("Unsupported RTC provider");
+    expect(() => new RealtimeConfiguration({ model: RealtimeModel.x2_1_1_preview_cn, provider: "unknown" as RtcProvider })).toThrow("Unsupported RTC provider");
     expect(() => createRtcManager("unknown" as RtcProvider, XmaxEnvironment.china)).toThrow(
       expect.objectContaining({ code: XmaxErrorCode.invalidConfiguration }),
     );

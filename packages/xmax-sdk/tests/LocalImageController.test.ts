@@ -3,7 +3,7 @@ import { LocalImageController } from "../src/Media/Image/LocalImageController";
 import { XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import { MediaService } from "../src/Service/Media/MediaService";
 import { RealtimeVideoFormat } from "../src/Service/Realtime/RealtimeVideoFormat";
-import { RealtimeModel } from "../src/Service/Realtime/RealtimeModel";
+import * as ModelDefinition from "../src/Service/Realtime/RealtimeModel";
 import { VideoRenderRegistry } from "../src/Service/Realtime/VideoRenderBinding";
 import { VideoContentMode } from "../src/Foundation/Media/Video/VideoContentMode";
 
@@ -96,7 +96,9 @@ describe("LocalImageController", () => {
 
   it("preserves flexible model sizing and does not change camera sizing rules", async () => {
     const s = setup();
-    const media = new MediaService(RealtimeModel.x2_0);
+    const buckets = ModelDefinition.resolutionBuckets;
+    vi.spyOn(ModelDefinition, "resolutionBuckets").mockImplementation(model => model === "test-flexible" ? [] : buckets(model));
+    const media = new MediaService("test-flexible");
     const local = await s.controller.create(options, media, s.signal.signal);
     expect(local.videoTrack?.videoFormat).toEqual(options.videoFormat.resized(
       media.resolveModelInputSize(options.videoFormat).width,

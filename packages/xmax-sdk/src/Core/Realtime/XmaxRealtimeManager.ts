@@ -33,7 +33,7 @@ import { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import { StreamController } from "../../Stream/StreamController";
 import { QualityController } from "../../Stream/Quality/QualityController";
-import { qualityVideoFormat, qualityVideoSize } from "../../Stream/Quality/QualityVideoFormat";
+import { qualityVideoFormat, qualityVideoSize, supportsQualityEncoding } from "../../Stream/Quality/QualityVideoFormat";
 import { QUALITY_TIERS } from "../../Stream/Quality/QualityTiers";
 import { QualityHistory } from "../../Stream/Quality/QualityHistory";
 import type { StreamControlling } from "../../Stream/StreamControlling";
@@ -237,6 +237,10 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         await this.coordinator.run(RealtimeOperationKind.configuration, undefined, async token => {
           await this.applyUplinkQuality(change.to, token, signal);
         });
+      }, undefined, {}, level => {
+        const track = this.currentUplinkTrack;
+        const state = track && this.qualityStates.get(track);
+        return !!state && supportsQualityEncoding(this.uplinkQualityFormat(state.baseline, level));
       });
       this.downlinkQualityController = new QualityController(async (change, signal) => {
         await this.coordinator.run(RealtimeOperationKind.configuration, undefined, async token => {
@@ -318,6 +322,10 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
 
       const level = Math.max(1, Math.min(Object.keys(QUALITY_TIERS).length, state.level + (direction === "upgrade" ? -1 : 1)));
       if (level === state.level) return;
+
+      if (!supportsQualityEncoding(this.uplinkQualityFormat(state.baseline, level))) {
+        throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Quality level conflicts with explicit bitrate constraints");
+      }
 
       this.adaptiveQualityRevision++;
       controller.resetSamples();
@@ -1118,7 +1126,12 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     const baseline = track.videoFormat;
     if (!baseline) return undefined;
 
-    return { baseline, level: this.qualityHistory!.read("uplink") };
+    let level = this.qualityHistory!.read("uplink");
+    while (level > 1 && !supportsQualityEncoding(this.uplinkQualityFormat(baseline, level))) {
+      level--;
+    }
+
+    return { baseline, level };
   }
 
   /**

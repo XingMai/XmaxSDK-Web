@@ -24,7 +24,7 @@ export class RealtimeConfiguration {
   /**
    * 创建实时业务配置。
    *
-   * @param init.model 实时生成业务使用的模型；未知名称原样透传，默认配置同 x2.1-preview。
+   * @param init.model 实时生成业务使用的模型；未知名称原样透传，默认配置同 x2.1.1-preview-cn。
    * @param init.provider RTC 提供方，默认按模型定义选择；必须受模型支持，创建后不可切换。
    * @param init.isFrameInterpolationEnabled 是否默认开启远端生成画面的插帧，默认 false。
    */

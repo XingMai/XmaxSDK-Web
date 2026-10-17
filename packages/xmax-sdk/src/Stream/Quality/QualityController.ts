@@ -33,10 +33,14 @@ export class QualityController {
   private switching = false;
   private lifecycle = new AbortController();
 
+  /**
+   * 创建调档状态机；候选档位不满足编码约束时保持当前档位，不跨档尝试。
+   */
   constructor(
     private readonly apply: (change: QualityChange, signal: AbortSignal) => Promise<void>,
     private readonly now: () => number = () => performance.now(),
     policy: Partial<QualityPolicy> = {},
+    private readonly canApply: (level: number) => boolean = () => true,
   ) {
     this.policy = { ...DEFAULT_POLICY, ...policy };
     for (const value of Object.values(this.policy)) {
@@ -116,10 +120,14 @@ export class QualityController {
   private resetCounts(): void { this.good = this.poor = 0; }
 
   private async change(index: number, reason: QualityChange["reason"]): Promise<QualityChange | undefined> {
+    this.resetCounts();
+    if (!this.canApply(index + 1)) {
+      return;
+    }
+
     const lifecycle = this.lifecycle;
     const change: QualityChange = { from: this.index + 1, to: index + 1, ...ORDERED_QUALITY_TIERS[index]!, reason };
     this.switching = true;
-    this.resetCounts();
     try {
       await this.apply(change, lifecycle.signal);
       if (lifecycle.signal.aborted) return;

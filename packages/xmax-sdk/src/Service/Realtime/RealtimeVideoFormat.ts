@@ -71,7 +71,7 @@ export class RealtimeVideoFormat {
    * 上传编码配置
    */
   /**
-   * 最低上传码率，单位为 kbps；未指定时由 SDK 计算，0 表示不设最低码率。
+   * 最低上传码率，单位为 kbps；缺省为 100，0 表示不设最低码率；仅支持该参数的 RTC 链路生效。
    */
   readonly minimumBitrate?: number;
   /**
@@ -89,7 +89,7 @@ export class RealtimeVideoFormat {
    * @param init.width 视频宽度，单位为像素。
    * @param init.height 视频高度，单位为像素。
    * @param init.fps 视频帧率，必须大于 0。
-   * @param init.minimumBitrate 最低上传码率，单位为 kbps；缺省按最终上传尺寸和帧率计算。
+   * @param init.minimumBitrate 最低上传码率，单位为 kbps；缺省为 100，仅支持该参数的 RTC 链路生效。
    * @param init.maximumBitrate 最高上传码率，单位为 kbps；缺省按最终上传尺寸和帧率计算。
    * @param init.encoderPreference 上传编码策略偏好，默认值为 maintainFramerate。
    */

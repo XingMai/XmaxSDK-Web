@@ -203,7 +203,7 @@ describe("XmaxRealtimeConnectionManager", () => {
     });
     const op = operation();
     const options = {
-      localTrack: new RealtimeVideoTrack({ id: "local", videoFormat }), model: RealtimeModel.x2_0_trtc,
+      localTrack: new RealtimeVideoTrack({ id: "local", videoFormat }), model: "test-trtc",
       includeLocalAudio: true, ensureCurrent: op.ensureCurrent, onPublished: vi.fn(),
     };
     return { manager, stream, service, events, options, op, session, connection, render };
@@ -341,7 +341,7 @@ describe("XmaxRealtimeConnectionManager", () => {
 
   it.each([RtcProvider.agora, RtcProvider.vertc] as const)("renews %s credentials through heartbeat and coalesces expiry notifications", async (provider) => {
     const { manager, service, stream, options, events } = setup(provider);
-    await manager.connect({ ...options, model: RealtimeModel.x2_1_preview });
+    await manager.connect({ ...options, model: RealtimeModel.x2_1_1_preview_cn });
     const refreshed = new RealtimeSession({ id: "session", connection: {
       provider, roomID: "room", appID: "app", userID: "rtc-user", roomToken: "token-v2",
     } });

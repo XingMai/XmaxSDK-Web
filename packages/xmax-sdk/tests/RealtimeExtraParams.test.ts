@@ -12,7 +12,7 @@ describe("generation extraParams", () => {
     expect(snapshotExtraParams({})).toEqual({});
   });
 
-  it.each(["model", "face_replace", "size", "target_size", "prompt", "ref_image_path", "mirror", "ref_video_path", "sample_method"])("rejects reserved parameter %s", key => {
+  it.each(["model", "face_replace", "size", "target_size", "prompt", "ref_image_path", "mirror", "ref_video_path", "sample_method", "min_bitrate", "max_bitrate"])("rejects reserved parameter %s", key => {
     expect(() => snapshotExtraParams({ [key]: null })).toThrow("conflicts with SDK parameter");
   });
 

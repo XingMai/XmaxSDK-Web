@@ -1,13 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import * as ModelDefinition from "../src/Service/Realtime/RealtimeModel";
 import { defaultCameraVideoFormat, RealtimeModel } from "../src/Service/Realtime/RealtimeModel";
 import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import { MediaService } from "../src/Service/Media/MediaService";
 
 describe("MediaService.resolveModelInputSize", () => {
+  afterEach(() => vi.restoreAllMocks());
+
   it.each([
-    [RealtimeModel.x2_0, 832, 1472],
-    [RealtimeModel.x2_0_trtc, 1024, 1920],
-    [RealtimeModel.x2_1_preview, 1024, 1920],
+    [RealtimeModel.x2_1_1_preview_cn, 1024, 1920],
+    [RealtimeModel.x2_1_1_preview_us, 1024, 1920],
   ] as const)("keeps the default camera format unchanged for %s", (model, width, height) => {
     const service = new MediaService(model);
     const format = defaultCameraVideoFormat(model);
@@ -16,7 +18,7 @@ describe("MediaService.resolveModelInputSize", () => {
     expect(service.resolveModelInputSize(format)).toEqual({ width, height });
   });
 
-  it.each([RealtimeModel.x2_0_trtc, RealtimeModel.x2_1_preview])("accepts exact resolution bucket matches for %s", (model) => {
+  it.each(Object.values(RealtimeModel))("accepts exact resolution bucket matches for %s", (model) => {
     const service = new MediaService(model);
     expect(service.resolveModelInputSize({ width: 1024, height: 1920 })).toEqual({
       width: 1024,
@@ -28,7 +30,7 @@ describe("MediaService.resolveModelInputSize", () => {
     });
   });
 
-  it.each([RealtimeModel.x2_0_trtc, RealtimeModel.x2_1_preview])("rejects non-bucket resolutions for %s", (model) => {
+  it.each(Object.values(RealtimeModel))("rejects non-bucket resolutions for %s", (model) => {
     const service = new MediaService(model);
     try {
       service.resolveModelInputSize({ width: 832, height: 1472 });
@@ -52,17 +54,18 @@ describe("MediaService.resolveModelInputSize", () => {
     { width: 1920, height: 1080 },
     { width: 640, height: 360 },
     { width: 360, height: 640 },
-  ])("scales x2.0 input $width × $height to the aligned pixel budget", (input) => {
-    const size = new MediaService(RealtimeModel.x2_0).resolveModelInputSize(input);
+  ])("scales input $width × $height to the pixel budget when no buckets are configured", (input) => {
+    vi.spyOn(ModelDefinition, "resolutionBuckets").mockReturnValue([]);
+    const size = new MediaService().resolveModelInputSize(input);
 
     expect(size.width % 32).toBe(0);
     expect(size.height % 32).toBe(0);
     expect(size.width * size.height).toBeGreaterThanOrEqual(600000);
-    expect(size.width * size.height).toBeLessThanOrEqual(1280000);
+    expect(size.width * size.height).toBeLessThanOrEqual(2100000);
     expect(size.width / size.height).toBeCloseTo(input.width / input.height, 1);
   });
 
-  it("keeps the fast model as the default media service model", () => {
-    expect(new MediaService().model).toBe(RealtimeModel.x2_0_trtc);
+  it("uses the CN model as the default media service model", () => {
+    expect(new MediaService().model).toBe(RealtimeModel.x2_1_1_preview_cn);
   });
 });

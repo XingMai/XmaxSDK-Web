@@ -24,9 +24,9 @@ export class MediaService implements MediaServicing {
   /**
    * 创建媒体服务。
    *
-   * @param model 媒体输入规则使用的模型，默认为 `x2.0-trtc`。
+   * @param model 媒体输入规则使用的模型，默认为 `x2.1.1-preview-cn`。
    */
-  constructor(model: RealtimeModelName = RealtimeModel.x2_0_trtc) {
+  constructor(model: RealtimeModelName = RealtimeModel.x2_1_1_preview_cn) {
     this.model = model;
   }
 

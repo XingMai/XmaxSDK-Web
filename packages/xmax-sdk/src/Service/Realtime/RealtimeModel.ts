@@ -6,10 +6,6 @@ import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
  * SDK 当前支持的实时生成模型。
  */
 export enum RealtimeModel {
-  x2_0 = "x2.0",
-  x2_0_trtc = "x2.0-trtc",
-  x2_1_preview = "x2.1-preview",
-  x2_1_preview_1014 = "x2.1-preview-1014",
   x2_1_1_preview_cn = "x2.1.1-preview-cn",
   x2_1_1_preview_us = "x2.1.1-preview-us",
 }
@@ -26,17 +22,13 @@ function isKnownModel(model: RealtimeModelName): model is RealtimeModel {
 
 /** 只解析本地默认配置，不替换请求中的模型标识；避免原型属性参与查表。 */
 function modelDefaults(model: RealtimeModelName): RealtimeModel {
-  return isKnownModel(model) ? model : RealtimeModel.x2_1_preview;
+  return isKnownModel(model) ? model : RealtimeModel.x2_1_1_preview_cn;
 }
 
 /**
  * 模型在界面中展示的名称，与接口使用的模型标识分开维护。
  */
 const MODEL_DISPLAY_NAMES: Readonly<Record<RealtimeModel, string>> = {
-  [RealtimeModel.x2_0]: "X2.0",
-  [RealtimeModel.x2_0_trtc]: "X2.1-preview-trtc",
-  [RealtimeModel.x2_1_preview]: "X2.1-preview-agora",
-  [RealtimeModel.x2_1_preview_1014]: "X2.1-preview-1014",
   [RealtimeModel.x2_1_1_preview_cn]: "X2.1.1-preview-cn",
   [RealtimeModel.x2_1_1_preview_us]: "X2.1.1-preview-us",
 };
@@ -45,8 +37,6 @@ const MODEL_DISPLAY_NAMES: Readonly<Record<RealtimeModel, string>> = {
  * 模型专用的会话 API 地址；未配置的模型沿用客户端环境地址。
  */
 const MODEL_BASE_URLS: Readonly<Partial<Record<RealtimeModel, string>>> = {
-  [RealtimeModel.x2_1_preview]: "https://cloud.xmax.22duck.cn/open/api/v1",
-  [RealtimeModel.x2_1_preview_1014]: "https://dev.xmaxai.com/open/api/v1",
   [RealtimeModel.x2_1_1_preview_cn]: "https://cloud.xmax.22duck.cn/open/api/v1",
   [RealtimeModel.x2_1_1_preview_us]: "https://api.xmax.ai/open/api/v1",
 };
@@ -63,19 +53,6 @@ export interface ModelSize {
  * 各模型支持的输入分辨率桶；空数组表示按像素面积上下限和对齐规则计算尺寸。
  */
 const RESOLUTION_BUCKETS: Record<RealtimeModel, ModelSize[]> = {
-  [RealtimeModel.x2_0]: [],
-  [RealtimeModel.x2_0_trtc]: [
-    { width: 1024, height: 1920 },
-    { width: 1920, height: 1024 },
-  ],
-  [RealtimeModel.x2_1_preview]: [
-    { width: 1024, height: 1920 },
-    { width: 1920, height: 1024 },
-  ],
-  [RealtimeModel.x2_1_preview_1014]: [
-    { width: 1024, height: 1920 },
-    { width: 1920, height: 1024 },
-  ],
   [RealtimeModel.x2_1_1_preview_cn]: [
     { width: 1024, height: 1920 },
     { width: 1920, height: 1024 },
@@ -90,10 +67,6 @@ const RESOLUTION_BUCKETS: Record<RealtimeModel, ModelSize[]> = {
  * 各模型允许的最大输入像素面积；仅在分辨率桶为空时参与尺寸计算。
  */
 const MAXIMUM_INPUT_PIXELS: Record<RealtimeModel, number> = {
-  [RealtimeModel.x2_0]: 1280000,
-  [RealtimeModel.x2_0_trtc]: 2100000,
-  [RealtimeModel.x2_1_preview]: 2100000,
-  [RealtimeModel.x2_1_preview_1014]: 2100000,
   [RealtimeModel.x2_1_1_preview_cn]: 2100000,
   [RealtimeModel.x2_1_1_preview_us]: 2100000,
 };
@@ -106,7 +79,7 @@ export function modelDisplayName(model: RealtimeModelName): string {
 }
 
 /**
- * 模型专用的会话 API Base URL；未知模型沿用 x2.1-preview 的地址。
+ * 模型专用的会话 API Base URL；未知模型沿用 x2.1.1-preview-cn 的地址。
  * 已知模型返回 undefined 时使用客户端环境的默认地址。
  */
 export function modelBaseURL(model: RealtimeModelName): string | undefined {
@@ -152,10 +125,7 @@ export function defaultFrameRate(_model: RealtimeModelName): number {
  * 摄像头采集使用的默认视频规格。
  */
 export function defaultCameraVideoFormat(model: RealtimeModelName): RealtimeVideoFormat {
-  if (modelDefaults(model) === RealtimeModel.x2_0) {
-    return new RealtimeVideoFormat({ width: 832, height: 1472, fps: 30 });
-  }
-
+  modelDefaults(model);
   return new RealtimeVideoFormat({ width: 1024, height: 1920, fps: 30 });
 }
 
@@ -163,17 +133,13 @@ export function defaultCameraVideoFormat(model: RealtimeModelName): RealtimeVide
  * 模型支持的 RTC 提供方；第一项为默认值，只读列表防止接入方修改全局能力定义。
  */
 const MODEL_RTC_PROVIDERS: Readonly<Record<RealtimeModel, readonly RtcProvider[]>> = {
-  [RealtimeModel.x2_0]: Object.freeze([RtcProvider.vertc]),
-  [RealtimeModel.x2_0_trtc]: Object.freeze([RtcProvider.trtc]),
-  [RealtimeModel.x2_1_preview]: Object.freeze([RtcProvider.agora]),
-  [RealtimeModel.x2_1_preview_1014]: Object.freeze([RtcProvider.agora]),
   [RealtimeModel.x2_1_1_preview_cn]: Object.freeze([RtcProvider.agora]),
   [RealtimeModel.x2_1_1_preview_us]: Object.freeze([RtcProvider.agora]),
 };
 
 /**
  * 查询 SDK 允许配置的 RTC 提供方，第一项为默认值。
- * 未知模型默认沿用 x2.1-preview 的 Agora，也允许显式选择其他已接入的 RTC；
+ * 未知模型默认沿用 x2.1.1-preview-cn 的 Agora，也允许显式选择其他已接入的 RTC；
  * 是否被该模型的服务端支持，由服务端决定。
  */
 export function supportedRtcProviders(model: RealtimeModelName): readonly RtcProvider[] {
@@ -181,7 +147,7 @@ export function supportedRtcProviders(model: RealtimeModelName): readonly RtcPro
 }
 
 const CUSTOM_MODEL_RTC_PROVIDERS: readonly RtcProvider[] = Object.freeze([
-  ...MODEL_RTC_PROVIDERS[RealtimeModel.x2_1_preview],
+  ...MODEL_RTC_PROVIDERS[RealtimeModel.x2_1_1_preview_cn],
   ...Object.values(RtcProvider).filter((provider) =>
-    !MODEL_RTC_PROVIDERS[RealtimeModel.x2_1_preview].includes(provider)),
+    !MODEL_RTC_PROVIDERS[RealtimeModel.x2_1_1_preview_cn].includes(provider)),
 ]);

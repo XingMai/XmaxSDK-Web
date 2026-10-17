@@ -612,7 +612,7 @@ describe("TrtcRtcManager", () => {
         encoderPreference: RtcVideoEncoderPreference.maintainFramerate,
       });
       expect(engine.updateLocalVideoCalls.at(-1)).toEqual({ option: {
-        profile: { ...tier, bitrate: 1000 },
+        profile: { width: tier.width, height: tier.height, frameRate: tier.frameRate, bitrate: 1000 },
         qosPreference: "smooth",
       } });
     }
